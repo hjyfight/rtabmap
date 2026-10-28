@@ -165,8 +165,9 @@ class TopicMonitor:
 
 
 class LoopClosureDiagnostics(Node):
-    def __init__(self, log_file=None, topics=None, assemble=False):
+    def __init__(self, log_file=None, topics=None, assemble=False, event_sink=None):
         super().__init__('loop_closure_diagnostics')
+        self.event_sink = event_sink
         default_dir = os.path.normpath(
             os.path.join(os.path.dirname(__file__), '..', 'logs'))
         self.log_file = os.path.abspath(os.path.expanduser(
@@ -208,6 +209,11 @@ class LoopClosureDiagnostics(Node):
                 stream.write(json.dumps(event, ensure_ascii=False, allow_nan=False) + '\n')
         except (OSError, ValueError) as error:
             self.get_logger().error(f'写入回环日志失败: {error}')
+        if self.event_sink is not None:
+            try:
+                self.event_sink(event)
+            except Exception as error:
+                self.get_logger().error(f'更新回环提示窗失败: {error}')
 
     def _info_cb(self, msg):
         key = (msg.header.stamp.sec, msg.header.stamp.nanosec,
@@ -270,10 +276,11 @@ class LoopClosureDiagnostics(Node):
         event = {**detection, 'type': event_type, 'target_id': target_id,
                  'loop_count': self.loop_count}
         self._write_event(event)
-        label = '全局回环' if event_type == 'GLOBAL_LOOP' else '空间几何 ICP 回环'
+        label = '全局回环' if event_type == 'GLOBAL_LOOP' else '空间邻近回环'
         ratio = event['icp_inliers_ratio']
         ratio_text = f'{ratio * 100:.1f}%' if ratio is not None else 'N/A'
         self.get_logger().info(
+            '\n' + '=' * 60 + '\n'
             f'[回环成功 #{self.loop_count}] {label} ({event_type}) | '
             f'#{event["ref_id"]} <-> #{target_id}\n'
             f'  视觉匹配:{metric(event["visual_matches"])} / '
@@ -281,7 +288,7 @@ class LoopClosureDiagnostics(Node):
             f'ICP内点:{metric(event["icp_inliers"])} / 重合率:{ratio_text}\n'
             f'  位姿图优化误差:{metric(event["optimization_error"], ".4f")} | '
             f'迭代次数:{metric(event["optimization_iterations"])} | '
-            f'当前图节点:{self.current_nodes}')
+            f'当前图节点:{self.current_nodes}\n' + '=' * 60)
 
     def _report(self):
         now = time.monotonic()
@@ -324,15 +331,34 @@ def main():
     parser.add_argument('--rgb-topic', default=TOPICS[3][0])
     parser.add_argument('--camera-info-topic', default=TOPICS[4][0])
     parser.add_argument('--assemble', choices=('true', 'false'), default='false')
+    parser.add_argument('--status-window', choices=('true', 'false'), default='false',
+                        help='显示置顶状态窗，成功保持绿色 8 秒；关闭窗口不停止诊断')
     args, ros_args = parser.parse_known_args()
     topics = list(zip((args.lidar_topic, args.assembled_topic, args.depth_topic,
                        args.rgb_topic, args.camera_info_topic),
                       (entry[1] for entry in TOPICS), (entry[2] for entry in TOPICS)))
     rclpy.init(args=ros_args)
+    app, panel = None, None
+    panel_error = None
+    if args.status_window == 'true':
+        if os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY'):
+            try:
+                from loop_closure_panel import create_panel, spin_with_panel
+                app, panel = create_panel()
+            except (ImportError, RuntimeError) as error:
+                panel_error = str(error)
+        else:
+            panel_error = '未检测到桌面显示环境'
     node = LoopClosureDiagnostics(log_file=args.log_file, topics=topics,
-                                  assemble=args.assemble == 'true')
+                                  assemble=args.assemble == 'true',
+                                  event_sink=panel.update_event if panel else None)
+    if panel_error:
+        node.get_logger().warning(f'回环提示窗不可用，继续输出终端提示：{panel_error}')
     try:
-        rclpy.spin(node)
+        if panel:
+            spin_with_panel(node, app)
+        else:
+            rclpy.spin(node)
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
     finally:

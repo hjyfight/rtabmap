@@ -303,7 +303,8 @@ class LaunchGraphTests(unittest.TestCase):
 
     def test_rejects_circular_deskew_and_filter_topics(self):
         for overrides in ({'fixed_frame_id': 'icp_odom'}, {'fixed_frame_id': 'livox_frame'},
-                          {'raw_imu_topic': '/imu/data'}, {'gravity_sigma': '-1'}):
+                          {'raw_imu_topic': '/imu/data'}, {'gravity_sigma': '-1'},
+                          {'cam_to_lidar_yaw': 'nan'}, {'cam_to_lidar_x': 'inf'}):
             with self.subTest(overrides=overrides), self.assertRaises(ValueError):
                 resolve_launch(**overrides)
 

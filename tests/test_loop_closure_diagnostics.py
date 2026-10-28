@@ -138,6 +138,24 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertEqual(self.node.loop_count, 1)
         self.assertIn('[回环成功 #1]', self.output())
 
+    def test_panel_receives_only_one_accepted_event_for_duplicate_info(self):
+        sink = Mock()
+        self.node.event_sink = sink
+        self.node._info_cb(make_info(**{'Loop/Highest_hypothesis_id/': 5}))
+        msg = make_info(ref=41, global_id=5)
+        self.node._info_cb(msg)
+        self.node._info_cb(msg)
+        accepted = [call.args[0] for call in sink.call_args_list
+                    if call.args[0]['type'] in ('GLOBAL_LOOP', 'PROXIMITY_ICP')]
+        self.assertEqual(len(accepted), 1)
+        self.assertEqual(accepted[0]['target_id'], 5)
+
+    def test_panel_failure_does_not_stop_diagnostics(self):
+        self.node.event_sink = Mock(side_effect=RuntimeError('window unavailable'))
+        self.node._info_cb(make_info(global_id=5))
+        self.assertEqual(self.node.loop_count, 1)
+        self.assertEqual(len(self.events('GLOBAL_LOOP')), 1)
+
     def test_delayed_duplicate_and_both_success_types_are_counted_once(self):
         msg = make_info(global_id=5, proximity_id=6)
         self.node._info_cb(msg)

@@ -15,6 +15,11 @@ python3 "$PROJECT_ROOT/scripts/check_rgbd_input.py" \
 python3 "$PROJECT_ROOT/scripts/verify_fusion_input.py" "$FUSION_CHECK_FILE"
 
 # Defaults match the earlier example; use measured values through CAM_* variables.
+for FUSION_CAM_VAR in CAM_X CAM_Y CAM_Z CAM_ROLL CAM_PITCH CAM_YAW; do
+  if [[ -z "${!FUSION_CAM_VAR}" ]]; then
+    printf '外参提示：%s 未赋值，使用脚本示例值；export 变量名本身不会设置标定值。\n' "$FUSION_CAM_VAR" >&2
+  fi
+done
 FUSION_CAM_X=${CAM_X:-0.0}
 FUSION_CAM_Y=${CAM_Y:--0.12}
 FUSION_CAM_Z=${CAM_Z:--0.03}
@@ -34,6 +39,7 @@ ros2 launch "$PROJECT_ROOT/launch/livox_realsense_3dslam.launch.py" \
   min_loop_closure_overlap:="${MIN_LOOP_CLOSURE_OVERLAP:-0.2}" \
   fusion_stm_size:="${FUSION_STM_SIZE:-10}" \
   proximity_by_space:="${PROXIMITY_BY_SPACE:-true}" \
+  loop_status_window:="${LOOP_STATUS_WINDOW:-true}" \
   cam_to_lidar_x:="$FUSION_CAM_X" \
   cam_to_lidar_y:="$FUSION_CAM_Y" \
   cam_to_lidar_z:="$FUSION_CAM_Z" \

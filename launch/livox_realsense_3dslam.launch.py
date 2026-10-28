@@ -146,6 +146,10 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     cam_to_lidar_roll = float(LaunchConfiguration('cam_to_lidar_roll').perform(context))
     cam_to_lidar_pitch = float(LaunchConfiguration('cam_to_lidar_pitch').perform(context))
     cam_to_lidar_yaw = float(LaunchConfiguration('cam_to_lidar_yaw').perform(context))
+    if not all(math.isfinite(value) for value in (
+            cam_to_lidar_x, cam_to_lidar_y, cam_to_lidar_z,
+            cam_to_lidar_roll, cam_to_lidar_pitch, cam_to_lidar_yaw)):
+        raise ValueError('相机外参必须是有限数（米 / 弧度），不能为 NaN 或 Inf。')
 
     # 诊断：检查相机-LiDAR 外参是否已标定
     cam_extrinsics_all_zero = (
@@ -611,7 +615,8 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
                      '--rgb-topic', rgb_topic.perform(context),
                      '--depth-topic', depth_topic.perform(context),
                      '--camera-info-topic', camera_info_topic.perform(context),
-                     '--assemble', str(assemble).lower()],
+                     '--assemble', str(assemble).lower(),
+                     '--status-window', LaunchConfiguration('loop_status_window')],
                 output='screen',
             )
         )
@@ -696,6 +701,10 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'rtabmap_viz', default_value='true',
             description='启动 RTAB-Map 可视化；无显示或测试时设 false。'),
+
+        DeclareLaunchArgument(
+            'loop_status_window', default_value=LaunchConfiguration('rtabmap_viz'),
+            description='融合模式显示置顶回环状态窗；成功绿色提示保持 8 秒，不暂停建图。'),
 
         DeclareLaunchArgument(
             'topic_queue_size', default_value='30',

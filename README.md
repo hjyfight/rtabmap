@@ -26,6 +26,13 @@ bash scripts/start_verified_fusion.sh
 `MIN_LOOP_CLOSURE_OVERLAP`、`FUSION_STM_SIZE`、`PROXIMITY_BY_SPACE` 可作对照实验。
 外参保持原值。修改依据、限制与命令见 [融合回环诊断](docs/fusion_loop_diagnostics.md#2026-10-28回环配置核查与调整)。
 
+地图窗口默认隐藏底部网格，保留雷达地图与实时扫描显示（1 像素点）。
+融合启动时同时打开可移动的置顶回环状态窗：后端接受回环后绿色提示保持 8 秒，
+显示成功次数、最近匹配节点和时间；候选或拒绝不会提示成功。
+`LOOP_STATUS_WINDOW=false bash scripts/start_verified_fusion.sh` 可关闭提示窗。
+移动时的几何拖影仍需实测；当前 IMU 去畸变只补偿旋转，详见
+[网格、回环提示与运动拖影说明](docs/fusion_loop_diagnostics.md#2026-10-28网格回环提示与运动拖影)。
+
 仓库保存代码、配置和上游源码快照，版本见 [源码版本](docs/source_versions.md)。
 地图、日志、构建结果和 Python 缓存保留在本机，不提交到 GitHub。
 
