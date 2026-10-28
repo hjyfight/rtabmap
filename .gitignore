@@ -1,0 +1,13 @@
+# Local build products and runtime data
+/build/
+/install/
+/log/
+/logs/
+/maps/
+__pycache__/
+*.py[cod]
+*.bak
+*.before_*
+.env
+.env.*
+!.env.example

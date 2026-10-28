@@ -1,0 +1,6 @@
+/camera/camera:
+  ros__parameters:
+    color_qos: SENSOR_DATA
+    color_info_qos: SENSOR_DATA
+    depth_qos: SENSOR_DATA
+    depth_info_qos: SENSOR_DATA
