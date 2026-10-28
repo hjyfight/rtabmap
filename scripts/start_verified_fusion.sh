@@ -30,7 +30,10 @@ printf '当前 livox_frame -> camera_link 外参：%s %s %s / %s %s %s（米 / �
 
 ros2 launch "$PROJECT_ROOT/launch/livox_realsense_3dslam.launch.py" \
   use_camera:=true use_imu:=true filter_imu:=true \
-  deskewing:=true assemble:=false \
+  deskewing:=true assemble:="${ASSEMBLE:-false}" \
+  min_loop_closure_overlap:="${MIN_LOOP_CLOSURE_OVERLAP:-0.2}" \
+  fusion_stm_size:="${FUSION_STM_SIZE:-10}" \
+  proximity_by_space:="${PROXIMITY_BY_SPACE:-true}" \
   cam_to_lidar_x:="$FUSION_CAM_X" \
   cam_to_lidar_y:="$FUSION_CAM_Y" \
   cam_to_lidar_z:="$FUSION_CAM_Z" \

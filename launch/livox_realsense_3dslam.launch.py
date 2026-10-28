@@ -78,6 +78,22 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     use_camera = LaunchConfiguration('use_camera').perform(context)
     use_camera = use_camera.lower() in ('true', '1', 'yes', 'on')
 
+    # 视觉同步、深度筛选和短期记忆可独立调整，不依赖外参或装配开关。
+    rgbd_sync_max_interval = float(LaunchConfiguration('rgbd_sync_max_interval').perform(context))
+    visual_max_depth = float(LaunchConfiguration('visual_max_depth').perform(context))
+    fusion_stm_size = int(LaunchConfiguration('fusion_stm_size').perform(context))
+    proximity_by_space = use_camera and (
+        LaunchConfiguration('proximity_by_space').perform(context).lower() in ('true', '1', 'yes', 'on'))
+    loop_overlap = float(LaunchConfiguration('min_loop_closure_overlap').perform(context))
+    for name, value in (('rgbd_sync_max_interval', rgbd_sync_max_interval),
+                        ('visual_max_depth', visual_max_depth)):
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError(f'{name} 必须是大于零的有限数。')
+    if fusion_stm_size < 1:
+        raise ValueError('fusion_stm_size 必须是正整数。')
+    if not math.isfinite(loop_overlap) or not 0 <= loop_overlap <= 1:
+        raise ValueError('min_loop_closure_overlap 必须是 0 到 1 之间的有限数。')
+
     rgb_topic = LaunchConfiguration('rgb_topic')
     depth_topic = LaunchConfiguration('depth_topic')
     camera_info_topic = LaunchConfiguration('camera_info_topic')
@@ -329,10 +345,10 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         'Rtabmap/PublishStats': 'true',
         'Rtabmap/LoopThr': '0.11' if use_camera else '1.0',
         'RGBD/AggressiveLoopThr': '0.05' if use_camera else '1.0',
-        'RGBD/ProximityBySpace': 'false',
+        'RGBD/ProximityBySpace': str(proximity_by_space).lower(),
         'RGBD/ProximityByTime': 'false',
         'RGBD/ProximityMaxGraphDepth': '0',     # 0=无限搜索，不限制图深度
-        'RGBD/ProximityPathMaxNeighbors': '10', # 回环搜索邻近节点数
+        'RGBD/ProximityPathMaxNeighbors': '10', # 空间 ICP 分支合并邻近扫描，不依赖视觉视场
         'RGBD/AngularUpdate': '0.05',
         'RGBD/LinearUpdate': '0.05',
         'RGBD/CreateOccupancyGrid': 'false',
@@ -342,25 +358,26 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         'Grid/RangeMin': '0.3',
         'Grid/RayTracing': 'false',
         # ---- 记忆体 ----
+        'Mem/LaserScanVoxelSize': str(voxel_size_value),  # 每份入库扫描降采样，非全局去重
         'Mem/NotLinkedNodesKept': 'false',
-        'Mem/STMSize': '10' if use_camera else '30',  # 融合历史节点更早进入可检索工作记忆
+        'Mem/STMSize': str(fusion_stm_size) if use_camera else '30',  # 融合历史节点更早进入可检索工作记忆
         # ---- 配准策略 ----
-        'Reg/Strategy': '2' if use_camera else '1',  # 相机开启=视觉+ICP；关闭=纯ICP
+        'Reg/Strategy': '2' if use_camera else '1',  # 全局视觉+ICP；空间邻近另有独立扫描 ICP 分支
         'Reg/Force3DoF': 'false',  # 与ICP里程计保持6DoF，保留高度、横滚与俯仰
         # ---- 重力约束（0=禁用；不能用压平三维姿态代替重力约束）----
         'Optimizer/Strategy': '1',  # 本机已安装 g2o，支持重力约束
         'Optimizer/GravitySigma': str(gravity_sigma) if imu_used else '0',
         'qos_imu': LaunchConfiguration('qos_imu'),
         # ---- 回环检测 ----
-        'Icp/CorrespondenceRatio': str(LaunchConfiguration('min_loop_closure_overlap').perform(context)),
+        'Icp/CorrespondenceRatio': str(loop_overlap),
         # ---- 视觉回环 ----
         'Kp/MaxFeatures': '400' if use_camera else '-1',
         'Vis/MaxFeatures': '600' if use_camera else '0',
+        'Kp/MaxDepth': str(visual_max_depth),
+        'Vis/MaxDepth': str(visual_max_depth),
         'Vis/InlierDistance': '0.1',
         'Vis/MinInliers': '10',
         'Mem/RehearsalSimilarity': '0.6' if use_camera else '0.0',  # 相似节点合并阈值；全局回环阈值由 Rtabmap/LoopThr 控制
-        # ---- 使用深度信息校正视觉特征 ----
-        'Kp/WordsUseDepthCorrection': 'true' if use_camera else 'false',
     }
 
     # ============================================================
@@ -402,7 +419,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
                 package='rtabmap_sync', executable='rgbd_sync', output='screen',
                 parameters=[{
                     'approx_sync': True,  # 近似同步容忍时间戳不完美对齐
-                    'approx_sync_max_interval': 10.0,  # 保留原同步窗口，本次仅修正QoS传递
+                    'approx_sync_max_interval': rgbd_sync_max_interval,  # 限制 RGB/Depth/CameraInfo 时间差
                     'use_sim_time': use_sim_time,
                     'qos': LaunchConfiguration('qos'),
                     'qos_camera_info': LaunchConfiguration('qos'),
@@ -496,6 +513,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
                 parameters=[{
                     'use_sim_time': use_sim_time,
                     'assembling_time': LaunchConfiguration('assembling_time'),
+                    'voxel_size': voxel_size_value,  # 累积后降采样，默认 5 cm
                     'qos': LaunchConfiguration('qos'),
                     'qos_odom': LaunchConfiguration('qos'),
                     'fixed_frame_id': (external_odom_frame_id if external_odom_frame_id else 'icp_odom'),
@@ -561,12 +579,13 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     )
 
     # ----- 可视化 ----
-    # rtabmap_viz 不订阅 RGB-D 数据，避免未标定外参导致地图显示乱色。
+    # 直接订阅开关只影响实时 RGB-D；mapData 仍携带后端保存的图像/深度。
+    # 是否绘制 RGB-D 地图云由 GUI 配置控制，必须用 -d 正确加载。
     # RGB-D 数据仍然由 rtabmap SLAM 节点订阅，用于视觉回环检测。
-    # gui_cfg 配置文件将 3D 云的默认着色模式设为强度（intensity）而非 RGB。
+    # 默认 GUI 仅显示雷达地图云，显示降采样与节点筛选不修改后端数据。
     rtabmap_viz_args = []
     if gui_cfg:
-        rtabmap_viz_args.append(gui_cfg)
+        rtabmap_viz_args.extend(['-d', gui_cfg])
     nodes.append(
         Node(
             condition=IfCondition(LaunchConfiguration('rtabmap_viz')),
@@ -635,6 +654,8 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         f'[SLAM] GravitySigma: {rtabmap_parameters["Optimizer/GravitySigma"]}；优化器: g2o\n'
         f'[SLAM] 回环检测: {"视觉候选 + ICP 验证（已启用诊断日志）" if use_camera else "关闭（纯雷达建图）"}\n'
         f'[SLAM] 空间回环: {rtabmap_parameters["RGBD/ProximityBySpace"]}\n'
+        f'[SLAM] 回环 ICP 最小对应率: {loop_overlap}；STM: {rtabmap_parameters["Mem/STMSize"]}\n'
+        f'[SLAM] RGB-D 同步上限: {rgbd_sync_max_interval} s；视觉最大深度: {visual_max_depth} m\n'
         f'[SLAM] odom_sensor_sync: {rtabmap_parameters["odom_sensor_sync"]}\n'
         '=============================================\n'
     ))
@@ -709,7 +730,23 @@ def generate_launch_description():
 
         DeclareLaunchArgument(
             'min_loop_closure_overlap', default_value='0.2',
-            description='回环检测最小点云重叠率。'),
+            description='回环 ICP 最小对应率；不是体素相交比例。默认 0.2，按拒绝日志调节。'),
+
+        DeclareLaunchArgument(
+            'proximity_by_space', default_value='true',
+            description='融合模式启用空间邻近视觉/扫描回环；纯雷达模式仍关闭回环。'),
+
+        DeclareLaunchArgument(
+            'fusion_stm_size', default_value='10',
+            description='融合模式短期记忆节点数；小场景可实测 5，STM 中节点不参加历史回环。'),
+
+        DeclareLaunchArgument(
+            'visual_max_depth', default_value='4.0',
+            description='视觉关键点最大深度(m)，同时用于词袋和视觉配准。'),
+
+        DeclareLaunchArgument(
+            'rgbd_sync_max_interval', default_value='0.05',
+            description='RGB、对齐深度和内参近似同步允许的最大时间差(s)。'),
 
         # ============================================================
         #  装配模式（先验证逐帧运动跟踪，再按需开启）

@@ -21,6 +21,11 @@ bash scripts/start_verified_fusion.sh
 相机外参可通过 `CAM_X`、`CAM_Y`、`CAM_Z`、`CAM_ROLL`、`CAM_PITCH`、`CAM_YAW` 设置。
 每次创建独立的 `maps/livox_realsense_*.db`，当前数据库路径记录到 `maps/current_fusion_db.txt`。
 
+融合模式现默认开启空间邻近回环；RGB-D 同步上限为 0.05 s，视觉关键点最大深度为 4 m。
+装配与入库扫描按 5 cm 体素降采样。启动脚本可通过 `ASSEMBLE=true` 开启后端装配；
+`MIN_LOOP_CLOSURE_OVERLAP`、`FUSION_STM_SIZE`、`PROXIMITY_BY_SPACE` 可作对照实验。
+外参保持原值。修改依据、限制与命令见 [融合回环诊断](docs/fusion_loop_diagnostics.md#2026-10-28回环配置核查与调整)。
+
 仓库保存代码、配置和上游源码快照，版本见 [源码版本](docs/source_versions.md)。
 地图、日志、构建结果和 Python 缓存保留在本机，不提交到 GitHub。
 
@@ -181,3 +186,125 @@ bash scripts/test_go2_environment.sh
 ## 纯 LiDAR 与相机辅助建图对比
 
 新增 `launch/slam_comparison.launch.py`，支持 `lidar`、`depth`、`rgbd` 三组独立实验，并记录真实地图、位姿图和回环事件。`scripts/plot_slam_comparison.py` 可以输出两张地图及统一视角的对比图。数据准备、回放命令和结果解释见 [对比实验说明](docs/slam_comparison.md)。
+
+
+
+
+
+
+
+
+## 雷达命令
+ssh unitree@192.168.123.18
+source ~/yao_space/ws_livox/install/setup.bash
+ros2 launch livox_ros_driver2 rviz_MID360_launch.py
+
+
+ros2 launch realsense2_camera rs_launch.py align_depth.enable:=true
+
+
+## 相机命令
+ssh unitree@192.168.123.18
+source /opt/ros/foxy/setup.bash
+/usr/bin/python3 /opt/ros/foxy/bin/ros2 launch realsense2_camera rs_launch.py rgb_camera.profile:=640x480x30 depth_module.profile:=640x480x30 align_depth.enable:=true rgb_camera.enable_auto_exposure:=false rgb_camera.exposure:=10000 rgb_camera.gain:=128
+
+
+ssh unitree@192.168.123.18
+source /opt/ros/foxy/setup.bash
+
+/usr/bin/python3 /opt/ros/foxy/bin/ros2 launch realsense2_camera rs_launch.py \
+  config_file:="'/home/unitree/realsense_slam_sensor_qos.yaml'" \
+  rgb_camera.profile:=424x240x6 \
+  depth_module.profile:=424x240x6 \
+  align_depth.enable:=true \
+  enable_color:=true \
+  enable_depth:=true \
+  enable_sync:=true
+
+## 本地cmd
+
+source ~/go2env.sh
+source /home/jyfight/Project/rtabmap_slam/setup.bash
+
+export ROS_DOMAIN_ID=0
+export ROS_LOCALHOST_ONLY=0
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="enxec1ac312a316"/></Interfaces></General></Domain></CycloneDDS>'
+
+
+
+
+ros2 topic list
+ros2 topic hz /livox/lidar
+ros2 topic hz /camera/color/image_raw
+
+source /opt/ros/humble/setup.bash
+ros2 topic list
+
+
+
+## 启动建图
+
+
+## 纯雷达建图
+source /home/jyfight/Project/rtabmap_slam/setup.bash
+
+DB=/home/jyfight/Project/rtabmap_slam/maps/livox_imu_$(date +%Y%m%d_%H%M%S).db
+
+ros2 launch /home/jyfight/Project/rtabmap_slam/launch/livox_realsense_3dslam.launch.py \
+  use_camera:=false \
+  use_imu:=true \
+  filter_imu:=true \
+  deskewing:=true \
+  assemble:=false \
+  qos:=2 \
+  qos_imu:=2 \
+  database_path:="$DB"
+
+
+
+## 融合建图
+source go2env.sh
+source /home/jyfight/Project/rtabmap_slam/setup.bash
+
+# 以下数值必须替换为实际测量的 livox_frame -> camera_link 外参
+CAM_X=0.0
+CAM_Y=-0.12
+CAM_Z=-0.03
+CAM_ROLL=0.0
+CAM_PITCH=0.0
+CAM_YAW=-1.5708
+
+DB=/home/jyfight/Project/rtabmap_slam/maps/livox_realsense_$(date +%Y%m%d_%H%M%S).db
+
+
+
+ros2 launch /home/jyfight/Project/rtabmap_slam/launch/livox_realsense_3dslam.launch.py \
+  use_camera:=true \
+  use_imu:=true \
+  filter_imu:=true \
+  deskewing:=true \
+  assemble:=false \
+  cam_to_lidar_x:="$CAM_X" \
+  cam_to_lidar_y:="$CAM_Y" \
+  cam_to_lidar_z:="$CAM_Z" \
+  cam_to_lidar_roll:="$CAM_ROLL" \
+  cam_to_lidar_pitch:="$CAM_PITCH" \
+  cam_to_lidar_yaw:="$CAM_YAW" \
+  qos:=2 \
+  qos_imu:=2 \
+  database_path:="$DB"
+
+
+
+
+## 最新建图命令
+export CAM_X CAM_Y CAM_Z CAM_ROLL CAM_PITCH CAM_YAW
+bash /home/jyfight/ros2_ws/rgbd_input_check_20261027/start_verified_fusion.sh
+
+
+# 查看回环
+bash /home/jyfight/ros2_ws/fusion_loop_search_fix_20261027/apply_live_loop_fix.sh
+
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+ros2 run rviz2 rviz2

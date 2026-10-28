@@ -142,6 +142,19 @@ def resolve_launch(**overrides):
 
 
 class LaunchGraphTests(unittest.TestCase):
+    def test_visualizer_passes_config_with_required_d_flag(self):
+        for overrides, expected_path in (
+                ({}, str(ROOT / 'launch' / '..' / 'config' / 'livox_realsense_gui.ini')),
+                ({'gui_cfg': '/tmp/custom lidar display.ini'}, '/tmp/custom lidar display.ini')):
+            with self.subTest(overrides=overrides), patch.object(
+                    slam_launch, 'Node', wraps=Node) as node_factory:
+                # resolve_launch uses Node for isinstance; the factory is patched only in the launch module.
+                resolve_launch(use_camera='true', **overrides)
+                viz = [call.kwargs for call in node_factory.call_args_list
+                       if call.kwargs.get('executable') == 'rtabmap_viz']
+                self.assertEqual(len(viz), 1)
+                self.assertEqual(viz[0]['arguments'], ['-d', expected_path])
+
     def test_only_fusion_starts_diagnostics_with_configured_topics(self):
         for use_camera in ('false', 'true'):
             with self.subTest(use_camera=use_camera), patch.object(
@@ -194,6 +207,48 @@ class LaunchGraphTests(unittest.TestCase):
         self.assertEqual(dict(nodes['point_cloud_assembler'][1])['odom'], 'icp_odom')
         self.assertEqual(dict(nodes['icp_odometry'][1])['scan_cloud'], '/livox/lidar/deskewed')
         self.assertEqual(dict(nodes['rtabmap'][1])['scan_cloud'], 'assembled_cloud')
+
+    def test_fusion_adds_scan_proximity_without_replacing_visual_pipeline(self):
+        nodes = resolve_launch(use_camera='true')
+        slam = nodes['rtabmap'][0]
+        self.assertEqual(slam['RGBD/ProximityBySpace'], 'true')
+        self.assertEqual(slam['RGBD/ProximityPathMaxNeighbors'], '10')
+        self.assertEqual(slam['Reg/Strategy'], '2')
+        self.assertEqual(slam['Mem/RehearsalSimilarity'], '0.6')
+        self.assertEqual(slam['Kp/MaxDepth'], '4.0')
+        self.assertEqual(slam['Vis/MaxDepth'], '4.0')
+        self.assertNotIn('Kp/WordsUseDepthCorrection', slam)
+        self.assertEqual(nodes['rgbd_sync'][0]['approx_sync_max_interval'], 0.05)
+        disabled = resolve_launch(use_camera='true', proximity_by_space='false')
+        self.assertEqual(disabled['rtabmap'][0]['RGBD/ProximityBySpace'], 'false')
+
+    def test_fusion_tuning_keeps_odometry_on_single_scans(self):
+        nodes = resolve_launch(use_camera='true', assemble='true', voxel_size='0.1',
+                               min_loop_closure_overlap='0.08', fusion_stm_size='5',
+                               visual_max_depth='3.0', rgbd_sync_max_interval='0.02')
+        slam, remaps = nodes['rtabmap']
+        self.assertEqual(slam['Mem/STMSize'], '5')
+        self.assertEqual(slam['Icp/CorrespondenceRatio'], '0.08')
+        self.assertEqual(slam['Mem/LaserScanVoxelSize'], '0.1')
+        self.assertEqual(slam['Kp/MaxDepth'], '3.0')
+        self.assertEqual(slam['Vis/MaxDepth'], '3.0')
+        self.assertEqual(nodes['rgbd_sync'][0]['approx_sync_max_interval'], 0.02)
+        self.assertEqual(nodes['point_cloud_assembler'][0]['voxel_size'], 0.1)
+        self.assertEqual(dict(remaps)['scan_cloud'], 'assembled_cloud')
+        self.assertEqual(dict(nodes['icp_odometry'][1])['scan_cloud'], '/livox/lidar/deskewed')
+        self.assertEqual(nodes['icp_odometry'][0]['Icp/CorrespondenceRatio'], '0.01')
+        unassembled = resolve_launch(use_camera='true', assemble='false', voxel_size='0.1')
+        self.assertEqual(unassembled['rtabmap'][0]['Mem/LaserScanVoxelSize'], '0.1')
+
+    def test_rejects_invalid_fusion_tuning(self):
+        for overrides in ({'rgbd_sync_max_interval': '0'}, {'rgbd_sync_max_interval': 'nan'},
+                          {'visual_max_depth': '-1'}, {'visual_max_depth': 'inf'},
+                          {'fusion_stm_size': '0'}, {'fusion_stm_size': '1.5'},
+                          {'min_loop_closure_overlap': '-0.1'},
+                          {'min_loop_closure_overlap': '1.1'},
+                          {'min_loop_closure_overlap': 'nan'}):
+            with self.subTest(overrides=overrides), self.assertRaises(ValueError):
+                resolve_launch(**overrides)
 
     def test_custom_filtered_imu_and_sim_clock(self):
         nodes = resolve_launch(imu_topic='/robot/imu', filter_imu='false', use_sim_time='true')
