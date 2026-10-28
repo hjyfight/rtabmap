@@ -32,8 +32,10 @@ def load_run(path):
     return dict(path=path, manifest=manifest, graph=graph, xyz=xyz, poses=poses, links=links)
 
 
-def draw(ax, run, spatial, limits, height_limits):
+def draw(ax, run, spatial, limits, height_limits, slice_range=None):
     xyz = run['xyz']
+    if slice_range is not None:
+        xyz = xyz[(xyz[:, 2] >= slice_range[0]) & (xyz[:, 2] <= slice_range[1])]
     # Deterministic display sampling only; saved map remains complete.
     xyz = xyz[np.linspace(0, len(xyz) - 1, min(len(xyz), 90000)).astype(int)]
     axes = [xyz[:, 0], xyz[:, 1]] + ([xyz[:, 2]] if spatial else [])
@@ -57,13 +59,51 @@ def draw(ax, run, spatial, limits, height_limits):
         ax.set_zlabel('Z [m]')
         ax.view_init(elev=35, azim=-65)
         ax.set_box_aspect([b - a for a, b in limits])
+        ax.xaxis.pane.fill = ax.yaxis.pane.fill = ax.zaxis.pane.fill = False
     else:
         ax.set_aspect('equal', adjustable='box')
-        ax.grid(alpha=0.2)
+    ax.grid(False)
     mode = run['manifest']['mode']
     n_global = sum(t == 1 for _, _, t in run['links'])
     n_geom = len(run['links']) - n_global
-    ax.set_title(f'{LABELS[mode]}\n{len(poses)} nodes | global loops: {n_global} | proximity: {n_geom}')
+    view = '3D map' if spatial else 'Top view'
+    if slice_range is not None:
+        view = f'Horizontal slice: Z = {slice_range[0]:.2f} to {slice_range[1]:.2f} m'
+    ax.set_title(f'{LABELS[mode]} — {view}\n'
+                 f'{len(poses)} nodes | global loops: {n_global} | proximity: {n_geom}')
+
+
+def plot_trajectories(runs, output):
+    if not all(r['graph'].get('raw_poses') for r in runs):
+        return
+    all_points = np.vstack([np.array(list(r['poses'].values())) for r in runs] +
+                           [np.array(list(r['graph']['raw_poses'].values())) for r in runs])
+    lo, hi = all_points.min(axis=0), all_points.max(axis=0)
+    pad = np.maximum((hi - lo) * 0.08, 0.2)
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    for ax, run in zip(axes, runs):
+        stamps = run['graph'].get('stamps', {})
+        ids = sorted(run['poses'], key=lambda i: (stamps.get(str(i), i), i))
+        raw = run['graph']['raw_poses']
+        original = np.array([raw[str(i)] for i in ids if str(i) in raw])
+        optimized = np.array([run['poses'][i] for i in ids])
+        ax.plot(original[:, 0], original[:, 1], '--', color='#777777', lw=1.8,
+                label='ICP odometry (before graph optimization)')
+        ax.plot(optimized[:, 0], optimized[:, 1], color='#1665ad', lw=1.8,
+                marker='.', markersize=4, label='Saved optimized trajectory')
+        for a, b, kind in sorted(run['links']):
+            line = np.array([run['poses'][a], run['poses'][b]])
+            ax.plot(line[:, 0], line[:, 1], color=COLORS[kind], lw=1.3)
+        ax.scatter(*optimized[0, :2], s=75, marker='o', c='#16834b', label='Start', zorder=5)
+        ax.scatter(*optimized[-1, :2], s=75, marker='x', c='#c33e36', label='End', zorder=5)
+        ax.set(xlim=(lo[0]-pad[0], hi[0]+pad[0]), ylim=(lo[1]-pad[1], hi[1]+pad[1]),
+               xlabel='X [m]', ylabel='Y [m]', title=LABELS[run['manifest']['mode']])
+        ax.set_aspect('equal', adjustable='box')
+        ax.legend(loc='best', fontsize=8)
+    fig.suptitle('Trajectory correction relative to each run\'s start (not ground-truth error)')
+    fig.tight_layout()
+    fig.savefig(output / 'trajectories.png', dpi=180)
+    plt.close(fig)
 
 
 def main():
@@ -71,7 +111,11 @@ def main():
     parser.add_argument('baseline', type=Path)
     parser.add_argument('fusion', type=Path)
     parser.add_argument('--output', type=Path, default=Path('logs/comparison_figures'))
+    parser.add_argument('--slice-z', type=float, default=0.0)
+    parser.add_argument('--slice-width', type=float, default=0.3)
     args = parser.parse_args()
+    if not np.isfinite([args.slice_z, args.slice_width]).all() or args.slice_width <= 0:
+        parser.error('slice height must be finite and width must be positive')
     runs = [load_run(args.baseline), load_run(args.fusion)]
     if runs[0]['manifest']['mode'] != 'lidar' or runs[1]['manifest']['mode'] == 'lidar':
         parser.error('expected a lidar baseline followed by a depth or rgbd run')
@@ -84,16 +128,24 @@ def main():
     legend = [Line2D([0], [0], color=c, label=s) for c, s in
               [('#1665ad', 'Odometry graph edges'), (COLORS[1], 'Global loop'),
                (COLORS[2], 'Spatial proximity loop'), (COLORS[3], 'Temporal proximity loop')]]
-    fig = plt.figure(figsize=(16, 12))
+    fig = plt.figure(figsize=(16, 16))
+    slice_range = (args.slice_z - args.slice_width / 2, args.slice_z + args.slice_width / 2)
     for col, run in enumerate(runs):
-        for row, spatial in enumerate((True, False)):
-            ax = fig.add_subplot(2, 2, row * 2 + col + 1,
+        for row, spatial in enumerate((True, False, False)):
+            ax = fig.add_subplot(3, 2, row * 2 + col + 1,
                                  projection='3d' if spatial else None)
-            draw(ax, run, spatial, limits, height_limits)
+            draw(ax, run, spatial, limits, height_limits, slice_range if row == 2 else None)
     fig.legend(handles=legend, loc='lower center', ncol=4)
     fig.suptitle('Recorded SLAM maps and accepted loop constraints (height coloring)', fontsize=15)
     fig.tight_layout(rect=(0, 0.04, 1, 0.95))
     fig.savefig(args.output / 'comparison.png', dpi=180)
+    plt.close(fig)
+    fig, axes = plt.subplots(1, 2, figsize=(14, 7))
+    for ax, run in zip(axes, runs):
+        draw(ax, run, False, limits, height_limits)
+    fig.legend(handles=legend, loc='lower center', ncol=4)
+    fig.tight_layout(rect=(0, 0.05, 1, 1))
+    fig.savefig(args.output / 'top_view.png', dpi=180)
     plt.close(fig)
     for run, label in zip(runs, ('lidar', 'fusion')):
         fig = plt.figure(figsize=(9, 8))
@@ -101,6 +153,7 @@ def main():
         fig.tight_layout()
         fig.savefig(args.output / f'{label}_map.png', dpi=180)
         plt.close(fig)
+    plot_trajectories(runs, args.output)
     summary = [{'mode': r['manifest']['mode'], 'points': len(r['xyz']),
                 'nodes': len(r['poses']), 'global_links': sum(t == 1 for _, _, t in r['links']),
                 'proximity_links': sum(t in (2, 3) for _, _, t in r['links'])} for r in runs]

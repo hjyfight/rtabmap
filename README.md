@@ -192,7 +192,11 @@ bash scripts/test_go2_environment.sh
 
 ## 纯 LiDAR 与相机辅助建图对比
 
-新增 `launch/slam_comparison.launch.py`，支持 `lidar`、`depth`、`rgbd` 三组独立实验，并记录真实地图、位姿图和回环事件。`scripts/plot_slam_comparison.py` 可以输出两张地图及统一视角的对比图。数据准备、回放命令和结果解释见 [对比实验说明](docs/slam_comparison.md)。
+`launch/slam_comparison.launch.py` 使用当前主 launch，支持 `lidar`（雷达＋IMU，无回环）和
+`rgbd`（雷达＋IMU，RGB-D 辅助回环）两组独立实验。结束并保存后，
+`scripts/compare_slam_databases.py` 从两份数据库的只读快照导出地图，生成统一视角的
+三维、俯视、水平切片及优化前后轨迹对比图，不依赖 `/cloud_map`。
+已有数据库也可直接比较；采集命令与结果解释见 [对比实验说明](docs/slam_comparison.md)。
 
 
 
