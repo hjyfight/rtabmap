@@ -21,6 +21,7 @@
   <depend>std_srvs</depend>
   <depend>nav_msgs</depend>
   <depend>rtabmap_msgs</depend>
+  <depend>rtabmap_semantic_msgs</depend>
   <depend>rtabmap_sync</depend>
   <depend>tf2</depend>
   

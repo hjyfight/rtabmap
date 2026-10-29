@@ -68,7 +68,7 @@ def main():
     rclpy.init(args=ros_args)
     node = Node('rgbd_input_readonly_check')
     counts = Counter()
-    samples = {name: deque(maxlen=4) for name in TOPICS}
+    samples = {name: deque(maxlen=64) for name in TOPICS}
     sizes = {name: Counter() for name in TOPICS}
     subscriptions = []
     for name, (topic, message_type) in TOPICS.items():

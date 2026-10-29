@@ -33,6 +33,7 @@ find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(rtabmap_msgs REQUIRED)
+find_package(rtabmap_semantic_msgs REQUIRED)
 find_package(rtabmap_sync REQUIRED)
 find_package(tf2 REQUIRED)
 
@@ -51,6 +52,7 @@ SET(Libraries
    std_srvs::std_srvs
    nav_msgs::nav_msgs
    rtabmap_msgs::rtabmap_msgs
+   rtabmap_semantic_msgs::rtabmap_semantic_msgs
    rtabmap_sync::rtabmap_sync
    tf2::tf2
    rtabmap::gui
@@ -63,6 +65,7 @@ SET(AmentLibraries
    std_srvs
    nav_msgs
    rtabmap_msgs
+   rtabmap_semantic_msgs
    rtabmap_sync
    tf2
    RTABMap
@@ -72,7 +75,9 @@ SET(AmentLibraries
 ## Build ##
 ###########
 
-add_executable(rtabmap_viz src/GuiNode.cpp src/GuiWrapper.cpp src/PreferencesDialogROS.cpp include/${PROJECT_NAME}/PreferencesDialogROS.h)
+add_executable(rtabmap_viz src/GuiNode.cpp src/GuiWrapper.cpp src/PreferencesDialogROS.cpp
+  src/SemanticMainWindow.cpp include/${PROJECT_NAME}/SemanticMainWindow.h
+  include/${PROJECT_NAME}/PreferencesDialogROS.h)
 if("$ENV{ROS_DISTRO}" STRLESS "lyrical")
   ament_target_dependencies(rtabmap_viz ${AmentLibraries})
 else()
@@ -103,6 +108,15 @@ SET_TARGET_PROPERTIES(
 #############
 ## Install ##
 #############
+
+option(RTABMAP_SEMANTIC_GUI_CHECK "Build the native semantic rendering integration check" OFF)
+if(RTABMAP_SEMANTIC_GUI_CHECK)
+  add_executable(semantic_gui_check test/semantic_gui_check.cpp src/SemanticMainWindow.cpp
+    include/${PROJECT_NAME}/SemanticMainWindow.h)
+  ament_target_dependencies(semantic_gui_check ${AmentLibraries})
+  set_target_properties(semantic_gui_check PROPERTIES AUTOMOC ON AUTOUIC ON AUTORCC ON)
+  install(TARGETS semantic_gui_check DESTINATION lib/${PROJECT_NAME})
+endif()
 
 install(TARGETS 
    rtabmap_viz

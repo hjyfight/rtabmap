@@ -4,6 +4,8 @@
 /log/
 /logs/
 /maps/
+/models/
+/.venv-semantic/
 __pycache__/
 *.py[cod]
 *.bak

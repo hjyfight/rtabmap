@@ -52,6 +52,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "rtabmap_msgs/srv/set_label.hpp"
 #include "rtabmap_msgs/srv/remove_label.hpp"
 #include "rtabmap_viz/PreferencesDialogROS.h"
+#include "rtabmap_viz/SemanticMainWindow.h"
 
 float max3( const float& a, const float& b, const float& c)
 {
@@ -101,7 +102,27 @@ GuiWrapper::GuiWrapper(const rclcpp::NodeOptions & options) :
 	RCLCPP_INFO(this->get_logger(), "rtabmap_viz: Using configuration from \"%s\"", configFile.toStdString().c_str());
 	uSleep(500);
 	prefDialog_ = new PreferencesDialogROS(this, configFile, rtabmapNodeName_);
-	mainWindow_ = new MainWindow(prefDialog_);
+	const bool semanticEnabled = this->declare_parameter("semantic_enabled", false);
+	if (semanticEnabled)
+	{
+		const auto mapKey = this->declare_parameter("semantic_map_key", std::string(""));
+		const auto scale = this->declare_parameter("semantic_text_scale", 0.12);
+		const auto offset = this->declare_parameter("semantic_label_offset", 0.2);
+		const auto topic = this->declare_parameter("semantic_topic", std::string("/semantic/objects"));
+		auto window = new SemanticMainWindow(prefDialog_, mapKey, scale, offset);
+		mainWindow_ = window;
+		semanticMapTopic_ = this->create_subscription<rtabmap_semantic_msgs::msg::SemanticMap>(
+			topic, rclcpp::QoS(1).reliable().transient_local(),
+			[window](rtabmap_semantic_msgs::msg::SemanticMap::ConstSharedPtr message) {
+				QMetaObject::invokeMethod(window, [window, message]() {
+					window->setSemanticMap(*message);
+				}, Qt::QueuedConnection);
+			});
+	}
+	else
+	{
+		mainWindow_ = new MainWindow(prefDialog_);
+	}
 	mainWindow_->setWindowTitle(mainWindow_->windowTitle()+" [ROS]");
 	mainWindow_->show();
 

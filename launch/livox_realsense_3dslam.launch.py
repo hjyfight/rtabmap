@@ -54,7 +54,7 @@ import os
 import math
 
 from launch import LaunchDescription, LaunchContext
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, LogInfo, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, LogInfo, OpaqueFunction, Shutdown
 from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import FindExecutable, LaunchConfiguration
 from launch_ros.actions import Node
@@ -77,6 +77,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     # ---- RealSense / 相机参数 ----
     use_camera = LaunchConfiguration('use_camera').perform(context)
     use_camera = use_camera.lower() in ('true', '1', 'yes', 'on')
+    semantic_enabled = LaunchConfiguration('semantic_enabled').perform(context).lower() == 'true'
 
     # 视觉同步、深度筛选和短期记忆可独立调整，不依赖外参或装配开关。
     rgbd_sync_max_interval = float(LaunchConfiguration('rgbd_sync_max_interval').perform(context))
@@ -431,12 +432,22 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
                     'topic_queue_size': LaunchConfiguration('topic_queue_size'),
                 }],
                 remappings=[
+                    ('rgbd_image', 'rgbd_image_unchecked' if semantic_enabled else 'rgbd_image'),
                     ('rgb/image', rgb_topic.perform(context)),
                     ('rgb/camera_info', camera_info_topic.perform(context)),
                     ('depth/image', depth_topic.perform(context)),
                 ],
             )
         )
+
+        if semantic_enabled:
+            nodes.append(ExecuteProcess(
+                cmd=[FindExecutable(name='python3'),
+                     os.path.join(os.path.dirname(__file__), '..', 'scripts', 'guard_rgbd_input.py'),
+                     '--ros-args', '-p', f'max_interval:={rgbd_sync_max_interval}',
+                     '-r', 'input:=rgbd_image_unchecked', '-r', 'output:=rgbd_image'],
+                output='screen',
+                on_exit=[Shutdown(reason='RGB-D validation stopped; stopping semantic SLAM.')]))
 
     # ----- Madgwick IMU 滤波器（计算 IMU 方向四元数，用于 deskewing 和重力约束）-----
     # Livox MID360 自带 IMU 不输出方向四元数，需要通过 Madgwick 滤波器估计。
@@ -563,6 +574,8 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
             remappings=remappings + [('scan_cloud',
                                       'assembled_cloud' if assemble else lidar_topic_deskewed)],
             arguments=rtabmap_args,
+            on_exit=([Shutdown(reason='RTAB-Map backend exited; stopping semantic SLAM.')]
+                     if semantic_enabled else None),
         )
     )
 
@@ -579,6 +592,8 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
                          'sync_queue_size': LaunchConfiguration('sync_queue_size')}],
             remappings=remappings + [('scan_cloud',
                                   'assembled_cloud' if assemble else lidar_topic_deskewed)],
+            on_exit=([Shutdown(reason='RTAB-Map backend exited; stopping semantic SLAM.')]
+                     if semantic_enabled else None),
         )
     )
 
@@ -597,6 +612,10 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
             parameters=[shared_parameters, rtabmap_parameters,
                         {'odometry_node_name': 'icp_odometry',
                          'subscribe_rgbd': False,
+                         'semantic_enabled': LaunchConfiguration('semantic_enabled'),
+                         'semantic_map_key': os.path.realpath(database_path) if database_path else '',
+                         'init_cache_path': (database_path if localization_value and
+                             LaunchConfiguration('semantic_enabled').perform(context).lower() == 'true' else ''),
                          'subscribe_rgb': False,
                          'subscribe_depth': False}],
             remappings=remappings + [('scan_cloud', scan_viz_topic)],
@@ -697,6 +716,10 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'qos_imu', default_value='2',
             description='IMU QoS: 0=系统默认, 1=Reliable, 2=Best Effort.'),
+
+        DeclareLaunchArgument(
+            'semantic_enabled', default_value='false',
+            description='Enable object labels in the semantic-enabled rtabmap_viz overlay.'),
 
         DeclareLaunchArgument(
             'rtabmap_viz', default_value='true',

@@ -45,6 +45,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <nav_msgs/msg/path.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/int32_multi_array.hpp>
+#include <rtabmap_semantic_msgs/msg/semantic_map.hpp>
 #include "rtabmap_msgs/srv/get_map.hpp"
 
 #include <rtabmap_sync/CommonDataSubscriber.h>
@@ -138,6 +139,7 @@ private:
 	message_filters::Subscriber<rtabmap_msgs::msg::Goal> goalTopic_;
 	message_filters::Subscriber<nav_msgs::msg::Path> pathTopic_;
 	rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr goalReachedTopic_;
+	rclcpp::Subscription<rtabmap_semantic_msgs::msg::SemanticMap>::SharedPtr semanticMapTopic_;
 
 	typedef message_filters::sync_policies::ExactTime<
 			rtabmap_msgs::msg::Info,

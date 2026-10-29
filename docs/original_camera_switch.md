@@ -82,6 +82,12 @@ rtabmap-export --scan --cloud --opt 2 maps/rgbd_original_run2.db
 
 ### 当前相机启动配置
 
+2026-10-29 修正：用户通过 `ros2 param describe /camera/camera depth_module.profile`
+确认这台相机不支持深度 `424x240x6`，支持 `640x480x6`。旧命令中的深度模式会被
+驱动拒绝并回退，本次日志实际打开的是 `640x480x15`。下方命令已改为支持的深度
+`640x480x6`，彩色仍为 `424x240x6`；相机 YAML 只有 QoS 参数，没有覆盖模式。
+上文历史记录的 `424×240` 彩色／对齐输出不能证明原始深度也采用了该模式。
+
 已保持该驱动在机载电脑运行，当前无需再启动第二个。以后重启相机时，先在原驱动终端Ctrl+C；本次后台恢复的launch PID为5615，可核实后用 `kill -INT 5615` 正常停止，PID会随重启变化。然后在机载电脑运行：
 
 ```bash
@@ -89,7 +95,7 @@ source /opt/ros/foxy/setup.bash
 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch realsense2_camera rs_launch.py \
   config_file:="'/home/unitree/realsense_slam_sensor_qos.yaml'" \
   rgb_camera.profile:=424x240x6 \
-  depth_module.profile:=424x240x6 \
+  depth_module.profile:=640x480x6 \
   align_depth.enable:=true \
   enable_color:=true enable_depth:=true enable_sync:=true
 ```

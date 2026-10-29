@@ -2,6 +2,21 @@
 
 目标目录：`/home/jyfight/Project/rtabmap_slam`。
 
+## YOLO 语义地图标签
+
+新增 YOLOv8n-seg 关键帧识别、RGB-D 三维定位、跨帧对象融合和语义地图保存。
+标签直接显示在 RTAB-Map 原生三维地图窗口，并随回环优化更新。
+
+```bash
+bash scripts/install_semantic.sh
+bash scripts/build_semantic.sh
+# 启动原有 Livox / RealSense 驱动、启用对齐深度并设置实际 CAM_* 外参后：
+bash scripts/start_semantic_slam.sh
+```
+
+本机推理环境与编译输出保存在项目内。配置、恢复地图和测试命令见
+[语义地图说明](docs/semantic_mapping.md)。
+
 当前机器已确认是 Ubuntu 22.04，已安装 ROS 2 Humble Desktop、Livox ROS 2 驱动和 RealSense ROS 2 驱动。**仅安装驱动不代表传感器已连接。**
 
 ## 已验证输入的融合建图入口
@@ -232,6 +247,15 @@ source /opt/ros/foxy/setup.bash
   enable_depth:=true \
   enable_sync:=true
 
+
+/usr/bin/python3 /opt/ros/foxy/bin/ros2 launch realsense2_camera rs_launch.py \
+  rgb_camera.profile:=424x240x6 \
+  depth_module.profile:=424x240x6 \
+  align_depth.enable:=true \
+  enable_color:=true \
+  enable_depth:=true \
+  enable_sync:=true
+
 ## 本地cmd
 
 source ~/go2env.sh
@@ -319,3 +343,37 @@ bash /home/jyfight/ros2_ws/fusion_loop_search_fix_20261027/apply_live_loop_fix.s
 
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ros2 run rviz2 rviz2
+
+
+
+
+## 纯雷达建图
+cd /home/jyfight/Project/rtabmap_slam
+source setup.bash
+
+export ROS_DOMAIN_ID=0
+export ROS_LOCALHOST_ONLY=0
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="enxec1ac312a316"/></Interfaces></General></Domain></CycloneDDS>'
+
+LIDAR_DB="/home/jyfight/Project/rtabmap_slam/maps/livox_imu_$(date +%Y%m%d_%H%M%S_%N).db"
+
+ros2 launch /home/jyfight/Project/rtabmap_slam/launch/livox_realsense_3dslam.launch.py \
+  use_camera:=false \
+  use_imu:=true \
+  filter_imu:=true \
+  deskewing:=true \
+  assemble:=false \
+  qos:=2 \
+  qos_imu:=2 \
+  database_path:="$LIDAR_DB"
+
+
+  ## 融合建图
+  bash /home/jyfight/Project/rtabmap_slam/scripts/start_verified_fusion.sh
+
+
+
+## 语义建图
+cd /home/jyfight/Project/rtabmap_slam
+bash scripts/start_semantic_slam.sh
