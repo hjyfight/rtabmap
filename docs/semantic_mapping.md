@@ -2,8 +2,11 @@
 
 新增 `rtabmap_semantic_msgs`、`rtabmap_semantic`，并扩展 `rtabmap_viz`。
 使用 YOLOv8n-seg 在 RTAB-Map 保存的 RGB-D 关键帧上识别物体，通过深度定位，
-在当前三维地图窗口中显示 `chair #1 0.92` 一类的文字和定位点。
-工具栏的 **Object labels** 可以切换显示。标签默认使用模型英文类别名。
+在当前三维地图窗口中仅显示 `椅子`、`餐桌` 等中文类别名和定位点。
+工具栏的 **物体类别** 可以切换显示。当前 YOLO 模型的 80 个类别均有中文显示名称。
+对象编号、置信度和模型原始类别仍保留在消息、数据库和处理逻辑中；
+需要详细标签时，可在启动命令后加 `semantic_label_details:=true`。
+中文使用系统 Droid Sans Fallback 或 Noto Sans CJK 字体，由 VTK UTF-8 文字渲染器绘制。
 
 ## 安装与编译
 

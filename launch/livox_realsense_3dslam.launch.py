@@ -613,6 +613,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
                         {'odometry_node_name': 'icp_odometry',
                          'subscribe_rgbd': False,
                          'semantic_enabled': LaunchConfiguration('semantic_enabled'),
+                         'semantic_label_details': LaunchConfiguration('semantic_label_details'),
                          'semantic_map_key': os.path.realpath(database_path) if database_path else '',
                          'init_cache_path': (database_path if localization_value and
                              LaunchConfiguration('semantic_enabled').perform(context).lower() == 'true' else ''),
@@ -720,6 +721,10 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'semantic_enabled', default_value='false',
             description='Enable object labels in the semantic-enabled rtabmap_viz overlay.'),
+
+        DeclareLaunchArgument(
+            'semantic_label_details', default_value='false',
+            description='物体默认仅显示中文类别；设 true 时额外显示编号和置信度。'),
 
         DeclareLaunchArgument(
             'rtabmap_viz', default_value='true',

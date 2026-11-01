@@ -16,6 +16,8 @@ class LoopStatus:
         self.state = 'WAITING_FOR_SLAM'
         self.label = '等待 SLAM 数据'
         self.nodes = 0
+        self.rates_hz = {}
+        self.last_heartbeat = None
         self.counts = {'GLOBAL_LOOP': 0, 'PROXIMITY_ICP': 0}
         self.last_success = None
         self.recent = deque(maxlen=128)
@@ -23,6 +25,9 @@ class LoopStatus:
     def update(self, event):
         kind = event.get('type')
         if kind in ('DETECTION_STATUS', 'DETECTION_HEARTBEAT'):
+            if kind == 'DETECTION_HEARTBEAT':
+                self.rates_hz = dict(event.get('rates_hz', {}))
+                self.last_heartbeat = self.clock()
             self.state = event['state']
             self.label = event['state_label']
             self.nodes = event.get('nodes', self.nodes)
@@ -50,6 +55,8 @@ class LoopStatus:
             title, color = 'SLAM 数据已中断', '#a83c32'
         elif self.last_success and now < self.highlight_until:
             title, color = '回环成功', '#16834b'
+        elif self.state == 'WAITING_FOR_SLAM':
+            title, color = '等待建图数据', '#936519'
         else:
             title, color = '回环检测中', '#254560'
         last = '本次监控尚未收到成功回环'
@@ -59,6 +66,15 @@ class LoopStatus:
             stamp = datetime.datetime.fromtimestamp(event['time']).strftime('%H:%M:%S')
             last = f'最近成功：{stamp}  {kind}\n#{event["ref_id"]} ↔ #{event["target_id"]}'
         return title, color, last
+
+    def input_summary(self):
+        if not self.rates_hz:
+            return ''
+        rates = ' | '.join(f'{label} {self.rates_hz.get(key, 0.0):.1f}'
+                           for key, label in (('lidar', '雷达'), ('rgb', 'RGB'),
+                                              ('depth', '深度'), ('slam_info', 'SLAM')))
+        age = max(0.0, self.clock() - self.last_heartbeat)
+        return f'输入频率 Hz：{rates}\n监控更新：{age:.1f} 秒前'
 
 
 def create_panel():
@@ -88,7 +104,7 @@ def create_panel():
             self.sound.setChecked(True)
             for widget in (self.banner, self.count, self.phase, self.last, self.sound):
                 layout.addWidget(widget)
-            self.resize(420, 230)
+            self.resize(480, 330)
             screen = app.primaryScreen()
             if screen:
                 area = screen.availableGeometry()
@@ -112,7 +128,9 @@ def create_panel():
             counts = self.status.counts
             self.count.setText(f'本次监控成功 {sum(counts.values())} 次  |  '
                                f'全局 {counts["GLOBAL_LOOP"]}  /  空间 {counts["PROXIMITY_ICP"]}')
-            self.phase.setText(f'{self.status.label}\n当前图节点：{self.status.nodes}')
+            phase = f'{self.status.label}\n当前图节点：{self.status.nodes}'
+            summary = self.status.input_summary()
+            self.phase.setText(phase + ('\n' + summary if summary else ''))
             self.last.setText(last)
 
     panel = Panel()

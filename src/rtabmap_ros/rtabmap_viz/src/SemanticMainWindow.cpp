@@ -1,21 +1,34 @@
 #include "rtabmap_viz/SemanticMainWindow.h"
+#include "rtabmap_viz/SemanticLabels.h"
 #include <rtabmap/gui/CloudViewer.h>
 #include <QAction>
+#include <QFileInfo>
 #include <QToolBar>
 #include <QTimer>
+#include <vtkBillboardTextActor3D.h>
+#include <vtkRenderWindow.h>
+#include <vtkRenderer.h>
+#include <vtkRendererCollection.h>
+#include <vtkTextProperty.h>
+#include <algorithm>
 #include <cmath>
-#include <iomanip>
-#include <sstream>
+#include <stdexcept>
 
 namespace rtabmap_viz {
 
 SemanticMainWindow::SemanticMainWindow(rtabmap::PreferencesDialog * preferences,
-    const std::string & mapKey, double textScale, double labelOffset) :
-    MainWindow(preferences), mapKey_(mapKey), textScale_(textScale), labelOffset_(labelOffset)
+    const std::string & mapKey, double textScale, double labelOffset, bool showLabelDetails) :
+    MainWindow(preferences), mapKey_(mapKey), textScale_(textScale), labelOffset_(labelOffset),
+    showLabelDetails_(showLabelDetails)
 {
-  auto toolbar = addToolBar(tr("Semantic objects"));
+  for (const auto path : {"/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+                          "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"}) {
+    if (QFileInfo::exists(path)) { fontFile_ = path; break; }
+  }
+  if (fontFile_.empty()) throw std::runtime_error("Chinese labels require fonts-droid-fallback or fonts-noto-cjk");
+  auto toolbar = addToolBar(tr("语义物体"));
   toolbar->setObjectName("semanticObjectsToolbar");
-  showSemantics_ = toolbar->addAction(tr("Object labels"));
+  showSemantics_ = toolbar->addAction(tr("物体类别"));
   showSemantics_->setCheckable(true);
   showSemantics_->setChecked(true);
   connect(showSemantics_, &QAction::toggled, this, &SemanticMainWindow::redrawSemantics);
@@ -27,11 +40,31 @@ SemanticMainWindow::SemanticMainWindow(rtabmap::PreferencesDialog * preferences,
   timer->start(200);
 }
 
+vtkRenderer * SemanticMainWindow::textRenderer() const
+{
+  auto renderers = cloudViewer()->renderWindow()->GetRenderers();
+  renderers->InitTraversal();
+  while (auto renderer = renderers->GetNextItem()) {
+    if (renderer->GetLayer() == 3) return renderer; // CloudViewer's foreground text layer.
+  }
+  return nullptr;
+}
+
+void SemanticMainWindow::removeSemanticText(const std::string & id)
+{
+  const auto found = textActors_.find(id);
+  if (found != textActors_.end()) {
+    if (auto renderer = textRenderer()) renderer->RemoveViewProp(found->second);
+    textActors_.erase(found);
+  }
+  cloudViewer()->removeText(id);
+}
+
 void SemanticMainWindow::clearSemantics()
 {
   const bool changed = !rendered_.empty();
   for (const auto & id : rendered_) {
-    cloudViewer()->removeText(id);
+    removeSemanticText(id);
     cloudViewer()->removeSphere(id + "_point");
   }
   rendered_.clear();
@@ -56,6 +89,8 @@ void SemanticMainWindow::redrawSemantics()
   }
   std::set<std::string> next;
   bool changed = false;
+  auto renderer = textRenderer();
+  if (!renderer) return;
   for (const auto & object : semantics_.objects) {
     Eigen::Vector3d sum = Eigen::Vector3d::Zero();
     double totalWeight = 0.0;
@@ -81,26 +116,38 @@ void SemanticMainWindow::redrawSemantics()
     unsigned int hash = 2166136261u;
     for (unsigned char c : object.label) hash = (hash ^ c) * 16777619u;
     QColor color = object.dynamic ? QColor(Qt::yellow) : QColor::fromHsv(hash % 360, 180, 255);
-    std::ostringstream label;
-    label << object.label << " #" << object.object_id << " "
-          << std::fixed << std::setprecision(2) << object.confidence;
-    const std::string cacheText = label.str() + (object.dynamic ? "|dynamic" : "|static");
+    const auto label = semanticDisplayLabel(object.label, object.object_id,
+                                           object.confidence, showLabelDetails_);
+    const std::string cacheText = label + (object.dynamic ? "|dynamic" : "|static");
     const auto previous = drawingCache_.find(id);
+    const auto existingText = textActors_.find(id);
     if (previous != drawingCache_.end() && previous->second.second == cacheText &&
         (previous->second.first-position).squaredNorm() < 1e-8 &&
-        cloudViewer()->getAddedTexts().count(id) && cloudViewer()->getAddedSpheres().count(id+"_point"))
+        existingText != textActors_.end() && renderer->HasViewProp(existingText->second) &&
+        cloudViewer()->getAddedSpheres().count(id+"_point"))
       continue;
     drawingCache_[id] = std::make_pair(position, cacheText);
     changed = true;
-    cloudViewer()->addOrUpdateText(id, label.str(),
-      rtabmap::Transform(position.x(), position.y(), position.z() + labelOffset_, 0, 0, 0),
-      textScale_, color);
+    // PCL addText3D uses ASCII-only vtkVectorText. A billboard supports UTF-8/CJK fonts.
+    auto & actor = textActors_[id];
+    if (!actor) actor = vtkSmartPointer<vtkBillboardTextActor3D>::New();
+    actor->SetInput(label.c_str());
+    actor->SetPosition(position.x(), position.y(), position.z() + labelOffset_);
+    auto text = actor->GetTextProperty();
+    text->SetFontFamily(VTK_FONT_FILE);
+    text->SetFontFile(fontFile_.c_str());
+    // Keep the existing scale control: the default 0.12 selects an 18-pixel label.
+    text->SetFontSize(std::max(10, std::min(72, static_cast<int>(std::lround(textScale_ * 150)))));
+    text->SetColor(color.redF(), color.greenF(), color.blueF());
+    text->SetJustificationToCentered();
+    text->BoldOff();
+    if (!renderer->HasViewProp(actor)) renderer->AddViewProp(actor);
     cloudViewer()->addOrUpdateSphere(id + "_point",
       rtabmap::Transform(position.x(), position.y(), position.z(), 0, 0, 0), 0.035, color);
   }
   for (const auto & id : rendered_) {
     if (next.count(id) == 0) {
-      cloudViewer()->removeText(id);
+      removeSemanticText(id);
       cloudViewer()->removeSphere(id + "_point");
       drawingCache_.erase(id);
       changed = true;

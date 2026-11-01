@@ -6,6 +6,7 @@
 /maps/
 /models/
 /.venv-semantic/
+/.tools/miti/
 __pycache__/
 *.py[cod]
 *.bak

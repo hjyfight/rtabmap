@@ -74,6 +74,21 @@ class LoopStatusTests(unittest.TestCase):
         self.status.update(self.detection('COLLECTING_HISTORY', rehearsal_merged_id=1))
         self.assertIn('相邻帧合并', self.status.label)
 
+    def test_missing_depth_is_visible_before_first_slam_frame(self):
+        self.assertEqual(self.status.display()[0], '等待建图数据')
+        self.status.update({'type': 'DETECTION_HEARTBEAT', 'state': 'WAITING_FOR_SLAM',
+                            'state_label': '等待 SLAM 数据', 'slam_ok': False,
+                            'rates_hz': {'lidar': 9.0, 'rgb': 4.8,
+                                         'depth': 0.0, 'slam_info': 0.0}})
+        self.now += 2.0
+        self.assertEqual(self.status.display()[0], '等待建图数据')
+        self.assertIn('深度 0.0', self.status.input_summary())
+        self.assertIn('SLAM 0.0', self.status.input_summary())
+        self.assertIn('2.0 秒前', self.status.input_summary())
+        self.assertIsNone(self.status.last_update)
+        self.status.update(self.detection())
+        self.assertEqual(self.status.display()[0], '回环检测中')
+
 
 if __name__ == '__main__':
     unittest.main()

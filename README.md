@@ -2,6 +2,14 @@
 
 目标目录：`/home/jyfight/Project/rtabmap_slam`。
 
+## MITI 网页实时展示
+
+项目内已部署 MITI 3.3.6 与 foxglove_bridge 3.6.0。传感器和 SLAM 启动后，
+在新终端运行 `bash scripts/start_miti.sh`，浏览器打开
+<http://localhost:3000/rtabmap.html> 并应用项目布局，可查看三维地图、优化轨迹、
+语义标签、彩色/深度图和日志。安装、网卡设置及验证范围见
+[MITI 实时展示说明](docs/miti_live_demo.md)。
+
 ## YOLO 语义地图标签
 
 新增 YOLOv8n-seg 关键帧识别、RGB-D 三维定位、跨帧对象融合和语义地图保存。

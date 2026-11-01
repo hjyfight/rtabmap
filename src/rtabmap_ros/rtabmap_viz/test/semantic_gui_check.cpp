@@ -1,10 +1,15 @@
 #include "rtabmap_viz/SemanticMainWindow.h"
+#include "rtabmap_viz/SemanticLabels.h"
 #include <rtabmap/gui/CloudViewer.h>
 #include <rtabmap/gui/PreferencesDialog.h>
 #include <rtabmap/core/RtabmapEvent.h>
 #include <rtabmap/core/Parameters.h>
 #include <pcl/visualization/pcl_visualizer.h>
-#include <vtkActor.h>
+#include <vtkBillboardTextActor3D.h>
+#include <vtkPropCollection.h>
+#include <vtkRenderer.h>
+#include <vtkRendererCollection.h>
+#include <vtkTextProperty.h>
 #include <QApplication>
 #include <QElapsedTimer>
 #include <QThread>
@@ -18,13 +23,25 @@
 class InspectableCloud : public rtabmap::CloudViewer
 {
 public:
-  double textX(const std::string & id) {
-    auto actors = visualizer()->getShapeActorMap();
-    // PCL adds one '*' per viewport index; semantic text uses foreground layer 3.
-    auto found = actors->find(id + "***");
-    if (found == actors->end()) throw std::runtime_error("Missing text actor: " + id);
-    auto actor = vtkActor::SafeDownCast(found->second);
-    if (!actor) throw std::runtime_error("Text is not a VTK actor");
+  vtkRenderer * textRenderer() {
+    auto renderers = visualizer()->getRendererCollection();
+    renderers->InitTraversal();
+    while (auto renderer = renderers->GetNextItem()) {
+      if (renderer->GetLayer() == 3) return renderer;
+    }
+    throw std::runtime_error("Missing text renderer");
+  }
+  vtkBillboardTextActor3D * textActor() {
+    auto props = textRenderer()->GetViewProps();
+    props->InitTraversal();
+    while (auto prop = props->GetNextProp()) {
+      if (auto actor = vtkBillboardTextActor3D::SafeDownCast(prop)) return actor;
+    }
+    return nullptr;
+  }
+  double textX() {
+    auto actor = textActor();
+    if (!actor) throw std::runtime_error("Missing Chinese text actor");
     return actor->GetPosition()[0];
   }
 };
@@ -93,6 +110,11 @@ int main(int argc, char ** argv)
   window.resize(1200, 800);
   window.show();
   try {
+    require(rtabmap_viz::semanticDisplayLabel("chair", 1, .92) == "椅子", "Default label includes extra fields");
+    require(rtabmap_viz::semanticDisplayLabel("chair", 1, .92, true) == "椅子 #1 0.92", "Detailed formatting was lost");
+    require(rtabmap_viz::semanticClassNameChinese("dining table") == "餐桌", "Multiword class was not translated");
+    require(rtabmap_viz::semanticClassNameChinese("自定义类别") == "自定义类别", "Chinese custom label was lost");
+    require(rtabmap_viz::semanticClassNameChinese("custom_class") == "物体", "Missing Chinese fallback");
     window.graph(0);
     rtabmap_semantic_msgs::msg::SemanticMap map;
     map.map_key = "/tmp/gui_check.db";
@@ -108,13 +130,28 @@ int main(int argc, char ** argv)
     spinFor(300);
     require(window.semanticLabelCount() == 1, "Label did not appear");
     const auto id = std::string("semantic_object_1");
-    require(std::abs(window.view->textX(id) - 0.25) < 1e-5, "Wrong initial label position");
+    require(std::abs(window.view->textX() - 0.25) < 1e-5, "Wrong initial label position");
+    require(std::string(window.view->textActor()->GetInput()) == "椅子", "Visible label is not Chinese class only");
+    require(QFile::exists(window.view->textActor()->GetTextProperty()->GetFontFile()), "Chinese font missing");
+    map.objects[0].confidence = 0.23;
+    window.setSemanticMap(map);
+    require(std::string(window.view->textActor()->GetInput()) == "椅子", "Confidence change leaked into visible text");
+    require(map.objects[0].label == "chair" && map.objects[0].object_id == 1, "Original metadata changed");
+    auto second = object;
+    second.object_id = 2;
+    second.observations[0].position.x = 0.8;
+    map.objects.push_back(second);
+    window.setSemanticMap(map);
+    require(window.semanticLabelCount() == 2, "Same-class objects were merged by their translated name");
+    map.objects.pop_back();
+    window.setSemanticMap(map);
     window.view->removeAllTexts();
+    window.view->textRenderer()->RemoveViewProp(window.view->textActor());
     spinFor(300);
-    require(window.view->getAddedTexts().count(id), "Label lost after original map cleared texts");
+    require(window.view->textActor() != nullptr, "Label lost after map cleared its text actor");
     window.graph(1);
     spinFor(300);
-    require(std::abs(window.view->textX(id) - 1.25) < 1e-5, "Label did not follow graph correction");
+    require(std::abs(window.view->textX() - 1.25) < 1e-5, "Label did not follow graph correction");
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
     for (int x=0; x<35; ++x) for (int y=0; y<35; ++y) {
       pcl::PointXYZRGB point;
@@ -130,8 +167,9 @@ int main(int argc, char ** argv)
     map.objects.clear();
     window.setSemanticMap(map);
     spinFor(100);
-    require(window.semanticLabelCount() == 0 && !window.view->getAddedTexts().count(id), "Deleted label remained");
-    std::cout << "{\"passed\":true,\"native_text_actor\":true,\"redraw\":true,\"loop_shift_m\":1.0,\"delete\":true}" << std::endl;
+    require(window.semanticLabelCount() == 0 && !window.view->textActor(), "Deleted label remained");
+    require(!window.view->getAddedSpheres().count(id+"_point"), "Deleted object's marker remained");
+    std::cout << "{\"passed\":true,\"chinese_class_only\":true,\"metadata_preserved\":true,\"native_text_actor\":true,\"redraw\":true,\"loop_shift_m\":1.0,\"delete\":true}" << std::endl;
   } catch (const std::exception & error) {
     std::cerr << error.what() << std::endl;
     return 1;

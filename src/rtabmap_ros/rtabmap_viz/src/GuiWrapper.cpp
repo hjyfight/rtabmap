@@ -108,8 +108,9 @@ GuiWrapper::GuiWrapper(const rclcpp::NodeOptions & options) :
 		const auto mapKey = this->declare_parameter("semantic_map_key", std::string(""));
 		const auto scale = this->declare_parameter("semantic_text_scale", 0.12);
 		const auto offset = this->declare_parameter("semantic_label_offset", 0.2);
+		const auto details = this->declare_parameter("semantic_label_details", false);
 		const auto topic = this->declare_parameter("semantic_topic", std::string("/semantic/objects"));
-		auto window = new SemanticMainWindow(prefDialog_, mapKey, scale, offset);
+		auto window = new SemanticMainWindow(prefDialog_, mapKey, scale, offset, details);
 		mainWindow_ = window;
 		semanticMapTopic_ = this->create_subscription<rtabmap_semantic_msgs::msg::SemanticMap>(
 			topic, rclcpp::QoS(1).reliable().transient_local(),
