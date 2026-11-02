@@ -33,6 +33,16 @@ foxglove_bridge **3.6.0** 和所需的 rosx-introspection / RapidJSON 包。
 展示脚本只启动 MITI、foxglove_bridge 和显示消息转换节点。关闭此终端或按 Ctrl+C
 停止展示，传感器和 SLAM 仍由各自终端管理。需要切换地图会话时，建议同时重启展示脚本。
 
+### 修改左上角的系统名称
+
+当前名称为“多模态感知数据融合与建图系统”。修改 `config/miti_branding.json` 的
+`title` 后，在项目目录执行 `python3 scripts/install_miti_loop_panel.py`，
+再在 MITI 主页面按 Ctrl+Shift+R 强制刷新即可。正常运行 `scripts/start_miti.sh`
+时也会自动应用该配置。无需重启建图或重新应用布局。
+
+左上角使用文字代替原来的 MITI 标志图片；窄屏显示不下时省略末尾，鼠标悬停可查看
+完整名称。该配置仅修改工作区左上角标题。
+
 ## 默认面板
 
 | 面板 / 图层 | 话题 | 说明 |
