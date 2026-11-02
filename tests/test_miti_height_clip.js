@@ -76,8 +76,8 @@ test('separate scene materials can use independent clip settings', () => {
 });
 
 test('controls expose the switch, slider, numeric height and actual reference frame', () => {
-  const props = {settings: {enabled: true, height: 1.25}, frame: 'map', bounds: [-5, 5],
-    draft: '1.25', id: 'test', onToggle() {}, onSlide() {}, onDraft() {}, onCommit() {}};
+  const props = {settings: {enabled: true, height: 1.25}, expanded: true, frame: 'map', bounds: [-5, 5],
+    draft: '1.25', id: 'test', onToggle() {}, onExpand() {}, onSlide() {}, onDraft() {}, onCommit() {}};
   const html = renderToStaticMarkup(React.createElement(clip.ControlsView, props));
   assert.match(html, /隐藏顶部/);
   assert.match(html, /aria-pressed="true"/);
@@ -85,8 +85,17 @@ test('controls expose the switch, slider, numeric height and actual reference fr
   assert.match(html, /type="number"/);
   assert.match(html, /1\.25 m/);
   assert.match(html, /map 坐标系的 Z 高度/);
+  assert.match(html, /aria-expanded="true"/);
+  assert.match(html, /收起高度设置/);
+  const collapsed = renderToStaticMarkup(React.createElement(clip.ControlsView, {...props, expanded: false}));
+  assert.match(collapsed, /aria-pressed="true"/);
+  assert.match(collapsed, /aria-expanded="false"/);
+  assert.match(collapsed, /展开高度设置/);
+  assert.match(collapsed, /1\.25 m/);
+  assert.doesNotMatch(collapsed, /type="range"|type="number"/);
   const disabled = renderToStaticMarkup(React.createElement(clip.ControlsView, {...props,
     settings: {enabled: false, height: 1.25}}));
   assert.match(disabled, /aria-pressed="false"/);
-  assert.doesNotMatch(disabled, /type="range"/);
+  assert.match(disabled, /aria-expanded="true"/);
+  assert.match(disabled, /type="range"/);
 });

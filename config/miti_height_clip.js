@@ -56,8 +56,12 @@ function rtabmapHeightClipFactory(React) {
       color:#dce8f3;background:rgba(17,25,35,.94);border:1px solid #344355;border-radius:7px;
       box-shadow:0 3px 14px #0003;font:12px/1.45 system-ui,sans-serif;}
     .rtab-height * {box-sizing:border-box;}
-    .rtab-height-toggle {display:flex;align-items:center;gap:8px;width:100%;padding:7px 10px;
+    .rtab-height-header {display:flex;align-items:center;}
+    .rtab-height-toggle {display:flex;align-items:center;gap:8px;flex:1;min-width:0;padding:7px 10px;
       border:0;border-radius:6px;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;}
+    .rtab-height-expand {padding:7px 9px;border:0;border-left:1px solid #344355;border-radius:0 6px 6px 0;
+      background:transparent;color:#a6b9cb;font:inherit;white-space:nowrap;cursor:pointer;}
+    .rtab-height-expand:hover {background:#ffffff0a;color:#e4edf5;}
     .rtab-height-toggle[aria-pressed=true] {color:#77dfc0;}
     .rtab-height-indicator {width:7px;height:7px;border-radius:50%;background:#71839a;flex:none;}
     .rtab-height-toggle[aria-pressed=true] .rtab-height-indicator {background:#77dfc0;}
@@ -69,19 +73,24 @@ function rtabmapHeightClipFactory(React) {
     .rtab-height-number {width:77px;min-width:0;padding:3px 4px;border:1px solid #445467;border-radius:4px;
       background:#101923;color:#e4edf5;font:inherit;font-variant-numeric:tabular-nums;}
     .rtab-height-note {margin-top:5px;color:#8ea3b8;font-size:10px;overflow-wrap:anywhere;}
-    @media (pointer:coarse) {.rtab-height-toggle {min-height:44px}.rtab-height-number {font-size:16px;min-height:36px;}}
+    @media (pointer:coarse) {.rtab-height-toggle,.rtab-height-expand {min-height:44px}.rtab-height-number {font-size:16px;min-height:36px;}}
   `;
 
-  function ControlsView({settings, frame, bounds, draft, id, onToggle, onSlide, onDraft, onCommit}) {
+  function ControlsView({settings, expanded, frame, bounds, draft, id, onToggle, onExpand, onSlide, onDraft, onCommit}) {
     return h('div', {className: 'rtab-height', role: 'group', 'aria-label': '点云顶部裁剪',
       onPointerDown: e => e.stopPropagation(), onPointerMove: e => e.stopPropagation(),
       onPointerUp: e => e.stopPropagation()},
       h('style', null, css),
-      h('button', {type: 'button', className: 'rtab-height-toggle', onClick: onToggle,
-        'aria-pressed': settings.enabled, 'aria-expanded': settings.enabled, 'aria-controls': id + '-fields'},
-        h('span', {className: 'rtab-height-indicator', 'aria-hidden': true}), '隐藏顶部',
-        h('span', {className: 'rtab-height-value'}, settings.enabled ? settings.height.toFixed(2) + ' m' : '关闭')),
-      settings.enabled ? h('div', {className: 'rtab-height-fields', id: id + '-fields'},
+      h('div', {className: 'rtab-height-header'},
+        h('button', {type: 'button', className: 'rtab-height-toggle', onClick: onToggle,
+          'aria-pressed': settings.enabled, title: settings.enabled ? '关闭顶部裁剪，恢复完整点云' : '开启顶部裁剪'},
+          h('span', {className: 'rtab-height-indicator', 'aria-hidden': true}), '隐藏顶部',
+          h('span', {className: 'rtab-height-value'}, settings.enabled ? settings.height.toFixed(2) + ' m' : '关闭')),
+        h('button', {type: 'button', className: 'rtab-height-expand', onClick: onExpand,
+          'aria-expanded': expanded, 'aria-controls': id + '-fields',
+          'aria-label': expanded ? '收起高度设置' : '展开高度设置',
+          title: expanded ? '收起高度设置，保持当前裁剪效果' : '展开高度设置'}, expanded ? '收起' : '展开')),
+      expanded ? h('div', {className: 'rtab-height-fields', id: id + '-fields'},
         h('label', {className: 'rtab-height-label', htmlFor: id + '-range'}, '最高显示高度（米）'),
         h('div', {className: 'rtab-height-row'},
           h('input', {id: id + '-range', className: 'rtab-height-range', type: 'range',
@@ -96,6 +105,8 @@ function rtabmapHeightClipFactory(React) {
 
   function Controls({settings: input, frame = 'map', onChange}) {
     const settings = normalize(input);
+    // Opening/closing the editor does not change the saved clipping settings.
+    const [expanded, setExpanded] = React.useState(false);
     const [draft, setDraft] = React.useState(() => settings.height.toFixed(2));
     const [bounds, setBounds] = React.useState(() => [Math.min(-5, Math.floor(settings.height - 1)),
                                                     Math.max(5, Math.ceil(settings.height + 1))]);
@@ -113,8 +124,13 @@ function rtabmapHeightClipFactory(React) {
       setDraft(next.height.toFixed(2));
       onChange(next);
     }
-    return h(ControlsView, {settings, frame, bounds, draft, id,
-      onToggle: () => onChange({...settings, enabled: !settings.enabled}),
+    return h(ControlsView, {settings, expanded, frame, bounds, draft, id,
+      onToggle: () => {
+        const enabled = !settings.enabled;
+        onChange({...settings, enabled});
+        if (enabled) setExpanded(true);
+      },
+      onExpand: () => setExpanded(previous => !previous),
       onSlide: event => {const height = Number(event.target.value); onChange({...settings, height});},
       onDraft: event => setDraft(event.target.value), onCommit: commit});
   }
