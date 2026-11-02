@@ -37,7 +37,8 @@ class FixtureDetector:
 
 
 def main():
-    real_yolo = '--real-yolo' in sys.argv
+    real_yoloe = '--real-yoloe' in sys.argv
+    real_yolo = '--real-yolo' in sys.argv or real_yoloe
     project = Path(__file__).resolve().parents[3]
     rclpy.init()
     with tempfile.TemporaryDirectory(prefix='semantic_ros_') as directory:
@@ -50,8 +51,19 @@ def main():
         probe = rclpy.create_node('semantic_pipeline_probe')
         params = [Parameter('database_path', value=str(Path(directory)/'map.db'))]
         if real_yolo:
-            params.append(Parameter('model_path', value=str(project/'models/yolov8n-seg.pt')))
+            weights = 'yoloe-11s-seg-pf.pt' if real_yoloe else 'yolov8n-seg.pt'
+            params.append(Parameter('model_path', value=str(project/'models'/weights)))
+        if real_yoloe:
+            import yaml
+            config = yaml.safe_load((project/'src/rtabmap_semantic/config/yoloe.yaml').read_text())['semantic_mapper']['ros__parameters']
+            params.extend([Parameter(name, value=value) for name, value in config.items()])
+            params.append(Parameter('detector_backend', value='yoloe_pf'))
         mapper = SemanticMapper(detector=None if real_yolo else FixtureDetector(), parameter_overrides=params)
+        if real_yoloe:
+            from rtabmap_semantic.labels import chinese_label, canonical_label
+            assert mapper.store.path.name == 'map.yoloe.stable.semantic.sqlite'
+            assert all(any('\u3400' <= c <= '\u9fff' for c in chinese_label(canonical_label(name)))
+                       for name in mapper.detector.model.names.values())
         executor.add_node(probe)
         executor.add_node(mapper)
         latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
@@ -69,6 +81,8 @@ def main():
             rgb = np.full((100, 100, 3), 128, np.uint8)
         height, width = rgb.shape[:2]
         target_label = 'bus' if real_yolo else 'chair'
+        display_label = '公交车' if real_yoloe else target_label
+        frame_count = mapper.config['min_observations']
 
         def until(predicate, seconds=15):
             end = time.monotonic()+seconds
@@ -82,7 +96,7 @@ def main():
 
         try:
             until(lambda: maps.get_subscription_count() >= 1)
-            for node_id in range(1, 4):
+            for node_id in range(1, frame_count+1):
                 data = MapData()
                 data.header.frame_id = 'map'
                 data.header.stamp.sec = node_id
@@ -115,9 +129,11 @@ def main():
                 data.nodes = [node]
                 maps.publish(data)
                 until(lambda: mapper.processed == node_id)
-            until(lambda: received and any(o.label == target_label for o in received[-1].objects))
-            obj = next(o for o in received[-1].objects if o.label == target_label)
-            assert len(obj.observations) == 3
+                if node_id < frame_count:
+                    assert not any(o.label == target_label for o in mapper.state.visible_objects())
+            until(lambda: received and any(o.label == display_label for o in received[-1].objects))
+            obj = next(o for o in received[-1].objects if o.label == display_label)
+            assert len(obj.observations) == frame_count
             if not real_yolo:
                 np.testing.assert_allclose([obj.observations[0].position.x,
                                         obj.observations[0].position.y,
@@ -126,11 +142,10 @@ def main():
                 assert abs(obj.observations[0].position.z-2) < 1e-5
             tracked = next(o for o in mapper.state.objects if o.label == target_label)
             before = mapper.state.position(tracked).copy()
-            data.graph.poses[0].position.x = 0.1
-            data.graph.poses[1].position.x = 0.2
-            data.graph.poses[2].position.x = 0.3
+            for i, pose in enumerate(data.graph.poses, 1):
+                pose.position.x = i * 0.1
             graphs.publish(data.graph)
-            until(lambda: abs(mapper.state.position(tracked)[0]-(before[0]+0.2)) < 1e-5)
+            until(lambda: abs(mapper.state.position(tracked)[0]-(before[0]+0.05*(frame_count+1))) < 1e-5)
             original_uuid = mapper.state.map_uuid
             executor.remove_node(mapper)
             mapper.destroy_node()
@@ -152,13 +167,16 @@ def main():
             until(lambda: mapper.state.map_uuid != original_uuid)
             assert set(mapper.state.nodes) == {1}
             assert not any(o.label == target_label for o in mapper.state.visible_objects())
-            report = dict(passed=True, frames=3, label=target_label, real_yolo=real_yolo,
+            report = dict(passed=True, frames=frame_count, label=target_label, display_label=display_label,
+                          confirmation_window=mapper.config['confirmation_window'], real_yolo=real_yolo,
+                          real_yoloe=real_yoloe,
                           compressed_keyframe=True, projection=True, loop_reprojection=True,
                           reload=True, map_reset=True)
             print(json.dumps(report))
             output = project/'logs/semantic_validation'
             output.mkdir(parents=True, exist_ok=True)
-            (output/('ros_real_yolo.json' if real_yolo else 'ros_pipeline.json')).write_text(json.dumps(report, indent=2))
+            filename = 'ros_real_yoloe.json' if real_yoloe else ('ros_real_yolo.json' if real_yolo else 'ros_pipeline.json')
+            (output/filename).write_text(json.dumps(report, indent=2))
         finally:
             executor.remove_node(mapper)
             mapper.destroy_node()

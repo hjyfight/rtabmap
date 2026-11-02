@@ -16,6 +16,7 @@ from rtabmap_semantic_msgs.msg import Keyframe, Observation, SemanticMap, Semant
 
 from .fusion import SemanticState, SemanticStore
 from .geometry import rigid_matrix, lift_mask
+from .labels import chinese_label, YOLOE_LABEL_POLICY_VERSION
 
 
 def ros_matrix(pose):
@@ -26,6 +27,21 @@ def ros_matrix(pose):
     return rigid_matrix([p.x, p.y, p.z], [q.x, q.y, q.z, q.w])
 
 
+def store_config(config, model_hash):
+    persistent = {k: v for k, v in config.items() if k not in
+                  ('database_path', 'semantic_database_path', 'device', 'cpu_threads', 'label_language')}
+    # Retain the exact old fingerprint for existing YOLOv8 maps.
+    if persistent.get('detector_backend') == 'yolov8':
+        persistent.pop('detector_backend')
+        for key, default in (('confirmation_window', 0), ('dynamic_min_observations', 1)):
+            if persistent.get(key) == default:
+                persistent.pop(key)
+    else:
+        persistent['label_policy_version'] = YOLOE_LABEL_POLICY_VERSION
+    persistent['model_sha256'] = model_hash
+    return persistent
+
+
 class SemanticMapper(Node):
     def __init__(self, detector=None, **kwargs):
         super().__init__('semantic_mapper', **kwargs)
@@ -34,31 +50,38 @@ class SemanticMapper(Node):
                         min_depth=0.3, max_depth=4.0, min_depth_points=30,
                         min_observations=3, association_distance=0.45,
                         dynamic_classes=['person', 'cat', 'dog'], dynamic_ttl=3.0,
-                        max_observations=30, classes=['*'])
+                        max_observations=30, classes=['*'], detector_backend='yolov8',
+                        label_language='en', confirmation_window=0, dynamic_min_observations=1)
         self.config = {name: self.declare_parameter(name, value).value for name, value in defaults.items()}
         c = self.config
         if not c['database_path']:
             raise ValueError('database_path must identify the paired RTAB-Map database')
+        if c['detector_backend'] not in ('yolov8', 'yoloe_pf'):
+            raise ValueError('detector_backend must be yolov8 or yoloe_pf')
+        if c['label_language'] not in ('en', 'zh'):
+            raise ValueError('label_language must be en or zh')
         if not (0 < c['confidence'] <= 1 and 0 < c['min_depth'] < c['max_depth'] and
                 c['min_observations'] >= 1 and c['association_distance'] > 0 and
                 c['max_observations'] >= c['min_observations'] and c['dynamic_ttl'] > 0):
             raise ValueError('Invalid semantic mapping thresholds')
         self.map_key = str(Path(c['database_path']).expanduser().resolve())
-        semantic_path = c['semantic_database_path'] or str(Path(self.map_key).with_suffix('.semantic.sqlite'))
+        suffix = ('.yoloe.stable.semantic.sqlite' if c['confirmation_window'] else '.yoloe.semantic.sqlite') \
+            if c['detector_backend'] == 'yoloe_pf' else '.semantic.sqlite'
+        semantic_path = c['semantic_database_path'] or str(Path(self.map_key).with_suffix(suffix))
         self.state = SemanticState(c['min_observations'], c['association_distance'],
-                                   c['dynamic_classes'], c['dynamic_ttl'], c['max_observations'])
+                                   c['dynamic_classes'], c['dynamic_ttl'], c['max_observations'],
+                                   c['confirmation_window'], c['dynamic_min_observations'],
+                                   unique_objects=c['detector_backend'] == 'yoloe_pf')
         model_path = Path(c['model_path']).expanduser()
         # Detect replaced weights even if the filename did not change.
         model_hash = hashlib.sha256(model_path.read_bytes()).hexdigest() if model_path.is_file() else ''
-        persistent_config = {k: v for k, v in c.items() if k not in
-                             ('database_path', 'semantic_database_path', 'device', 'cpu_threads')}
-        persistent_config['model_sha256'] = model_hash
+        persistent_config = store_config(c, model_hash)
         self.store = SemanticStore(semantic_path, self.map_key, persistent_config)
         self.store.load(self.state)
         if detector is None:
             from .detector import YoloDetector
             detector = YoloDetector(c['model_path'], c['device'], c['confidence'],
-                                    c['image_size'], c['cpu_threads'])
+                                    c['image_size'], c['cpu_threads'], c['detector_backend'])
         self.detector = detector
         self.bridge = CvBridge()
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix='semantic_yolo')
@@ -158,7 +181,8 @@ class SemanticMapper(Node):
             message.header.stamp = self.graph_stamp
         message.map_key, message.map_uuid = self.map_key, self.state.map_uuid
         for obj in self.state.visible_objects():
-            item = SemanticObject(object_id=obj.object_id, label=obj.label,
+            label = chinese_label(obj.label) if self.config['label_language'] == 'zh' else obj.label
+            item = SemanticObject(object_id=obj.object_id, label=label,
                                   confidence=obj.confidence, dynamic=obj.dynamic)
             for observation in self.state.inlier_observations(obj):
                 anchor = Observation(node_id=observation.node_id, node_stamp=observation.node_stamp,

@@ -6,6 +6,8 @@
 /maps/
 /models/
 /.venv-semantic/
+/.venv-yoloe/
+/.cache/yoloe-pip/
 /.tools/miti/
 __pycache__/
 *.py[cod]

@@ -1,5 +1,8 @@
 # YOLO 物体标签与 RTAB-Map 原生三维窗口
 
+新增的 YOLOE 无提示后端使用独立环境和启动入口，详见 [YOLOE 语义建图](yoloe_semantic_mapping.md)。
+本页原 YOLOv8 的默认环境与命令继续有效。
+
 新增 `rtabmap_semantic_msgs`、`rtabmap_semantic`，并扩展 `rtabmap_viz`。
 使用 YOLOv8n-seg 在 RTAB-Map 保存的 RGB-D 关键帧上识别物体，通过深度定位，
 在当前三维地图窗口中仅显示 `椅子`、`餐桌` 等中文类别名和定位点。

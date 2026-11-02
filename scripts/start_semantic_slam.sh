@@ -7,12 +7,19 @@ if [[ ! -f "$SEMANTIC_PROJECT/install/semantic/setup.bash" ]]; then
   exit 1
 fi
 source "$SEMANTIC_PROJECT/install/semantic/setup.bash"
-if [[ ! -x "$SEMANTIC_PROJECT/.venv-semantic/bin/python3" || ! -s "$SEMANTIC_PROJECT/models/yolov8n-seg.pt" ]]; then
-  printf '先运行 bash scripts/install_semantic.sh\n' >&2
+SEMANTIC_RUNTIME_PYTHON=${SEMANTIC_RUNTIME_PYTHON:-"$SEMANTIC_PROJECT/.venv-semantic/bin/python3"}
+SEMANTIC_MODEL_PATH=${SEMANTIC_MODEL_PATH:-"$SEMANTIC_PROJECT/models/yolov8n-seg.pt"}
+SEMANTIC_BACKEND=${SEMANTIC_BACKEND:-yolov8}
+if [[ ! -x "$SEMANTIC_RUNTIME_PYTHON" || ! -s "$SEMANTIC_MODEL_PATH" ]]; then
+  if [[ $SEMANTIC_BACKEND == yoloe_pf ]]; then
+    printf '先运行 bash scripts/install_yoloe.sh\n' >&2
+  else
+    printf '先运行 bash scripts/install_semantic.sh\n' >&2
+  fi
   exit 1
 fi
-export YOLO_CONFIG_DIR="$SEMANTIC_PROJECT/models/.ultralytics"
-export MPLCONFIGDIR="$SEMANTIC_PROJECT/models/.matplotlib"
+export YOLO_CONFIG_DIR=${YOLO_CONFIG_DIR:-"$SEMANTIC_PROJECT/models/.ultralytics"}
+export MPLCONFIGDIR=${MPLCONFIGDIR:-"$SEMANTIC_PROJECT/models/.matplotlib"}
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
 exec 9>"$SEMANTIC_PROJECT/logs/semantic_slam_domain_${ROS_DOMAIN_ID}.lock"
 if ! flock -n 9; then
@@ -31,6 +38,8 @@ for SEMANTIC_CAM_VAR in CAM_X CAM_Y CAM_Z CAM_ROLL CAM_PITCH CAM_YAW; do
   fi
 done
 exec ros2 launch "$SEMANTIC_PROJECT/launch/semantic_slam.launch.py" \
+  model_path:="$SEMANTIC_MODEL_PATH" semantic_python:="$SEMANTIC_RUNTIME_PYTHON" \
+  semantic_backend:="$SEMANTIC_BACKEND" \
   qos:=2 qos_imu:=2 \
   cam_to_lidar_x:="${CAM_X:-0.0}" cam_to_lidar_y:="${CAM_Y:--0.12}" \
   cam_to_lidar_z:="${CAM_Z:--0.03}" cam_to_lidar_roll:="${CAM_ROLL:-0.0}" \

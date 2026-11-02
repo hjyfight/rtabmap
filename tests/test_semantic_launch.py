@@ -92,6 +92,18 @@ class SemanticLaunchTests(unittest.TestCase):
         self.assert_paired_map(nodes, str(database))
         self.assertEqual(mapper['model_path'], str(ROOT / 'models/yolov8n-seg.pt'))
         self.assertEqual(prefix, str(ROOT / '.venv-semantic/bin/python3'))
+        self.assertEqual(mapper['detector_backend'], 'yolov8')
+
+    def test_yoloe_uses_its_own_runtime_and_keeps_category_only_labels(self):
+        model = str(ROOT / 'models/yoloe-11s-seg-pf.pt')
+        python = str(ROOT / '.venv-yoloe/bin/python3')
+        nodes = resolve_launch(model_path=model, semantic_python=python,
+                               semantic_backend='yoloe_pf', semantic_label_details='false')
+        mapper, prefix = nodes['semantic_mapper']
+        self.assertEqual(mapper['model_path'], model)
+        self.assertEqual(mapper['detector_backend'], 'yoloe_pf')
+        self.assertEqual(prefix, python)
+        self.assertFalse(nodes['rtabmap_viz'][0]['semantic_label_details'])
 
     def test_overrides_reach_slam_mapper_and_gui(self):
         database = '/tmp/semantic launch test/map.db'

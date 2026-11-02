@@ -14,6 +14,7 @@ def generate_launch_description():
         DeclareLaunchArgument('database_path', default_value=str(project / 'maps' / f'semantic_{stamp}.db')),
         DeclareLaunchArgument('model_path', default_value=str(project / 'models' / 'yolov8n-seg.pt')),
         DeclareLaunchArgument('semantic_python', default_value=str(project / '.venv-semantic' / 'bin' / 'python3')),
+        DeclareLaunchArgument('semantic_backend', default_value='yolov8'),
         IncludeLaunchDescription(PythonLaunchDescriptionSource(
             str(project / 'launch' / 'livox_realsense_3dslam.launch.py')),
             launch_arguments={'use_camera': 'true', 'semantic_enabled': 'true',
@@ -25,5 +26,6 @@ def generate_launch_description():
                 'database_path': LaunchConfiguration('database_path'),
                 'model_path': LaunchConfiguration('model_path'),
                 'semantic_python': LaunchConfiguration('semantic_python'),
+                'semantic_backend': LaunchConfiguration('semantic_backend'),
             }.items()),
     ])
