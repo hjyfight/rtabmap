@@ -6,7 +6,8 @@
       "props": {
         "version": 2,
         "frame": {"fixedFrame": "map", "displayFrame": "map", "followMode": "fixed", "syncTimestamps": false},
-        "scene": {"background": "#111923", "renderStats": false, "labelScale": 6},
+        "scene": {"background": "#111923", "renderStats": false, "labelScale": 6,
+                  "heightClip": {"enabled": false, "height": 2.0}},
         "view": {"distance": 12, "thetaOffset": 45, "phi": 55, "targetOffset": [0, 0, 0]},
         "transforms": {"visible": false, "tfTopics": ["/tf", "/tf_static"], "staticTfTopics": ["/tf_static"]},
         "topics": {
