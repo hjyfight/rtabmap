@@ -1,14 +1,20 @@
 """Verify projection through optimized anchors, missing data and snapshot deletion."""
 import importlib.util
+from copy import deepcopy
 from pathlib import Path
+import sys
+from types import SimpleNamespace
 import unittest
 
 import numpy as np
 from geometry_msgs.msg import Pose
+from rtabmap_msgs.msg import RGBDImage
+from sensor_msgs.msg import CameraInfo, Image
 from std_msgs.msg import Header
 from rtabmap_semantic_msgs.msg import Observation, SemanticMap, SemanticObject
 from visualization_msgs.msg import Marker
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 spec = importlib.util.spec_from_file_location(
     'miti_scene_adapter', Path(__file__).resolve().parents[1] / 'scripts/miti_scene_adapter.py')
 adapter = importlib.util.module_from_spec(spec)
@@ -16,6 +22,33 @@ spec.loader.exec_module(adapter)
 
 
 class SceneAdapterTest(unittest.TestCase):
+    def test_only_valid_aligned_depth_is_forwarded_without_resizing_or_retimestamping(self):
+        images, infos, warnings = [], [], []
+        node = SimpleNamespace(depth_pub=SimpleNamespace(publish=images.append),
+            depth_info_pub=SimpleNamespace(publish=infos.append),
+            get_logger=lambda: SimpleNamespace(warning=lambda text, **kwargs: warnings.append(text)))
+        header = Header(frame_id='camera_color_optical_frame')
+        header.stamp.sec = 123
+        rgb = Image(header=deepcopy(header), width=2, height=2, encoding='rgb8', step=6, data=[10] * 12)
+        depth = Image(header=deepcopy(header), width=2, height=2, encoding='16UC1', step=4, data=[232, 3] * 4)
+        info = CameraInfo(header=deepcopy(header), width=2, height=2, k=[1., 0., 1., 0., 1., 1., 0., 0., 1.])
+        message = RGBDImage(rgb=rgb, depth=depth, rgb_camera_info=info)
+        adapter.MitiSceneAdapter.on_rgbd(node, message)
+        self.assertIs(images[-1], message.depth)
+        self.assertIs(infos[-1], message.rgb_camera_info)
+        message.depth.width = 640
+        adapter.MitiSceneAdapter.on_rgbd(node, message)
+        self.assertEqual(len(images), 1)
+        self.assertEqual(len(infos), 1)
+        message.depth.width = 2
+        message.depth.header.stamp.sec = 124
+        adapter.MitiSceneAdapter.on_rgbd(node, message)
+        self.assertEqual(len(images), 1)
+        message.depth.header.stamp.sec = 123
+        adapter.MitiSceneAdapter.on_rgbd(node, message)
+        self.assertEqual(len(images), 2)
+        self.assertEqual(len(warnings), 2)
+
     def test_optimized_anchors_and_invalid_observations(self):
         pose = Pose()
         pose.position.x = 10.0

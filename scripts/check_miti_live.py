@@ -20,6 +20,7 @@ PROJECT = Path(__file__).resolve().parents[1]
 APP = PROJECT / '.tools/miti/root/usr/lib/miti'
 TYPES = {'/cloud_map': PointCloud2, '/camera/color/image_raw': Image,
          '/camera/aligned_depth_to_color/image_raw': Image, '/icp_odom': Odometry,
+         '/miti/aligned_depth/image_raw': Image,
          '/miti/trajectory': RosPath, '/miti/semantic_markers': MarkerArray,
          '/semantic/status': String, '/miti/loop_status': String,
          '/tf': TFMessage, '/tf_static': TFMessage}

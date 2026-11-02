@@ -10,9 +10,11 @@ import rclpy
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-from rtabmap_msgs.msg import MapGraph
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
+from rtabmap_msgs.msg import MapGraph, RGBDImage
+from sensor_msgs.msg import CameraInfo, Image
 from visualization_msgs.msg import Marker, MarkerArray
+from guard_rgbd_input import validate_rgbd
 
 
 def pose_matrix(pose):
@@ -83,13 +85,28 @@ class MitiSceneAdapter(Node):
                              durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.path_pub = self.create_publisher(Path, '/miti/trajectory', latched)
         self.marker_pub = self.create_publisher(MarkerArray, '/miti/semantic_markers', latched)
+        # Reuse the SLAM input checks. The driver's aligned-depth topic can contain
+        # raw-sized frames, so expose only complete, consistent RGB-D pairs to MITI.
+        image_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE)
+        self.depth_pub = self.create_publisher(Image, '/miti/aligned_depth/image_raw', image_qos)
+        self.depth_info_pub = self.create_publisher(CameraInfo, '/miti/aligned_depth/camera_info', image_qos)
+        self.create_subscription(RGBDImage, '/rgbd_image', self.on_rgbd, qos_profile_sensor_data)
         self.create_subscription(MapGraph, '/mapGraph', self.on_graph, 5)
         try:
             from rtabmap_semantic_msgs.msg import SemanticMap
             self.create_subscription(SemanticMap, '/semantic/objects', self.on_objects, latched)
         except ImportError:
             self.get_logger().warning('Semantic messages unavailable; trajectory display is enabled.')
-        self.get_logger().info('MITI display adapter ready; waiting for /mapGraph and /semantic/objects')
+        self.get_logger().info('MITI display adapter ready; waiting for /mapGraph, /semantic/objects and /rgbd_image')
+
+    def on_rgbd(self, message):
+        error = validate_rgbd(message)
+        if error:
+            self.get_logger().warning('Skipped invalid display depth: ' + error, throttle_duration_sec=5.0)
+            return
+        # Alignment uses color intrinsics; retain the original pixels, units and timestamps.
+        self.depth_info_pub.publish(message.rgb_camera_info)
+        self.depth_pub.publish(message.depth)
 
     def on_graph(self, graph):
         poses = {}

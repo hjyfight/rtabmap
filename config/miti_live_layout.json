@@ -27,8 +27,10 @@
     },
     {
       "i": "rtabmap-depth", "type": "camera-viewer", "title": "RealSense · 对齐深度",
+      "rtabmapAlignedDepthVersion": 1,
       "x": 8, "y": 6, "w": 4, "h": 6,
-      "props": {"topic": "/camera/aligned_depth_to_color/image_raw", "maxFps": 10, "colorMode": "colormap", "valueMin": 300, "valueMax": 4000}
+      "props": {"topic": "/miti/aligned_depth/image_raw",
+                "maxFps": 10, "colorMode": "colormap", "valueMin": 300, "valueMax": 4000}
     },
     {
       "i": "rtabmap-log", "type": "log", "title": "回环检测日志",

@@ -53,7 +53,7 @@ foxglove_bridge **3.6.0** 和所需的 rosx-introspection / RapidJSON 包。
 | 当前位姿 | `/icp_odom` | 位置来自 ICP 里程计并通过 TF 映射到地图；箭头指向深度相机光轴 |
 | 实时雷达 | `/livox/lidar` | 默认隐藏；需要时在三维面板 Topics 中打开 |
 | 彩色画面 | `/camera/color/image_raw` | 默认最多绘制 15 FPS |
-| 对齐深度 | `/camera/aligned_depth_to_color/image_raw` | 默认 10 FPS、16UC1 深度显示范围 0.3–4 m |
+| 对齐深度 | `/miti/aligned_depth/image_raw` | 仅显示校验通过的 RGB-D 深度帧，默认最多 10 FPS，16UC1 显示范围 0.3–4 m |
 | 回环检测日志 | `/rosout` | 底部左侧，14 px 字体；默认筛选 `loop_closure_diagnostics` 节点的 INFO 及以上日志 |
 | 回环状态 | `/miti/loop_status` | 底部右侧的原生面板，显示检测状态、成功次数、最近匹配节点和输入频率；支持独立放大 |
 
@@ -100,6 +100,21 @@ foxglove_bridge **3.6.0** 和所需的 rosx-introspection / RapidJSON 包。
 临时桥接：只重放该进程启动后的 JSONL 记录，并持续跟随日志，保留当前成功计数。
 它会在旧诊断退出或原生状态发布器出现时结束。新启动的诊断进程直接发布状态，
 常规启动不需要此兼容脚本；既有 Qt、SLAM 与地图数据库未因接入面板而重启。
+
+### 对齐深度分辨率跳动修复
+
+相机的 `/camera/aligned_depth_to_color/image_raw` 曾交替发布 `424×240` 与 `640×480`，
+后者与彩色尺寸不一致。MITI 现在由 `miti_scene_adapter.py` 订阅 `/rgbd_image`，
+复用建图入口的校验规则，核对彩色、深度、内参的尺寸、坐标系、时间戳、编码和缓冲区，
+通过后发布 `/miti/aligned_depth/image_raw` 及对应的 `camera_info`。
+保留原始深度像素、单位和时间戳；不缩放错误帧，也不补帧伪造帧率。
+
+已有项目深度面板会在页面刷新时自动迁移到新话题，保留面板位置、尺寸、色彩范围
+以及其他面板和高度裁剪设置。迁移只执行一次；自选话题和自行新增的面板不自动修改。
+首次部署该更新需重启 MITI 展示服务以加载适配器，相机、雷达和 SLAM 不需要重启。
+
+这项修复解决展示输入混用；有效帧率仍取决于相机的彩色/深度配对率。
+若彩色帧稀少，显示更新也会变慢，需要继续排查机载 RealSense 驱动或传输链路。
 
 ### 机器狗位置箭头与相机朝向
 

@@ -17,9 +17,9 @@ from geometry_msgs.msg import Pose, TransformStamped
 from nav_msgs.msg import Path as RosPath
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from rclpy.serialization import deserialize_message
-from rtabmap_msgs.msg import MapGraph
+from rtabmap_msgs.msg import MapGraph, RGBDImage
 from rtabmap_semantic_msgs.msg import Observation, SemanticMap, SemanticObject
-from sensor_msgs.msg import Image, PointCloud2
+from sensor_msgs.msg import CameraInfo, Image, PointCloud2
 from sensor_msgs_py.point_cloud2 import create_cloud_xyz32, read_points
 from std_msgs.msg import Header, String
 from tf2_msgs.msg import TFMessage
@@ -30,6 +30,7 @@ APP = PROJECT / '.tools/miti/root/usr/lib/miti'
 TYPES = {'/cloud_map': PointCloud2, '/camera/color/image_raw': Image,
          '/camera/aligned_depth_to_color/image_raw': Image, '/tf_static': TFMessage,
          '/miti/trajectory': RosPath, '/miti/semantic_markers': MarkerArray,
+         '/miti/aligned_depth/image_raw': Image, '/miti/aligned_depth/camera_info': CameraInfo,
          '/miti/loop_status': String}
 CLIENT = r"""
 const WS = require(process.argv[1]);
@@ -92,6 +93,7 @@ def main():
     assert any('type:"loop-status",label:' in source for source in bundled)
     assert any('rtabmapHeightClipFactory' in source and 'rtabmapClipDistance' in source for source in bundled)
     assert any('RtabmapCameraHeading.transform(' in source for source in bundled)
+    assert any('.map(rtabmapMigrateDepthWidget)' in source for source in bundled)
     client = subprocess.Popen([str(APP / 'node/bin/node'), '-e', CLIENT,
                                str(APP / 'node_modules/next/dist/compiled/ws'),
                                json.dumps(list(TYPES))], stdout=subprocess.PIPE,
@@ -102,6 +104,7 @@ def main():
                          durability=DurabilityPolicy.TRANSIENT_LOCAL)
     publications = [(topic, kind, node.create_publisher(kind, topic, latched))
                     for topic, kind in [('/cloud_map', PointCloud2), ('/tf_static', TFMessage),
+                                        ('/rgbd_image', RGBDImage),
                                         ('/mapGraph', MapGraph), ('/semantic/objects', SemanticMap),
                                         ('/miti/loop_status', String)]]
     for topic in ['/camera/color/image_raw', '/camera/aligned_depth_to_color/image_raw']:
@@ -122,6 +125,9 @@ def main():
             camera_header = Header(frame_id=transform.child_frame_id, stamp=header.stamp)
             rgb = Image(header=camera_header, width=2, height=2, encoding='rgb8', step=6, data=[100] * 12)
             depth = Image(header=camera_header, width=2, height=2, encoding='16UC1', step=4, data=[232, 3] * 4)
+            camera_info = CameraInfo(header=camera_header, width=2, height=2,
+                                     k=[1., 0., 1., 0., 1., 1., 0., 0., 1.])
+            rgbd = RGBDImage(rgb=rgb, depth=depth, rgb_camera_info=camera_info)
             loop_status = String(data=json.dumps({
                 'schema': 1, 'monitor_id': 'isolated-miti-test', 'published_at': time.time(),
                 'display_state': 'SUCCESS', 'title': '回环成功', 'phase': 'CONFIRMED',
@@ -132,6 +138,7 @@ def main():
                 'slam_age_seconds': 0.0, 'heartbeat_age_seconds': 0.0, 'success_hold_remaining': 8.0,
             }, ensure_ascii=False))
             messages = {'/cloud_map': cloud, '/mapGraph': graph, '/semantic/objects': objects,
+                        '/rgbd_image': rgbd,
                         '/tf_static': TFMessage(transforms=[transform]),
                         '/camera/color/image_raw': rgb, '/camera/aligned_depth_to_color/image_raw': depth,
                         '/miti/loop_status': loop_status}
@@ -147,6 +154,12 @@ def main():
         assert tuple(float(point[field]) for field in ('x', 'y', 'z')) == (1.0, 2.0, 3.0)
         assert decoded['/camera/color/image_raw'].encoding == 'rgb8'
         assert decoded['/camera/aligned_depth_to_color/image_raw'].encoding == '16UC1'
+        display_depth = decoded['/miti/aligned_depth/image_raw']
+        assert (display_depth.width, display_depth.height, display_depth.encoding) == (2, 2, '16UC1')
+        assert bytes(display_depth.data) == bytes([232, 3] * 4)
+        display_info = decoded['/miti/aligned_depth/camera_info']
+        assert (display_info.width, display_info.height) == (2, 2)
+        assert display_depth.header == display_info.header
         assert len(decoded['/miti/trajectory'].poses) == 2
         marker = decoded['/miti/semantic_markers'].markers[-1]
         assert marker.text == 'test-chair' and marker.pose.position.x == 2.0
