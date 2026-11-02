@@ -12,8 +12,9 @@ import tempfile
 import time
 
 import rclpy
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from rtabmap_msgs.msg import Info
+from std_msgs.msg import String
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -93,9 +94,24 @@ def main():
             for publisher in publishers:
                 publisher.publish(sequence[-1])
                 publisher.publish(sequence[0])
+            # Join after success: the web panel must receive a full retained snapshot,
+            # without another loop event and without creating a Qt window.
+            snapshots = []
+            status_sub = publisher_node.create_subscription(
+                String, '/miti/loop_status', lambda msg: snapshots.append(json.loads(msg.data)),
+                QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
+                           durability=DurabilityPolicy.TRANSIENT_LOCAL))
+            wait_for(lambda: any(s['counts']['total'] == 1 for s in snapshots),
+                     'late-joining status subscriber')
+            assert snapshots[-1]['last_success']['target_id'] == 5, snapshots[-1]
+            assert snapshots[-1]['counts']['global'] == 1, snapshots[-1]
             wait_for(lambda: any(event['type'] == 'DETECTION_HEARTBEAT'
                                  and event['state'] == 'SLAM_TIMEOUT' for event in events()),
                      'stale-data heartbeat')
+            wait_for(lambda: any(s['display_state'] == 'SLAM_TIMEOUT' for s in snapshots),
+                     'web status timeout')
+            assert snapshots[-1]['counts']['total'] == 1
+            assert len({s['monitor_id'] for s in snapshots}) == 1
 
             recorded = events()
             states = [event['state'] for event in recorded if event['type'] == 'DETECTION_STATUS']
@@ -111,6 +127,7 @@ def main():
                 assert marker in console_text, marker
             summary = {'passed': True, 'domain': domain, 'states': states,
                        'global_loops': len(loops), 'candidates': 3,
+                       'late_status_snapshots': len(snapshots), 'qt_required': False,
                        'output_dir': str(output_dir)}
             (output_dir / 'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2) + '\n')
             print(json.dumps(summary, ensure_ascii=False))

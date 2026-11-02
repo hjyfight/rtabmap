@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 import tempfile
 import time
+import sys
 import unittest
 from unittest.mock import Mock, patch
 
@@ -14,6 +15,7 @@ from rtabmap_msgs.msg import Info
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'scripts'))
 spec = importlib.util.spec_from_file_location(
     'loop_diagnostics', ROOT / 'scripts/loop_closure_diagnostics.py')
 diagnostics = importlib.util.module_from_spec(spec)
@@ -46,7 +48,7 @@ class DiagnosticsTests(unittest.TestCase):
         self.logger = Mock()
         for method, kwargs in (
                 ('__init__', {'return_value': None}),
-                ('create_subscription', {}), ('create_timer', {}),
+                ('create_subscription', {}), ('create_timer', {}), ('create_publisher', {}),
                 ('get_logger', {'return_value': self.logger})):
             patcher = patch.object(Node, method, **kwargs)
             patcher.start()
@@ -59,6 +61,29 @@ class DiagnosticsTests(unittest.TestCase):
 
     def output(self):
         return '\n'.join(call.args[0] for call in self.logger.info.call_args_list)
+
+    def test_web_snapshot_is_complete_without_qt_and_retains_accepted_loop(self):
+        publisher = self.node.status_publisher
+        initial = json.loads(publisher.publish.call_args.args[0].data)
+        self.assertEqual(initial['display_state'], 'WAITING_FOR_SLAM')
+        self.node._info_cb(make_info(global_id=5))
+        self.node._info_cb(make_info(ref=41, **{'Loop/RejectedHypothesis/': 1}))
+        self.node._publish_status()
+        current = json.loads(publisher.publish.call_args.args[0].data)
+        self.assertEqual(current['schema'], 1)
+        self.assertEqual(current['monitor_id'], initial['monitor_id'])
+        self.assertEqual(current['counts'], {'total': 1, 'global': 1, 'proximity': 0})
+        self.assertEqual(current['last_success']['target_id'], 5)
+        self.assertEqual(current['display_state'], 'SUCCESS')
+        self.assertEqual(current['phase'], 'CANDIDATE_REJECTED')
+        self.assertIsNone(self.node.event_sink)
+
+    def test_web_publishing_does_not_replace_persistent_event_log(self):
+        self.node._info_cb(make_info(global_id=5))
+        before = self.log_file.read_text()
+        self.node._publish_status()
+        self.assertEqual(self.log_file.read_text(), before)
+        self.assertEqual(len(self.events('GLOBAL_LOOP')), 1)
 
     def test_search_and_history_are_visible_before_a_success(self):
         self.node._info_cb(make_info(**{'Memory/Working_memory_size/': 0}))

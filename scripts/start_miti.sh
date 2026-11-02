@@ -12,6 +12,7 @@ if [[ ! -x "$MITI_APP/node/bin/node" || ! -x "$MITI_ROS_PREFIX/lib/foxglove_brid
   printf '请先运行 bash scripts/install_miti.sh\n' >&2
   exit 1
 fi
+python3 "$MITI_PROJECT/scripts/install_miti_loop_panel.py"
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
 export ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0}
 export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}

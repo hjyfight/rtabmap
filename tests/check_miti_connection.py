@@ -21,7 +21,7 @@ from rtabmap_msgs.msg import MapGraph
 from rtabmap_semantic_msgs.msg import Observation, SemanticMap, SemanticObject
 from sensor_msgs.msg import Image, PointCloud2
 from sensor_msgs_py.point_cloud2 import create_cloud_xyz32, read_points
-from std_msgs.msg import Header
+from std_msgs.msg import Header, String
 from tf2_msgs.msg import TFMessage
 from visualization_msgs.msg import MarkerArray
 
@@ -29,7 +29,8 @@ PROJECT = Path(__file__).resolve().parents[1]
 APP = PROJECT / '.tools/miti/root/usr/lib/miti'
 TYPES = {'/cloud_map': PointCloud2, '/camera/color/image_raw': Image,
          '/camera/aligned_depth_to_color/image_raw': Image, '/tf_static': TFMessage,
-         '/miti/trajectory': RosPath, '/miti/semantic_markers': MarkerArray}
+         '/miti/trajectory': RosPath, '/miti/semantic_markers': MarkerArray,
+         '/miti/loop_status': String}
 CLIENT = r"""
 const WS = require(process.argv[1]);
 const wanted = new Set(JSON.parse(process.argv[2]));
@@ -81,6 +82,14 @@ def main():
     with http.open('http://127.0.0.1:13000/api/bridge', timeout=5) as response:
         state = json.load(response)
     assert state['state'] == 'running' and state['domainId'] == 91, state
+    with http.open('http://127.0.0.1:13000/rtabmap-panel-assets.json', timeout=5) as response:
+        assets = json.load(response)['assets']
+    bundled = []
+    for asset in assets:
+        with http.open('http://127.0.0.1:13000' + asset, timeout=5) as response:
+            bundled.append(response.read().decode())
+    assert any('rtabmapLoopStatusFactory' in source for source in bundled)
+    assert any('type:"loop-status",label:' in source for source in bundled)
     client = subprocess.Popen([str(APP / 'node/bin/node'), '-e', CLIENT,
                                str(APP / 'node_modules/next/dist/compiled/ws'),
                                json.dumps(list(TYPES))], stdout=subprocess.PIPE,
@@ -91,7 +100,8 @@ def main():
                          durability=DurabilityPolicy.TRANSIENT_LOCAL)
     publications = [(topic, kind, node.create_publisher(kind, topic, latched))
                     for topic, kind in [('/cloud_map', PointCloud2), ('/tf_static', TFMessage),
-                                        ('/mapGraph', MapGraph), ('/semantic/objects', SemanticMap)]]
+                                        ('/mapGraph', MapGraph), ('/semantic/objects', SemanticMap),
+                                        ('/miti/loop_status', String)]]
     for topic in ['/camera/color/image_raw', '/camera/aligned_depth_to_color/image_raw']:
         publications.append((topic, Image, node.create_publisher(Image, topic, qos_profile_sensor_data)))
     try:
@@ -110,9 +120,19 @@ def main():
             camera_header = Header(frame_id=transform.child_frame_id, stamp=header.stamp)
             rgb = Image(header=camera_header, width=2, height=2, encoding='rgb8', step=6, data=[100] * 12)
             depth = Image(header=camera_header, width=2, height=2, encoding='16UC1', step=4, data=[232, 3] * 4)
+            loop_status = String(data=json.dumps({
+                'schema': 1, 'monitor_id': 'isolated-miti-test', 'published_at': time.time(),
+                'display_state': 'SUCCESS', 'title': '回环成功', 'phase': 'CONFIRMED',
+                'phase_label': '已接受回环约束', 'nodes': 20,
+                'counts': {'total': 1, 'global': 1, 'proximity': 0},
+                'last_success': {'type': 'GLOBAL_LOOP', 'ref_id': 40, 'target_id': 5, 'time': time.time()},
+                'rates_hz': {'lidar': 10.0, 'rgb': 6.0, 'depth': 6.0, 'slam_info': 1.0},
+                'slam_age_seconds': 0.0, 'heartbeat_age_seconds': 0.0, 'success_hold_remaining': 8.0,
+            }, ensure_ascii=False))
             messages = {'/cloud_map': cloud, '/mapGraph': graph, '/semantic/objects': objects,
                         '/tf_static': TFMessage(transforms=[transform]),
-                        '/camera/color/image_raw': rgb, '/camera/aligned_depth_to_color/image_raw': depth}
+                        '/camera/color/image_raw': rgb, '/camera/aligned_depth_to_color/image_raw': depth,
+                        '/miti/loop_status': loop_status}
             for topic, _, publisher in publications:
                 publisher.publish(messages[topic])
             rclpy.spin_once(node, timeout_sec=0.2)
@@ -130,6 +150,9 @@ def main():
         assert marker.text == 'test-chair' and marker.pose.position.x == 2.0
         assert marker.pose.position.y == 1.0
         assert decoded['/tf_static'].transforms[0].child_frame_id == 'camera_color_optical_frame'
+        loop_snapshot = json.loads(decoded['/miti/loop_status'].data)
+        assert loop_snapshot['counts']['total'] == 1 and loop_snapshot['last_success']['target_id'] == 5
+        assert loop_snapshot['display_state'] == 'SUCCESS' and loop_snapshot['title'] == '回环成功'
         result = {'passed': True, 'scope': 'HTTP + Foxglove WebSocket CDR + synthetic ROS messages',
                   'miti': '3.3.6', 'bridge': '3.6.0', 'domain': 91, 'topics': list(decoded),
                   'browser_rendering_tested': False, 'real_sensors_tested': False}

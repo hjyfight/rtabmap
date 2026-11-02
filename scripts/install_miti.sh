@@ -33,6 +33,7 @@ sha256sum ./*.deb > "$MITI_BASE/package-sha256.txt"
 cp "$MITI_PROJECT/config/miti_live.html" "$MITI_BASE/root/usr/lib/miti/public/rtabmap.html"
 cp "$MITI_PROJECT/config/miti_live_layout.json" "$MITI_BASE/root/usr/lib/miti/public/rtabmap-layout.json"
 source "$MITI_PROJECT/scripts/setup_miti.bash"
+python3 "$MITI_PROJECT/scripts/install_miti_loop_panel.py"
 MITI_MISSING=$(ldd "$MITI_ROS_PREFIX/lib/foxglove_bridge/foxglove_bridge" | sed -n '/not found/p')
 if [[ -n "$MITI_MISSING" ]]; then
   printf '缺少运行库：\n%s\n' "$MITI_MISSING" >&2

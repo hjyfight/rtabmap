@@ -2,7 +2,7 @@
   "widgets": [
     {
       "i": "rtabmap-scene", "type": "urdf-viewer", "title": "三维地图 · 轨迹 · 语义标签",
-      "x": 0, "y": 0, "w": 8, "h": 13,
+      "x": 0, "y": 0, "w": 8, "h": 12,
       "props": {
         "version": 2,
         "frame": {"fixedFrame": "map", "displayFrame": "map", "followMode": "fixed", "syncTimestamps": false},
@@ -21,30 +21,35 @@
     },
     {
       "i": "rtabmap-color", "type": "camera-viewer", "title": "RealSense · 彩色画面",
-      "x": 8, "y": 0, "w": 4, "h": 7,
+      "x": 8, "y": 0, "w": 4, "h": 6,
       "props": {"topic": "/camera/color/image_raw", "maxFps": 15}
     },
     {
       "i": "rtabmap-depth", "type": "camera-viewer", "title": "RealSense · 对齐深度",
-      "x": 8, "y": 7, "w": 4, "h": 6,
+      "x": 8, "y": 6, "w": 4, "h": 6,
       "props": {"topic": "/camera/aligned_depth_to_color/image_raw", "maxFps": 10, "colorMode": "colormap", "valueMin": 300, "valueMax": 4000}
     },
     {
       "i": "rtabmap-log", "type": "log", "title": "回环检测日志",
-      "x": 0, "y": 13, "w": 12, "h": 7,
+      "x": 0, "y": 12, "w": 8, "h": 8,
       "props": {
         "topic": "/rosout", "minLevel": "INFO",
         "searchTerms": ["loop_closure_diagnostics"], "fontSize": 14,
         "showLevel": true, "showTime": true, "showName": true
       }
+    },
+    {
+      "i": "rtabmap-loop-status", "type": "loop-status", "title": "回环状态",
+      "x": 8, "y": 12, "w": 4, "h": 8,
+      "props": {"topic": "/miti/loop_status"}
     }
   ],
   "mosaic": {
-    "direction": "column", "splitPercentage": 65,
+    "direction": "column", "splitPercentage": 60,
     "first": {
       "direction": "row", "first": "rtabmap-scene", "splitPercentage": 68,
       "second": {"direction": "column", "first": "rtabmap-color", "second": "rtabmap-depth", "splitPercentage": 50}
     },
-    "second": "rtabmap-log"
+    "second": {"direction": "row", "first": "rtabmap-log", "second": "rtabmap-loop-status", "splitPercentage": 65}
   }
 }

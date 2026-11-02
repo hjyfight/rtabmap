@@ -21,7 +21,8 @@ APP = PROJECT / '.tools/miti/root/usr/lib/miti'
 TYPES = {'/cloud_map': PointCloud2, '/camera/color/image_raw': Image,
          '/camera/aligned_depth_to_color/image_raw': Image, '/icp_odom': Odometry,
          '/miti/trajectory': RosPath, '/miti/semantic_markers': MarkerArray,
-         '/semantic/status': String, '/tf': TFMessage, '/tf_static': TFMessage}
+         '/semantic/status': String, '/miti/loop_status': String,
+         '/tf': TFMessage, '/tf_static': TFMessage}
 CLIENT = r"""
 const WS = require(process.argv[1]);
 const url = process.argv[2], seconds = Number(process.argv[3]);

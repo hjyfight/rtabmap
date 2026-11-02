@@ -89,6 +89,21 @@ class LoopStatusTests(unittest.TestCase):
         self.status.update(self.detection())
         self.assertEqual(self.status.display()[0], '回环检测中')
 
+    def test_snapshot_ages_and_counts_survive_a_stale_source(self):
+        self.status.update(self.success())
+        self.now += 1
+        self.status.update(self.detection())
+        current = self.status.snapshot()
+        self.assertEqual(current['display_state'], 'SUCCESS')
+        self.assertEqual(current['success_hold_remaining'], 7)
+        self.assertEqual(current['counts']['total'], 1)
+        self.now += 8
+        current = self.status.snapshot()
+        self.assertEqual(current['display_state'], 'SLAM_TIMEOUT')
+        self.assertEqual(current['slam_age_seconds'], 8)
+        self.assertEqual(current['success_hold_remaining'], 0)
+        self.assertEqual(current['last_success']['target_id'], 5)
+
 
 if __name__ == '__main__':
     unittest.main()

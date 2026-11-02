@@ -13,14 +13,18 @@ import json
 import math
 import os
 import time
+import uuid
 
 import rclpy
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 
 from sensor_msgs.msg import CameraInfo, Image, PointCloud2
 from rtabmap_msgs.msg import Info
+from std_msgs.msg import String
+
+from loop_closure_panel import LoopStatus
 
 REPORT_PERIOD = 5.0
 
@@ -168,6 +172,12 @@ class LoopClosureDiagnostics(Node):
     def __init__(self, log_file=None, topics=None, assemble=False, event_sink=None):
         super().__init__('loop_closure_diagnostics')
         self.event_sink = event_sink
+        self.status = LoopStatus()
+        self.monitor_id = str(uuid.uuid4())
+        self.status_publisher = self.create_publisher(
+            String, '/miti/loop_status', QoSProfile(
+                depth=1, reliability=ReliabilityPolicy.RELIABLE,
+                durability=DurabilityPolicy.TRANSIENT_LOCAL))
         default_dir = os.path.normpath(
             os.path.join(os.path.dirname(__file__), '..', 'logs'))
         self.log_file = os.path.abspath(os.path.expanduser(
@@ -195,6 +205,10 @@ class LoopClosureDiagnostics(Node):
             self.create_subscription(Info, topic, self._info_cb, qos_profile_sensor_data)
             for topic in ('/info', '/rtabmap/info')]
         self.create_timer(REPORT_PERIOD, self._report)
+        # A retained snapshot also serves late browser connections. Publishing continues
+        # without Qt, and lets the web panel distinguish lost SLAM data from a lost monitor.
+        self.create_timer(0.5, self._publish_status)
+        self._publish_status()
         self.get_logger().info(
             '[回环检测状态] WAITING_FOR_SLAM | 诊断已启动，等待 /info 或 /rtabmap/info\n'
             f'  日志: {self.log_file}\n'
@@ -204,6 +218,8 @@ class LoopClosureDiagnostics(Node):
         self.counts[name] += 1
 
     def _write_event(self, event):
+        self.status.update(event)
+        self._publish_status()
         try:
             with open(self.log_file, 'a', encoding='utf-8') as stream:
                 stream.write(json.dumps(event, ensure_ascii=False, allow_nan=False) + '\n')
@@ -214,6 +230,12 @@ class LoopClosureDiagnostics(Node):
                 self.event_sink(event)
             except Exception as error:
                 self.get_logger().error(f'更新回环提示窗失败: {error}')
+
+    def _publish_status(self):
+        payload = {'schema': 1, 'monitor_id': self.monitor_id,
+                   'published_at': time.time(), **self.status.snapshot()}
+        self.status_publisher.publish(String(data=json.dumps(
+            payload, ensure_ascii=False, allow_nan=False)))
 
     def _info_cb(self, msg):
         key = (msg.header.stamp.sec, msg.header.stamp.nanosec,

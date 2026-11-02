@@ -44,7 +44,8 @@ foxglove_bridge **3.6.0** 和所需的 rosx-introspection / RapidJSON 包。
 | 实时雷达 | `/livox/lidar` | 默认隐藏；需要时在三维面板 Topics 中打开 |
 | 彩色画面 | `/camera/color/image_raw` | 默认最多绘制 15 FPS |
 | 对齐深度 | `/camera/aligned_depth_to_color/image_raw` | 默认 10 FPS、16UC1 深度显示范围 0.3–4 m |
-| 回环检测日志 | `/rosout` | 底部通栏，占展示区约 35% 高度，14 px 字体；默认筛选 `loop_closure_diagnostics` 节点的 INFO 及以上日志 |
+| 回环检测日志 | `/rosout` | 底部左侧，14 px 字体；默认筛选 `loop_closure_diagnostics` 节点的 INFO 及以上日志 |
+| 回环状态 | `/miti/loop_status` | 底部右侧的原生面板，显示检测状态、成功次数、最近匹配节点和输入频率；支持独立放大 |
 
 回环日志显示检测状态、候选及接受/拒绝结果、成功记录和输入频率，默认自动滚动。
 在日志面板清除 `loop_closure_diagnostics` 搜索条件，可恢复查看所有节点的运行日志。
@@ -52,6 +53,43 @@ foxglove_bridge **3.6.0** 和所需的 rosx-introspection / RapidJSON 包。
 日志面板显示接入后收到的消息，不会自动读取本地历史 JSONL 日志。
 更新布局后，打开 `/rtabmap.html` 并点击“应用项目布局并进入展示”；只刷新主页面会
 继续使用浏览器已保存的旧布局。应用前会自动备份旧布局。
+
+### 回环状态面板
+
+`loop_closure_diagnostics.py` 现在独立于 Qt 发布 `std_msgs/msg/String` JSON 状态快照。
+与 Qt 共用 `LoopStatus` 的计数和提示逻辑：仅接受事件累计成功，候选/拒绝不计数，
+同一回环去重，成功提示保留 8 秒，SLAM 超时优先显示中断。全局与空间邻近分别计数；
+`PROXIMITY_ICP` 沿用原诊断事件名，界面显示“空间邻近回环”，不据此推断一定是 ICP 分支。
+
+快照每 0.5 秒发布一次，使用 Reliable + Transient Local + depth 1，晚打开或刷新网页
+仍能看到诊断进程本次运行的累计记录。诊断重启后开始新的 `monitor_id` 和计数。
+网页 3 秒收不到更新时显示“诊断更新已中断”，保留最近记录并隐藏过期输入频率；
+桥接断开时显示“等待连接”。提示音默认关闭，需要用户勾选后由浏览器播放。
+它不会替换已有 `/rosout` 日志或 `logs/loop_closure_events.jsonl` 持久化记录。
+
+本机 MITI 3.3.6 是预编译包，没有外部面板加载接口。项目将可读的 React 面板代码保存在
+`config/miti_loop_status.js`，由 `scripts/install_miti_loop_panel.py` 注册原生面板类型、
+渲染入口和图标；现有 MITI 的拖动、布局保存与独立放大继续可用。
+安装器只接受已核对的 3.3.6 前端文件 SHA-256，备份原文件并校验修改后的 JavaScript。
+未知版本或文件修改会拒绝覆盖，需要核对新的接入点后升级；不会修改系统安装。
+安装和启动脚本都会安装/更新扩展。首次加入扩展后需要重启 MITI 展示服务，让 Next.js
+识别新增的公开资源清单；应用布局前会刷新扩展资源缓存。已有诊断进程需按原流程
+重启后才会发布新增状态话题。
+
+检查：`node tests/test_miti_loop_panel.js`（使用 MITI 随附的 Node）、
+`python3 tests/run_loop_diagnostics_check.py`（独立域 179）和
+`bash scripts/test_miti.sh`（独立域 91，含状态话题到 Foxglove 的传输）。
+这些检查验证状态逻辑、React 输出、面板安装与通信，不替代浏览器实际视觉验收。
+
+2026-11-02 部署验证：26 项诊断/Qt 状态检查、7 项网页面板检查通过；独立域 179
+验证了晚订阅快照、去重和超时，独立域 91 验证了包括回环状态在内的 7 类消息传输。
+本机运行中的 MITI 已重启并核对面板资源，实机状态采样结果在
+`logs/miti/loop_panel_live.json`。当前浏览器不可由工具控制，未执行实际页面视觉验收。
+
+上线时已有 Qt 诊断进程仍在运行，本次会话使用 `.tools/miti/existing_loop_session.py`
+临时桥接：只重放该进程启动后的 JSONL 记录，并持续跟随日志，保留当前成功计数。
+它会在旧诊断退出或原生状态发布器出现时结束。新启动的诊断进程直接发布状态，
+常规启动不需要此兼容脚本；既有 Qt、SLAM 与地图数据库未因接入面板而重启。
 
 自定义语义消息无法由 MITI 直接绘制，因此新增 `scripts/miti_scene_adapter.py`。
 它按最新 `/mapGraph` 重算观测锚点的加权位置，发布标准 Path 和 MarkerArray；

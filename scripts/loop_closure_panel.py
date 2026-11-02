@@ -48,17 +48,39 @@ class LoopStatus:
         self.highlight_until = self.clock() + self.hold_seconds
         return True
 
-    def display(self):
+    def display_state(self):
         now = self.clock()
         stale = self.last_update is not None and now - self.last_update >= 7.5
         if stale or self.state == 'SLAM_TIMEOUT':
-            title, color = 'SLAM 数据已中断', '#a83c32'
+            return 'SLAM_TIMEOUT', 'SLAM 数据已中断', '#a83c32'
         elif self.last_success and now < self.highlight_until:
-            title, color = '回环成功', '#16834b'
+            return 'SUCCESS', '回环成功', '#16834b'
         elif self.state == 'WAITING_FOR_SLAM':
-            title, color = '等待建图数据', '#936519'
-        else:
-            title, color = '回环检测中', '#254560'
+            return 'WAITING_FOR_SLAM', '等待建图数据', '#936519'
+        return 'SEARCHING', '回环检测中', '#254560'
+
+    def snapshot(self):
+        """A complete, Qt-independent view; ages use the monitor's monotonic clock."""
+        now = self.clock()
+        mode, title, _ = self.display_state()
+        last = self.last_success
+        return {
+            'display_state': mode, 'title': title,
+            'phase': self.state, 'phase_label': self.label, 'nodes': self.nodes,
+            'counts': {'total': sum(self.counts.values()),
+                       'global': self.counts['GLOBAL_LOOP'],
+                       'proximity': self.counts['PROXIMITY_ICP']},
+            'last_success': ({key: last[key] for key in ('type', 'ref_id', 'target_id', 'time')}
+                             if last else None),
+            'rates_hz': dict(self.rates_hz),
+            'slam_age_seconds': None if self.last_update is None else max(0, now-self.last_update),
+            'heartbeat_age_seconds': (None if self.last_heartbeat is None
+                                      else max(0, now-self.last_heartbeat)),
+            'success_hold_remaining': max(0, self.highlight_until-now),
+        }
+
+    def display(self):
+        _, title, color = self.display_state()
         last = '本次监控尚未收到成功回环'
         if self.last_success:
             event = self.last_success

@@ -13,12 +13,12 @@
 <main>
   <div class="eyebrow">RTAB-MAP × MITI</div>
   <h1>实时建图，一屏呈现。</h1>
-  <p>上方查看三维地图、优化轨迹、语义标签和 RealSense 画面，下方通栏查看回环检测日志。</p>
+  <p>上方查看地图与 RealSense 画面，下方保留完整回环日志，并用独立面板查看检测状态、成功次数和最近匹配。</p>
   <div class="panels">
     <div class="card"><b>三维地图</b><small>点云 · 轨迹 · 标签</small></div>
     <div class="card"><b>彩色画面</b><small>RealSense 实时图像</small></div>
     <div class="card"><b>对齐深度</b><small>空间距离与有效范围</small></div>
-    <div class="card"><b>回环日志</b><small>检测状态 · 候选 · 成功记录</small></div>
+    <div class="card"><b>回环监控</b><small>实时状态面板 · 详细日志</small></div>
   </div>
   <button id="apply">应用项目布局并进入展示</button><a href="/">继续使用当前布局 →</a>
   <p class="note">请先启动传感器和 SLAM。语义标签需要启用语义建图。回环日志默认筛选回环诊断节点，清除日志筛选可查看全部运行日志。应用布局前会在当前浏览器中备份已有配置。</p>
@@ -33,6 +33,19 @@ document.getElementById('apply').addEventListener('click', async () => {
     const response = await fetch('/rtabmap-layout.json', {cache: 'no-store'});
     if (!response.ok) throw new Error('无法读取项目布局');
     const layout = await response.json();
+    // Refresh the pinned MITI extension before navigating to a layout using its new panel type.
+    const manifestResponse = await fetch('/rtabmap-panel-assets.json', {cache: 'no-store'});
+    if (!manifestResponse.ok) throw new Error('回环面板尚未安装，请重新运行 MITI 启动脚本');
+    const manifest = await manifestResponse.json();
+    if (!Array.isArray(manifest.assets) || !manifest.assets.length) throw new Error('回环面板资源清单无效');
+    await Promise.all(manifest.assets.map(async path => {
+      if (typeof path !== 'string' || !path.startsWith('/_next/static/chunks/')) {
+        throw new Error('回环面板资源地址无效');
+      }
+      const asset = await fetch(path, {cache: 'reload'});
+      if (!asset.ok) throw new Error('无法加载回环面板，请刷新后重试');
+      await asset.arrayBuffer();
+    }));
     const keys = ['miti_layout_config', 'miti_bridge_url', 'miti_stream_mode'];
     const previous = Object.fromEntries(keys.map(key => [key, localStorage.getItem(key)]));
     localStorage.setItem('rtabmap_miti_backup_' + Date.now(), JSON.stringify(previous));
