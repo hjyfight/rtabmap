@@ -50,7 +50,7 @@ foxglove_bridge **3.6.0** 和所需的 rosx-introspection / RapidJSON 包。
 | 三维地图 | `/cloud_map` | 固定坐标系 `map`，按高度着色，最多显示 30 万点 |
 | 优化轨迹 | `/miti/trajectory` | 从 `/mapGraph` 的当前优化位姿生成 Path，回环后随图更新 |
 | 语义标签 | `/miti/semantic_markers` | 将 `/semantic/objects` 的节点锚点转换为地图坐标下的 MarkerArray |
-| 当前位姿 | `/icp_odom` | 当前项目的 ICP 里程计，位置通过 TF 映射到地图 |
+| 当前位姿 | `/icp_odom` | 位置来自 ICP 里程计并通过 TF 映射到地图；箭头指向深度相机光轴 |
 | 实时雷达 | `/livox/lidar` | 默认隐藏；需要时在三维面板 Topics 中打开 |
 | 彩色画面 | `/camera/color/image_raw` | 默认最多绘制 15 FPS |
 | 对齐深度 | `/camera/aligned_depth_to_color/image_raw` | 默认 10 FPS、16UC1 深度显示范围 0.3–4 m |
@@ -100,6 +100,28 @@ foxglove_bridge **3.6.0** 和所需的 rosx-introspection / RapidJSON 包。
 临时桥接：只重放该进程启动后的 JSONL 记录，并持续跟随日志，保留当前成功计数。
 它会在旧诊断退出或原生状态发布器出现时结束。新启动的诊断进程直接发布状态，
 常规启动不需要此兼容脚本；既有 Qt、SLAM 与地图数据库未因接入面板而重启。
+
+### 机器狗位置箭头与相机朝向
+
+原生 MITI 的里程计箭头沿消息所描述坐标系的 +X 轴绘制。本项目 `/icp_odom`
+当前的 `child_frame_id` 是 `livox_frame`，因此原箭头代表雷达 +X 方向，不一定是
+机器狗身体朝前或相机拍摄的方向。当前位置主要由雷达 ICP 估计，IMU 辅助方向，
+再通过 `map -> icp_odom` 转换到回环优化后的地图。
+
+项目现在将该箭头改为深度相机 `camera_depth_optical_frame` 的 +Z 光轴方向。
+使用里程计姿态与 `livox_frame -> camera_link -> camera_depth_frame -> camera_depth_optical_frame`
+的实际 TF 旋转组合，保留横滚和俯仰。箭头起点仍是原来的里程计位置（当前为雷达原点），
+没有平移到相机安装位置，也没有改成视觉里程计。轨迹、其他位姿话题、坐标轴模式及
+ROS 消息不受影响；仅修改 `/icp_odom` 的箭头绘制，现有浏览器布局刷新后即可生效。
+TF 缺失时不显示该箭头，并在原生图层状态中显示原因；TF 到达后自动恢复。
+
+`config/miti_camera_heading.json` 配置目标话题、相机光学坐标系及启用状态。
+修改后运行 `python3 scripts/install_miti_loop_panel.py`，并在 MITI 主页面按
+Ctrl+Shift+R。将 `enabled` 改为 `false` 可恢复原来的雷达朝向箭头。
+若需要彩色画面的中心方向，可将 `opticalFrame` 改为 `camera_color_optical_frame`；
+必须使用 optical 坐标系，其 +Z 才是拍摄方向。显示准确性取决于已标定的安装外参。
+不需要新 ROS 话题或重启 SLAM。数学及集成检查：使用 MITI 随附 Node 运行
+`tests/test_miti_camera_heading.js`。
 
 ### 隐藏天花板与墙体顶部
 

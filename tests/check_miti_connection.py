@@ -91,6 +91,7 @@ def main():
     assert any('rtabmapLoopStatusFactory' in source for source in bundled)
     assert any('type:"loop-status",label:' in source for source in bundled)
     assert any('rtabmapHeightClipFactory' in source and 'rtabmapClipDistance' in source for source in bundled)
+    assert any('RtabmapCameraHeading.transform(' in source for source in bundled)
     client = subprocess.Popen([str(APP / 'node/bin/node'), '-e', CLIENT,
                                str(APP / 'node_modules/next/dist/compiled/ws'),
                                json.dumps(list(TYPES))], stdout=subprocess.PIPE,

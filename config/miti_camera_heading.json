@@ -1,0 +1,5 @@
+{
+  "enabled": true,
+  "topic": "/icp_odom",
+  "opticalFrame": "camera_depth_optical_frame"
+}

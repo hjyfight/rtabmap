@@ -17,6 +17,7 @@ PY
 python3 -m unittest discover -s "$MITI_PROJECT/tests" -p test_miti_scene_adapter.py -v
 "$MITI_APP/node/bin/node" "$MITI_PROJECT/tests/test_miti_loop_panel.js"
 "$MITI_APP/node/bin/node" "$MITI_PROJECT/tests/test_miti_height_clip.js"
+"$MITI_APP/node/bin/node" "$MITI_PROJECT/tests/test_miti_camera_heading.js"
 bash "$MITI_PROJECT/scripts/start_miti.sh" --port 13000 >"$MITI_PROJECT/logs/miti/test_server.log" 2>&1 &
 MITI_TEST_PID=$!
 miti_test_cleanup() {

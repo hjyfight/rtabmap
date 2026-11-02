@@ -32,11 +32,20 @@ def replace_once(source, old, new):
     return source.replace(old, new, 1)
 
 
-def extend_bundle(path, source, panel, height_clip, title):
+def extend_bundle(path, source, panel, height_clip, title, camera_heading, heading_config):
     if path.endswith('453.e8d48709a26a0ed3.js'):
         source = replace_once(source, 'function rO(e){',
             panel + '\nconst RtabmapLoopStatusPanel = rtabmapLoopStatusFactory(n).Component;\n' +
-            height_clip + '\nconst RtabmapHeightClip = rtabmapHeightClipFactory(n);\nfunction rO(e){')
+            height_clip + '\nconst RtabmapHeightClip = rtabmapHeightClipFactory(n);\n' +
+            camera_heading + '\nconst RtabmapCameraHeading = rtabmapCameraHeadingFactory(' +
+            json.dumps(heading_config) + ',w);\nfunction rO(e){')
+        source = replace_once(source,
+            'return((null==i?void 0:i.frame_id)?eu(s,c,i,u):t).clone().multiply(ec(e))',
+            'return RtabmapCameraHeading.transform('
+            '((null==i?void 0:i.frame_id)?eu(s,c,i,u):t).clone().multiply(ec(e)),'
+            'o,v,s,u?b(v.header&&v.header.stamp):0)')
+        source = replace_once(source, '{level:"ok",message:"Receiving"}',
+            '{level:"ok",message:RtabmapCameraHeading.status(o)}')
         source = replace_once(source, 'switch(t.type){case"topics":',
             'switch(t.type){case"loop-status":return(0,r.jsx)(RtabmapLoopStatusPanel,'
             '{client:a,topic:t.props&&t.props.topic});case"topics":')
@@ -86,6 +95,13 @@ def install(app=APP):
         raise ValueError(f'Loop panel supports MITI 3.3.6, found {version}; update the integration first.')
     panel = (PROJECT / 'config/miti_loop_status.js').read_text()
     height_clip = (PROJECT / 'config/miti_height_clip.js').read_text()
+    camera_heading = (PROJECT / 'config/miti_camera_heading.js').read_text()
+    heading_config = json.loads((PROJECT / 'config/miti_camera_heading.json').read_text())
+    if (not isinstance(heading_config, dict) or
+            not isinstance(heading_config.get('enabled'), bool) or
+            any(not isinstance(heading_config.get(key), str) or
+                not heading_config[key].strip().strip('/') for key in ('topic', 'opticalFrame'))):
+        raise ValueError('config/miti_camera_heading.json requires enabled, topic and opticalFrame')
     title = json.loads((PROJECT / 'config/miti_branding.json').read_text()).get('title')
     if not isinstance(title, str) or not title.strip():
         raise ValueError('config/miti_branding.json: title must be non-empty text')
@@ -106,7 +122,8 @@ def install(app=APP):
             original = backup.read_bytes()
         if digest(original) != expected:
             raise ValueError(f'Original MITI bundle checksum mismatch: {backup}')
-        updated = extend_bundle(name, original.decode(), panel, height_clip, title).encode()
+        updated = extend_bundle(name, original.decode(), panel, height_clip, title,
+                                camera_heading, heading_config).encode()
         prepared.append((name, target, backup, original, updated, current))
     # Syntax-check the actual combined bundles, not just the standalone component.
     with tempfile.TemporaryDirectory(prefix='miti_panel_check_') as directory:
