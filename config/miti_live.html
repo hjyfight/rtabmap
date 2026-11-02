@@ -13,15 +13,15 @@
 <main>
   <div class="eyebrow">RTAB-MAP × MITI</div>
   <h1>实时建图，一屏呈现。</h1>
-  <p>查看三维地图、优化轨迹与语义标签，同时观察 RealSense 彩色画面、对齐深度和运行日志。</p>
+  <p>上方查看三维地图、优化轨迹、语义标签和 RealSense 画面，下方通栏查看回环检测日志。</p>
   <div class="panels">
     <div class="card"><b>三维地图</b><small>点云 · 轨迹 · 标签</small></div>
     <div class="card"><b>彩色画面</b><small>RealSense 实时图像</small></div>
     <div class="card"><b>对齐深度</b><small>空间距离与有效范围</small></div>
-    <div class="card"><b>运行日志</b><small>建图状态与异常</small></div>
+    <div class="card"><b>回环日志</b><small>检测状态 · 候选 · 成功记录</small></div>
   </div>
   <button id="apply">应用项目布局并进入展示</button><a href="/">继续使用当前布局 →</a>
-  <p class="note">请先启动传感器和 SLAM。语义标签需要启用语义建图。应用布局前会在当前浏览器中备份已有配置。</p>
+  <p class="note">请先启动传感器和 SLAM。语义标签需要启用语义建图。回环日志默认筛选回环诊断节点，清除日志筛选可查看全部运行日志。应用布局前会在当前浏览器中备份已有配置。</p>
   <div class="status" id="status" role="status"></div>
 </main>
 <script>

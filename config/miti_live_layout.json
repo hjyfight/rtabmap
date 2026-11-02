@@ -2,7 +2,7 @@
   "widgets": [
     {
       "i": "rtabmap-scene", "type": "urdf-viewer", "title": "三维地图 · 轨迹 · 语义标签",
-      "x": 0, "y": 0, "w": 8, "h": 20,
+      "x": 0, "y": 0, "w": 8, "h": 13,
       "props": {
         "version": 2,
         "frame": {"fixedFrame": "map", "displayFrame": "map", "followMode": "fixed", "syncTimestamps": false},
@@ -21,23 +21,30 @@
     },
     {
       "i": "rtabmap-color", "type": "camera-viewer", "title": "RealSense · 彩色画面",
-      "x": 8, "y": 0, "w": 4, "h": 8,
+      "x": 8, "y": 0, "w": 4, "h": 7,
       "props": {"topic": "/camera/color/image_raw", "maxFps": 15}
     },
     {
       "i": "rtabmap-depth", "type": "camera-viewer", "title": "RealSense · 对齐深度",
-      "x": 8, "y": 8, "w": 4, "h": 8,
+      "x": 8, "y": 7, "w": 4, "h": 6,
       "props": {"topic": "/camera/aligned_depth_to_color/image_raw", "maxFps": 10, "colorMode": "colormap", "valueMin": 300, "valueMax": 4000}
     },
     {
-      "i": "rtabmap-log", "type": "log", "title": "运行日志 · 回环与异常",
-      "x": 8, "y": 16, "w": 4, "h": 4,
-      "props": {"topic": "/rosout", "minLevel": "INFO", "showTime": true, "showName": true}
+      "i": "rtabmap-log", "type": "log", "title": "回环检测日志",
+      "x": 0, "y": 13, "w": 12, "h": 7,
+      "props": {
+        "topic": "/rosout", "minLevel": "INFO",
+        "searchTerms": ["loop_closure_diagnostics"], "fontSize": 14,
+        "showLevel": true, "showTime": true, "showName": true
+      }
     }
   ],
   "mosaic": {
-    "direction": "row", "first": "rtabmap-scene", "splitPercentage": 68,
-    "second": {"direction": "column", "first": "rtabmap-color", "splitPercentage": 38,
-      "second": {"direction": "column", "first": "rtabmap-depth", "second": "rtabmap-log", "splitPercentage": 60}}
+    "direction": "column", "splitPercentage": 65,
+    "first": {
+      "direction": "row", "first": "rtabmap-scene", "splitPercentage": 68,
+      "second": {"direction": "column", "first": "rtabmap-color", "second": "rtabmap-depth", "splitPercentage": 50}
+    },
+    "second": "rtabmap-log"
   }
 }

@@ -44,7 +44,14 @@ foxglove_bridge **3.6.0** 和所需的 rosx-introspection / RapidJSON 包。
 | 实时雷达 | `/livox/lidar` | 默认隐藏；需要时在三维面板 Topics 中打开 |
 | 彩色画面 | `/camera/color/image_raw` | 默认最多绘制 15 FPS |
 | 对齐深度 | `/camera/aligned_depth_to_color/image_raw` | 默认 10 FPS、16UC1 深度显示范围 0.3–4 m |
-| 日志 | `/rosout` | INFO 及以上，查看建图、回环及异常信息 |
+| 回环检测日志 | `/rosout` | 底部通栏，占展示区约 35% 高度，14 px 字体；默认筛选 `loop_closure_diagnostics` 节点的 INFO 及以上日志 |
+
+回环日志显示检测状态、候选及接受/拒绝结果、成功记录和输入频率，默认自动滚动。
+在日志面板清除 `loop_closure_diagnostics` 搜索条件，可恢复查看所有节点的运行日志。
+它直接使用已有 ROS 日志话题，不依赖 Qt 窗口；回环诊断进程需要保持运行。
+日志面板显示接入后收到的消息，不会自动读取本地历史 JSONL 日志。
+更新布局后，打开 `/rtabmap.html` 并点击“应用项目布局并进入展示”；只刷新主页面会
+继续使用浏览器已保存的旧布局。应用前会自动备份旧布局。
 
 自定义语义消息无法由 MITI 直接绘制，因此新增 `scripts/miti_scene_adapter.py`。
 它按最新 `/mapGraph` 重算观测锚点的加权位置，发布标准 Path 和 MarkerArray；
