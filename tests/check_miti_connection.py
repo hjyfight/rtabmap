@@ -9,12 +9,15 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 import time
 import urllib.request
 
+import numpy as np
 import rclpy
-from geometry_msgs.msg import Pose, TransformStamped
-from nav_msgs.msg import Path as RosPath
+from builtin_interfaces.msg import Time as Stamp
+from geometry_msgs.msg import Pose, PoseStamped, TransformStamped
+from nav_msgs.msg import Odometry, Path as RosPath
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from rclpy.serialization import deserialize_message
 from rtabmap_msgs.msg import MapGraph, RGBDImage
@@ -31,13 +34,15 @@ TYPES = {'/cloud_map': PointCloud2, '/camera/color/image_raw': Image,
          '/camera/aligned_depth_to_color/image_raw': Image, '/tf_static': TFMessage,
          '/miti/trajectory': RosPath, '/miti/semantic_markers': MarkerArray,
          '/miti/aligned_depth/image_raw': Image, '/miti/aligned_depth/camera_info': CameraInfo,
-         '/miti/loop_status': String}
+         '/miti/loop_status': String, '/robot_pose': PoseStamped,
+         '/miti/walls': MarkerArray, '/miti/map_status': String}
 CLIENT = r"""
 const WS = require(process.argv[1]);
 const wanted = new Set(JSON.parse(process.argv[2]));
 const socket = new WS('ws://127.0.0.1:18765', ['foxglove.sdk.v1', 'foxglove.websocket.v1']);
 const subscriptions = new Map();
 const frames = {};
+let finishing = false;
 const timer = setTimeout(() => {
   console.error('Missing topics: ' + [...wanted].filter(t => !frames[t]).join(', '));
   socket.terminate(); process.exit(1);
@@ -61,9 +66,10 @@ socket.on('message', (data, binary) => {
     const topic = subscriptions.get(data.readUInt32LE(1));
     if (topic) frames[topic] = data.subarray(13).toString('base64');
     // The adapter may publish an initial empty marker snapshot before its graph arrives.
-    if ([...wanted].every(t => frames[t])) {
+    if (!finishing && [...wanted].every(t => frames[t])) {
+      finishing = true;
       setTimeout(() => {
-        console.log(JSON.stringify(frames));
+        require('node:fs').writeFileSync(process.argv[3], JSON.stringify(frames));
         clearTimeout(timer); socket.close(); process.exit(0);
       }, 1200).unref();
     }
@@ -94,9 +100,12 @@ def main():
     assert any('rtabmapHeightClipFactory' in source and 'rtabmapClipDistance' in source for source in bundled)
     assert any('RtabmapCameraHeading.transform(' in source for source in bundled)
     assert any('.map(rtabmapMigrateDepthWidget)' in source for source in bundled)
+    assert any('RtabmapMapDetails.Controls' in source and 'RtabmapMapDetails.WallMesh' in source for source in bundled)
+    frame_fd, frame_file = tempfile.mkstemp(prefix='miti_connection_', suffix='.json')
+    os.close(frame_fd)
     client = subprocess.Popen([str(APP / 'node/bin/node'), '-e', CLIENT,
                                str(APP / 'node_modules/next/dist/compiled/ws'),
-                               json.dumps(list(TYPES))], stdout=subprocess.PIPE,
+                               json.dumps(list(TYPES)), frame_file], stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, text=True)
     rclpy.init()
     node = rclpy.create_node('miti_connection_test')
@@ -106,14 +115,18 @@ def main():
                     for topic, kind in [('/cloud_map', PointCloud2), ('/tf_static', TFMessage),
                                         ('/rgbd_image', RGBDImage),
                                         ('/mapGraph', MapGraph), ('/semantic/objects', SemanticMap),
-                                        ('/miti/loop_status', String)]]
+                                        ('/miti/loop_status', String), ('/tf', TFMessage), ('/icp_odom', Odometry)]]
+    y, z = np.meshgrid(np.arange(-2, 2.01, .07), np.arange(-.5, 2.51, .07))
+    wall = np.column_stack((np.full(y.size, 3.), y.ravel(), z.ravel()))
+    wall = wall[~((np.abs(wall[:, 1]) < .55) & (wall[:, 2] < 1.5))]
+    map_points = np.vstack(([(0, 0, 0), (1, 2, 3), (2, 3, 4)], wall))
     for topic in ['/camera/color/image_raw', '/camera/aligned_depth_to_color/image_raw']:
         publications.append((topic, Image, node.create_publisher(Image, topic, qos_profile_sensor_data)))
     try:
         start = time.monotonic()
         while client.poll() is None and time.monotonic() - start < 28:
             header = Header(frame_id='map', stamp=node.get_clock().now().to_msg())
-            cloud = create_cloud_xyz32(header, [(0, 0, 0), (1, 2, 3), (2, 3, 4)])
+            cloud = create_cloud_xyz32(header, map_points.tolist())
             pose = Pose()
             pose.position.x = 1.0
             graph = MapGraph(header=header, poses_id=[1, 2], poses=[Pose(), pose])
@@ -122,6 +135,18 @@ def main():
             objects = SemanticMap(header=header, map_key='synthetic-connection-test', map_uuid='test',
                                   objects=[SemanticObject(object_id=1, label='test-chair', observations=[anchor])])
             transform = TransformStamped(header=header, child_frame_id='camera_color_optical_frame')
+            transform.transform.rotation.w = 1.
+            mount = TransformStamped(header=Header(frame_id='livox_frame'), child_frame_id='base_link')
+            mount.transform.translation.x = .2
+            mount.transform.rotation.w = 1.
+            correction = TransformStamped(header=header, child_frame_id='icp_odom')
+            correction.transform.translation.x, correction.transform.translation.y = 10., 20.
+            correction.transform.rotation.z = correction.transform.rotation.w = 2**-.5
+            source_ns = int((12345.0 + time.monotonic()-start)*1e9)
+            odom = Odometry(header=Header(frame_id='icp_odom',
+                            stamp=Stamp(sec=source_ns//10**9, nanosec=source_ns%10**9)), child_frame_id='livox_frame')
+            odom.pose.pose.position.x = 1.
+            odom.pose.pose.orientation.z = odom.pose.pose.orientation.w = 2**-.5
             camera_header = Header(frame_id=transform.child_frame_id, stamp=header.stamp)
             rgb = Image(header=camera_header, width=2, height=2, encoding='rgb8', step=6, data=[100] * 12)
             depth = Image(header=camera_header, width=2, height=2, encoding='16UC1', step=4, data=[232, 3] * 4)
@@ -139,7 +164,8 @@ def main():
             }, ensure_ascii=False))
             messages = {'/cloud_map': cloud, '/mapGraph': graph, '/semantic/objects': objects,
                         '/rgbd_image': rgbd,
-                        '/tf_static': TFMessage(transforms=[transform]),
+                        '/tf_static': TFMessage(transforms=[transform, mount]),
+                        '/tf': TFMessage(transforms=[correction]), '/icp_odom': odom,
                         '/camera/color/image_raw': rgb, '/camera/aligned_depth_to_color/image_raw': depth,
                         '/miti/loop_status': loop_status}
             for topic, _, publisher in publications:
@@ -147,7 +173,7 @@ def main():
             rclpy.spin_once(node, timeout_sec=0.2)
         output, error = client.communicate(timeout=4)
         assert client.returncode == 0, error
-        frames = json.loads(output)
+        frames = json.loads(Path(frame_file).read_text())
         decoded = {topic: deserialize_message(base64.b64decode(frames[topic]), kind)
                    for topic, kind in TYPES.items()}
         point = list(read_points(decoded['/cloud_map'], field_names=('x', 'y', 'z')))[1]
@@ -168,14 +194,60 @@ def main():
         loop_snapshot = json.loads(decoded['/miti/loop_status'].data)
         assert loop_snapshot['counts']['total'] == 1 and loop_snapshot['last_success']['target_id'] == 5
         assert loop_snapshot['display_state'] == 'SUCCESS' and loop_snapshot['title'] == '回环成功'
+        robot = decoded['/robot_pose']
+        assert robot.header.frame_id == 'map'
+        assert 12345 <= robot.header.stamp.sec < 12400, 'device acquisition timestamp was overwritten'
+        np.testing.assert_allclose([robot.pose.position.x, robot.pose.position.y, robot.pose.position.z], [9.8, 21., 0.], atol=1e-6)
+        state = json.loads(decoded['/miti/map_status'].data)
+        assert state['pose']['valid'] and state['pose']['tracked_frame'] == 'base_link', state
+        assert abs(abs(state['pose']['rpy_deg'][2])-180) < 1e-6
+        surfaces = [m for m in decoded['/miti/walls'].markers if m.ns == 'rtabmap/walls/triangles' and m.action == 0]
+        assert surfaces and surfaces[0].points, 'missing wall mesh'
+        triangles = np.array([[p.x, p.y, p.z] for p in surfaces[0].points])
+        assert np.abs(triangles[:, 0]-3).max() < .03
+        centers = triangles.reshape(-1, 3, 3).mean(axis=1)
+        assert not ((np.abs(centers[:, 1]) < .3) & (centers[:, 2] < 1.2)).any(), 'doorway filled'
+        # Stop all input publishers: node heartbeat must report stale pose, not zeros or a fresh old pose.
+        states = []
+        subscription = node.create_subscription(String, '/miti/map_status', lambda msg: states.append(json.loads(msg.data)), 10)
+        deadline = time.monotonic() + 2.5
+        while time.monotonic() < deadline:
+            rclpy.spin_once(node, timeout_sec=.1)
+        assert states and not states[-1]['pose']['valid'], states[-1:]
+        publishers = {topic: pub for topic, _, pub in publications}
+        # Repeated packets with an unchanged source timestamp must also time out,
+        # even while the map correction TF and network traffic remain fresh.
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            correction.header.stamp = node.get_clock().now().to_msg()
+            publishers['/tf'].publish(TFMessage(transforms=[correction]))
+            publishers['/icp_odom'].publish(odom)
+            rclpy.spin_once(node, timeout_sec=.1)
+        assert not states[-1]['pose']['valid'] and states[-1]['pose']['reason'] == '定位数据已中断', states[-1]
+        # Without a base transform expose the true localization reference point.
+        odom.child_frame_id = 'unmounted_lidar'
+        deadline = time.monotonic()+1.5
+        while time.monotonic() < deadline:
+            now = node.get_clock().now().to_msg()
+            correction.header.stamp = now
+            odom.header.stamp = Stamp(sec=12345+now.sec%30, nanosec=now.nanosec)
+            publishers['/tf'].publish(TFMessage(transforms=[correction]))
+            publishers['/icp_odom'].publish(odom)
+            rclpy.spin_once(node, timeout_sec=.1)
+        assert states[-1]['pose']['valid'] and states[-1]['pose']['tracked_frame'] == 'unmounted_lidar', states[-1]
+        assert not states[-1]['pose']['body_frame']
+        node.destroy_subscription(subscription)
         result = {'passed': True, 'scope': 'HTTP + Foxglove WebSocket CDR + synthetic ROS messages',
                   'miti': '3.3.6', 'bridge': '3.6.0', 'domain': 91, 'topics': list(decoded),
+                  'wall_doorway_preserved': True, 'map_body_pose_verified': True, 'pose_timeout_verified': True,
+                  'device_clock_verified': True, 'frozen_stamp_verified': True, 'unmounted_reference_verified': True,
                   'browser_rendering_tested': False, 'real_sensors_tested': False}
         report = PROJECT / 'logs/miti/connection_test.json'
         report.parent.mkdir(parents=True, exist_ok=True)
         report.write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n')
         print(json.dumps(result, ensure_ascii=False, indent=2))
     finally:
+        Path(frame_file).unlink(missing_ok=True)
         if client.poll() is None:
             client.terminate()
             client.wait(timeout=4)

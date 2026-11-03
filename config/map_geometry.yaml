@@ -1,0 +1,19 @@
+map_geometry:
+  ros__parameters:
+    map_frame: map
+    # Use base_link when its TF is available; otherwise expose the actual odometry child frame.
+    # Set an explicit frame to require its calibrated transform (no automatic fallback).
+    robot_frame: auto
+    odom_topic: /icp_odom
+    cloud_topic: /cloud_map
+    pose_timeout: 1.0
+    transform_max_age: 3.0
+    wall_update_interval: 2.0
+    wall_voxel_size: 0.10
+    wall_distance: 0.08
+    wall_cell_size: 0.20
+    wall_min_height: 1.4
+    wall_min_width: 0.9
+    wall_min_area: 1.2
+    wall_max_points: 60000
+    wall_max_walls: 24

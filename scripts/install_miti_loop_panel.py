@@ -32,11 +32,12 @@ def replace_once(source, old, new):
     return source.replace(old, new, 1)
 
 
-def extend_bundle(path, source, panel, height_clip, title, camera_heading, heading_config, depth_display):
+def extend_bundle(path, source, panel, height_clip, title, camera_heading, heading_config, depth_display, map_details):
     if path.endswith('453.e8d48709a26a0ed3.js'):
         source = replace_once(source, 'function rO(e){',
             panel + '\nconst RtabmapLoopStatusPanel = rtabmapLoopStatusFactory(n).Component;\n' +
             height_clip + '\nconst RtabmapHeightClip = rtabmapHeightClipFactory(n);\n' +
+            map_details + '\nconst RtabmapMapDetails = rtabmapMapDetailsFactory(n,x,RtabmapHeightClip);\n' +
             camera_heading + '\nconst RtabmapCameraHeading = rtabmapCameraHeadingFactory(' +
             json.dumps(heading_config) + ',w);\nfunction rO(e){')
         source = replace_once(source,
@@ -46,6 +47,14 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
             'o,v,s,u?b(v.header&&v.header.stamp):0)')
         source = replace_once(source, '{level:"ok",message:"Receiving"}',
             '{level:"ok",message:RtabmapCameraHeading.status(o)}')
+        source = replace_once(source, 'if(11===n.type)return(0,r.jsx)(ty,{marker:n,opacity:d});',
+            'if(11===n.type)return(0,r.jsx)(n.ns.startsWith("rtabmap/walls/")?RtabmapMapDetails.WallMesh:ty,{marker:n,opacity:d});')
+        source = replace_once(source, '(0,r.jsx)(t7,{config:l,',
+            '(0,r.jsx)(t7,{client:t,config:l,')
+        source = replace_once(source, 'className:"scene-settings",children:[(0,r.jsxs)(eM,{title:"Frame",',
+            'className:"scene-settings",children:['
+            '(0,r.jsx)(RtabmapMapDetails.Controls,{client:e.client,settings:t,onChange:a,inline:true}),'
+            '(0,r.jsxs)(eM,{title:"Frame",')
         source = replace_once(source, 'switch(t.type){case"topics":',
             'switch(t.type){case"loop-status":return(0,r.jsx)(RtabmapLoopStatusPanel,'
             '{client:a,topic:t.props&&t.props.topic});case"topics":')
@@ -63,15 +72,16 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
             '(0,r.jsx)(RtabmapHeightClip.Provider,{settings:c.heightClip,follow:B,children:' + scene + '})')
         return replace_once(source, 'className:d.u4.urdfViewer.container,children:[',
             'className:d.u4.urdfViewer.container,children:['
+            '(0,r.jsx)(RtabmapMapDetails.Controls,{client:t,settings:l,onChange:o}),'
             '(0,r.jsx)(RtabmapHeightClip.Controls,{settings:c.heightClip,frame:D,'
             'onChange:e=>o({...l,scene:{...c,heightClip:e}})}),')
     source = replace_once(source, 'let k=[{type:"topics",',
-        depth_display + '\nlet k=[{type:"loop-status",label:"回环状态",icon:"↻",'
+        depth_display + '\n' + map_details + '\nlet k=[{type:"loop-status",label:"回环状态",icon:"↻",'
         'defaultSize:{w:4,h:8},minSize:{minW:2,minH:4}},{type:"topics",')
     source = replace_once(source,
         'widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})',
         'widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})'
-        '.map(rtabmapMigrateDepthWidget)')
+        '.map(rtabmapMigrateDepthWidget).map(rtabmapMigrateWallWidget)')
     # The dashboard is client-rendered. Use text instead of the fixed-width logo,
     # with ellipsis on narrow screens and the full system name in its tooltip.
     title_js = json.dumps(title, ensure_ascii=True)
@@ -101,6 +111,7 @@ def install(app=APP):
     height_clip = (PROJECT / 'config/miti_height_clip.js').read_text()
     camera_heading = (PROJECT / 'config/miti_camera_heading.js').read_text()
     depth_display = (PROJECT / 'config/miti_depth_display.js').read_text()
+    map_details = (PROJECT / 'config/miti_map_details.js').read_text()
     heading_config = json.loads((PROJECT / 'config/miti_camera_heading.json').read_text())
     if (not isinstance(heading_config, dict) or
             not isinstance(heading_config.get('enabled'), bool) or
@@ -128,7 +139,7 @@ def install(app=APP):
         if digest(original) != expected:
             raise ValueError(f'Original MITI bundle checksum mismatch: {backup}')
         updated = extend_bundle(name, original.decode(), panel, height_clip, title,
-                                camera_heading, heading_config, depth_display).encode()
+                                camera_heading, heading_config, depth_display, map_details).encode()
         prepared.append((name, target, backup, original, updated, current))
     # Syntax-check the actual combined bundles, not just the standalone component.
     with tempfile.TemporaryDirectory(prefix='miti_panel_check_') as directory:

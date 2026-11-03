@@ -1,7 +1,9 @@
 {
   "widgets": [
     {
-      "i": "rtabmap-scene", "type": "urdf-viewer", "title": "三维地图 · 轨迹 · 语义标签",
+      "i": "rtabmap-scene", "type": "urdf-viewer", "title": "三维地图 · 墙面 · 机器人位姿",
+      "rtabmapWallsVersion": 1,
+      "rtabmapPoseDisplayVersion": 1,
       "x": 0, "y": 0, "w": 8, "h": 12,
       "props": {
         "version": 2,
@@ -15,6 +17,8 @@
           "/livox/lidar": {"visible": false, "type": "pointcloud", "pointSize": 2, "maxPoints": 100000, "maxRate": 10},
           "/miti/trajectory": {"visible": true, "type": "path", "poseType": "line", "lineWidth": 0.035},
           "/miti/semantic_markers": {"visible": true, "type": "markers"},
+          "/miti/walls": {"visible": true, "type": "markers"},
+          "/robot_pose": {"visible": true, "type": "pose", "poseType": "axis", "axisScale": 0.65, "opacity": 1, "staleAfter": 2},
           "/icp_odom": {"visible": true, "type": "odometry", "axisScale": 0.4}
         },
         "layers": []

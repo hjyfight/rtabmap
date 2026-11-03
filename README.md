@@ -2,6 +2,10 @@
 
 目标目录：`/home/jyfight/Project/rtabmap_slam`。
 
+MITI 三维地图新增墙面开关与机器人位姿读数，标准位姿输出为 `/robot_pose`。
+运行 `bash scripts/start_miti.sh` 自动启动；参考点、参数及验证说明见
+[墙面与位姿](docs/walls_and_robot_pose.md)。
+
 ## MITI 网页实时展示
 
 项目内已部署 MITI 3.3.6 与 foxglove_bridge 3.6.0。传感器和 SLAM 启动后，

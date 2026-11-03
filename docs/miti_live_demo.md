@@ -1,5 +1,8 @@
 # MITI 实时验收展示
 
+新增墙面显示开关和 XYZ / Roll / Pitch / Yaw 位姿读数，随展示服务自动启动。
+详见 [墙面显示与机器人位姿输出](walls_and_robot_pose.md)。
+
 本机为 Ubuntu 22.04 amd64 / ROS 2 Humble，已在项目内安装 MITI **3.3.6**、
 foxglove_bridge **3.6.0** 和所需的 rosx-introspection / RapidJSON 包。
 使用官方预编译包，无需 npm、Docker 或 sudo。
