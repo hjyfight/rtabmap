@@ -32,12 +32,13 @@ def replace_once(source, old, new):
     return source.replace(old, new, 1)
 
 
-def extend_bundle(path, source, panel, height_clip, title, camera_heading, heading_config, depth_display, map_details):
+def extend_bundle(path, source, panel, height_clip, title, camera_heading, heading_config, depth_display, map_details, grid_map):
     if path.endswith('453.e8d48709a26a0ed3.js'):
         source = replace_once(source, 'function rO(e){',
             panel + '\nconst RtabmapLoopStatusPanel = rtabmapLoopStatusFactory(n).Component;\n' +
             height_clip + '\nconst RtabmapHeightClip = rtabmapHeightClipFactory(n);\n' +
             map_details + '\nconst RtabmapMapDetails = rtabmapMapDetailsFactory(n,x,RtabmapHeightClip);\n' +
+            grid_map + '\nconst RtabmapGridMap = rtabmapGridMapFactory(n);\n' +
             camera_heading + '\nconst RtabmapCameraHeading = rtabmapCameraHeadingFactory(' +
             json.dumps(heading_config) + ',w);\nfunction rO(e){')
         source = replace_once(source,
@@ -53,8 +54,10 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
             '(0,r.jsx)(t7,{client:t,config:l,')
         source = replace_once(source, 'className:"scene-settings",children:[(0,r.jsxs)(eM,{title:"Frame",',
             'className:"scene-settings",children:['
-            '(0,r.jsx)(RtabmapMapDetails.Controls,{client:e.client,settings:t,onChange:a,inline:true}),'
+            '!t.scene.rtabmapGrid&&(0,r.jsx)(RtabmapMapDetails.Controls,{client:e.client,settings:t,onChange:a,inline:true}),'
             '(0,r.jsxs)(eM,{title:"Frame",')
+        source = replace_once(source, '(0,r.jsx)(Z.z,{ref:o,makeDefault:!0,enabled:i,onEnd:',
+            '(0,r.jsx)(Z.z,{ref:o,makeDefault:!0,enabled:i,enableRotate:!t.rtabmapTopDown,onEnd:')
         source = replace_once(source, 'switch(t.type){case"topics":',
             'switch(t.type){case"loop-status":return(0,r.jsx)(RtabmapLoopStatusPanel,'
             '{client:a,topic:t.props&&t.props.topic});case"topics":')
@@ -72,16 +75,17 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
             '(0,r.jsx)(RtabmapHeightClip.Provider,{settings:c.heightClip,follow:B,children:' + scene + '})')
         return replace_once(source, 'className:d.u4.urdfViewer.container,children:[',
             'className:d.u4.urdfViewer.container,children:['
+            'c.rtabmapGrid?(0,r.jsx)(RtabmapGridMap.Controls,{client:t,settings:l,onChange:o}):'
             '(0,r.jsx)(RtabmapMapDetails.Controls,{client:t,settings:l,onChange:o}),'
-            '(0,r.jsx)(RtabmapHeightClip.Controls,{settings:c.heightClip,frame:D,'
+            '!c.rtabmapGrid&&(0,r.jsx)(RtabmapHeightClip.Controls,{settings:c.heightClip,frame:D,'
             'onChange:e=>o({...l,scene:{...c,heightClip:e}})}),')
     source = replace_once(source, 'let k=[{type:"topics",',
-        depth_display + '\n' + map_details + '\nlet k=[{type:"loop-status",label:"回环状态",icon:"↻",'
+        depth_display + '\n' + map_details + '\n' + grid_map + '\nlet k=[{type:"loop-status",label:"回环状态",icon:"↻",'
         'defaultSize:{w:4,h:8},minSize:{minW:2,minH:4}},{type:"topics",')
     source = replace_once(source,
-        'widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})',
-        'widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})'
-        '.map(rtabmapMigrateDepthWidget).map(rtabmapMigrateWallWidget)')
+        't({mosaic:r.mosaic,widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})})',
+        't(rtabmapMigrateGridLayout({mosaic:r.mosaic,widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})'
+        '.map(rtabmapMigrateDepthWidget).map(rtabmapMigrateWallWidget)}))')
     # The dashboard is client-rendered. Use text instead of the fixed-width logo,
     # with ellipsis on narrow screens and the full system name in its tooltip.
     title_js = json.dumps(title, ensure_ascii=True)
@@ -112,6 +116,7 @@ def install(app=APP):
     camera_heading = (PROJECT / 'config/miti_camera_heading.js').read_text()
     depth_display = (PROJECT / 'config/miti_depth_display.js').read_text()
     map_details = (PROJECT / 'config/miti_map_details.js').read_text()
+    grid_map = (PROJECT / 'config/miti_grid_map.js').read_text()
     heading_config = json.loads((PROJECT / 'config/miti_camera_heading.json').read_text())
     if (not isinstance(heading_config, dict) or
             not isinstance(heading_config.get('enabled'), bool) or
@@ -139,7 +144,7 @@ def install(app=APP):
         if digest(original) != expected:
             raise ValueError(f'Original MITI bundle checksum mismatch: {backup}')
         updated = extend_bundle(name, original.decode(), panel, height_clip, title,
-                                camera_heading, heading_config, depth_display, map_details).encode()
+                                camera_heading, heading_config, depth_display, map_details, grid_map).encode()
         prepared.append((name, target, backup, original, updated, current))
     # Syntax-check the actual combined bundles, not just the standalone component.
     with tempfile.TemporaryDirectory(prefix='miti_panel_check_') as directory:

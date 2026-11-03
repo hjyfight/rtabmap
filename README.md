@@ -11,7 +11,8 @@ MITI 三维地图新增墙面开关与机器人位姿读数，标准位姿输出
 项目内已部署 MITI 3.3.6 与 foxglove_bridge 3.6.0。传感器和 SLAM 启动后，
 在新终端运行 `bash scripts/start_miti.sh`，浏览器打开
 <http://localhost:3000/rtabmap.html> 并应用项目布局，可查看三维地图、优化轨迹、
-语义标签、彩色/深度图和日志。安装、网卡设置及验证范围见
+语义标签、并排的二维栅格地图、彩色/深度图和日志。已有布局可在入口选择
+“更新显示并保留当前布局”。栅格数据及更新方式见[双地图显示](docs/grid_map_display.md)。安装、网卡设置及验证范围见
 [MITI 实时展示说明](docs/miti_live_demo.md)。
 
 ## YOLO 语义地图标签

@@ -4,7 +4,8 @@
       "i": "rtabmap-scene", "type": "urdf-viewer", "title": "三维地图 · 墙面 · 机器人位姿",
       "rtabmapWallsVersion": 1,
       "rtabmapPoseDisplayVersion": 1,
-      "x": 0, "y": 0, "w": 8, "h": 12,
+      "rtabmapGridLayoutVersion": 1,
+      "x": 0, "y": 0, "w": 4, "h": 12,
       "props": {
         "version": 2,
         "frame": {"fixedFrame": "map", "displayFrame": "map", "followMode": "fixed", "syncTimestamps": false},
@@ -20,6 +21,29 @@
           "/miti/walls": {"visible": true, "type": "markers"},
           "/robot_pose": {"visible": true, "type": "pose", "poseType": "axis", "axisScale": 0.65, "opacity": 1, "staleAfter": 2},
           "/icp_odom": {"visible": true, "type": "odometry", "axisScale": 0.4}
+        },
+        "layers": []
+      }
+    },
+    {
+      "i": "rtabmap-grid-scene", "type": "urdf-viewer", "title": "二维栅格地图",
+      "rtabmapGridProjectionVersion": 1,
+      "x": 4, "y": 0, "w": 4, "h": 12,
+      "props": {
+        "version": 2,
+        "frame": {"fixedFrame": "map", "displayFrame": "map", "followMode": "fixed", "syncTimestamps": false},
+        "scene": {"background": "#808080", "renderStats": false, "labelScale": 1, "rtabmapGrid": true,
+                  "heightClip": {"enabled": false, "height": 2}},
+        "view": {"perspective": false, "distance": 24, "thetaOffset": -90, "phi": 0.01,
+                 "targetOffset": [0, 0, 0], "rtabmapTopDown": true},
+        "transforms": {"visible": false, "tfTopics": ["/tf", "/tf_static"], "staticTfTopics": ["/tf_static"]},
+        "topics": {
+          "/miti/grid_map": {"visible": true, "type": "map", "mapColorMode": "custom", "minColor": "#ffffff",
+                   "maxColor": "#000000", "unknownColor": "#808080", "invalidColor": "#ff00ff",
+                   "opacity": 1, "drawBehind": true, "frameLocked": false},
+          "/robot_pose": {"visible": true, "type": "pose", "poseType": "arrow", "axisScale": 0.5,
+                          "color": "#20c997", "opacity": 1, "staleAfter": 2},
+          "/miti/trajectory": {"visible": true, "type": "path", "poseType": "line", "lineWidth": 0.035, "color": "#ed9b21"}
         },
         "layers": []
       }
@@ -54,7 +78,7 @@
   "mosaic": {
     "direction": "column", "splitPercentage": 60,
     "first": {
-      "direction": "row", "first": "rtabmap-scene", "splitPercentage": 68,
+      "direction": "row", "first": {"direction": "row", "first": "rtabmap-scene", "second": "rtabmap-grid-scene", "splitPercentage": 50}, "splitPercentage": 68,
       "second": {"direction": "column", "first": "rtabmap-color", "second": "rtabmap-depth", "splitPercentage": 50}
     },
     "second": {"direction": "row", "first": "rtabmap-log", "second": "rtabmap-loop-status", "splitPercentage": 65}

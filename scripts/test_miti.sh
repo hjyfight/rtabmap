@@ -16,8 +16,10 @@ for port in (13000, 18765):
 PY
 python3 -m unittest discover -s "$MITI_PROJECT/tests" -p test_miti_scene_adapter.py -v
 OPENBLAS_NUM_THREADS=1 python3 -m unittest discover -s "$MITI_PROJECT/tests" -p test_wall_geometry.py -v
+OPENBLAS_NUM_THREADS=1 python3 -m unittest discover -s "$MITI_PROJECT/tests" -p test_grid_projection.py -v
 python3 -m unittest discover -s "$MITI_PROJECT/tests" -p test_map_geometry_messages.py -v
 "$MITI_APP/node/bin/node" "$MITI_PROJECT/tests/test_miti_map_details.js"
+"$MITI_APP/node/bin/node" "$MITI_PROJECT/tests/test_miti_grid_map.js"
 "$MITI_APP/node/bin/node" "$MITI_PROJECT/tests/test_miti_loop_panel.js"
 "$MITI_APP/node/bin/node" "$MITI_PROJECT/tests/test_miti_height_clip.js"
 "$MITI_APP/node/bin/node" "$MITI_PROJECT/tests/test_miti_camera_heading.js"

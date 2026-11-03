@@ -17,7 +17,7 @@ import numpy as np
 import rclpy
 from builtin_interfaces.msg import Time as Stamp
 from geometry_msgs.msg import Pose, PoseStamped, TransformStamped
-from nav_msgs.msg import Odometry, Path as RosPath
+from nav_msgs.msg import OccupancyGrid, Odometry, Path as RosPath
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from rclpy.serialization import deserialize_message
 from rtabmap_msgs.msg import MapGraph, RGBDImage
@@ -35,7 +35,8 @@ TYPES = {'/cloud_map': PointCloud2, '/camera/color/image_raw': Image,
          '/miti/trajectory': RosPath, '/miti/semantic_markers': MarkerArray,
          '/miti/aligned_depth/image_raw': Image, '/miti/aligned_depth/camera_info': CameraInfo,
          '/miti/loop_status': String, '/robot_pose': PoseStamped,
-         '/miti/walls': MarkerArray, '/miti/map_status': String}
+         '/miti/walls': MarkerArray, '/miti/map_status': String, '/map': OccupancyGrid,
+         '/miti/grid_map': OccupancyGrid, '/miti/grid_status': String}
 CLIENT = r"""
 const WS = require(process.argv[1]);
 const wanted = new Set(JSON.parse(process.argv[2]));
@@ -101,6 +102,8 @@ def main():
     assert any('RtabmapCameraHeading.transform(' in source for source in bundled)
     assert any('.map(rtabmapMigrateDepthWidget)' in source for source in bundled)
     assert any('RtabmapMapDetails.Controls' in source and 'RtabmapMapDetails.WallMesh' in source for source in bundled)
+    assert any('RtabmapGridMap.Controls' in source and 'enableRotate:!t.rtabmapTopDown' in source for source in bundled)
+    assert any('t(rtabmapMigrateGridLayout({' in source for source in bundled)
     frame_fd, frame_file = tempfile.mkstemp(prefix='miti_connection_', suffix='.json')
     os.close(frame_fd)
     client = subprocess.Popen([str(APP / 'node/bin/node'), '-e', CLIENT,
@@ -115,11 +118,15 @@ def main():
                     for topic, kind in [('/cloud_map', PointCloud2), ('/tf_static', TFMessage),
                                         ('/rgbd_image', RGBDImage),
                                         ('/mapGraph', MapGraph), ('/semantic/objects', SemanticMap),
-                                        ('/miti/loop_status', String), ('/tf', TFMessage), ('/icp_odom', Odometry)]]
+                                        ('/miti/loop_status', String), ('/tf', TFMessage), ('/icp_odom', Odometry),
+                                        ('/map', OccupancyGrid)]]
     y, z = np.meshgrid(np.arange(-2, 2.01, .07), np.arange(-.5, 2.51, .07))
     wall = np.column_stack((np.full(y.size, 3.), y.ravel(), z.ravel()))
     wall = wall[~((np.abs(wall[:, 1]) < .55) & (wall[:, 2] < 1.5))]
     map_points = np.vstack(([(0, 0, 0), (1, 2, 3), (2, 3, 4)], wall))
+    floor_x, floor_y = np.meshgrid(np.arange(-2, 4.01, .08), np.arange(-2, 2.01, .08))
+    floor = np.column_stack((floor_x.ravel(), floor_y.ravel(), np.full(floor_x.size, -.5)))
+    map_points = np.vstack((map_points, floor, floor+[0, 0, 3]))
     for topic in ['/camera/color/image_raw', '/camera/aligned_depth_to_color/image_raw']:
         publications.append((topic, Image, node.create_publisher(Image, topic, qos_profile_sensor_data)))
     try:
@@ -127,6 +134,12 @@ def main():
         while client.poll() is None and time.monotonic() - start < 28:
             header = Header(frame_id='map', stamp=node.get_clock().now().to_msg())
             cloud = create_cloud_xyz32(header, map_points.tolist())
+            grid = OccupancyGrid(header=header)
+            grid.info.resolution = 0.05
+            grid.info.width, grid.info.height = 3, 2
+            grid.info.origin.position.x, grid.info.origin.position.y = -1.5, 2.5
+            grid.info.origin.orientation.w = 1.0
+            grid.data = [-1, 0, 100, 100, 0, -1]
             pose = Pose()
             pose.position.x = 1.0
             graph = MapGraph(header=header, poses_id=[1, 2], poses=[Pose(), pose])
@@ -162,7 +175,7 @@ def main():
                 'rates_hz': {'lidar': 10.0, 'rgb': 6.0, 'depth': 6.0, 'slam_info': 1.0},
                 'slam_age_seconds': 0.0, 'heartbeat_age_seconds': 0.0, 'success_hold_remaining': 8.0,
             }, ensure_ascii=False))
-            messages = {'/cloud_map': cloud, '/mapGraph': graph, '/semantic/objects': objects,
+            messages = {'/cloud_map': cloud, '/map': grid, '/mapGraph': graph, '/semantic/objects': objects,
                         '/rgbd_image': rgbd,
                         '/tf_static': TFMessage(transforms=[transform, mount]),
                         '/tf': TFMessage(transforms=[correction]), '/icp_odom': odom,
@@ -176,6 +189,21 @@ def main():
         frames = json.loads(Path(frame_file).read_text())
         decoded = {topic: deserialize_message(base64.b64decode(frames[topic]), kind)
                    for topic, kind in TYPES.items()}
+        received_grid = decoded['/map']
+        assert received_grid.header.frame_id == 'map'
+        assert received_grid.info.width == 3 and received_grid.info.height == 2
+        assert abs(received_grid.info.resolution - .05) < 1e-6
+        assert received_grid.info.origin.position.x == -1.5 and received_grid.info.origin.position.y == 2.5
+        assert list(received_grid.data) == [-1, 0, 100, 100, 0, -1]
+        filtered = decoded['/miti/grid_map']
+        grid_status = json.loads(decoded['/miti/grid_status'].data)
+        assert grid_status['state'] == 'ready', grid_status
+        assert grid_status['removed_high_points'] > len(floor)
+        assert filtered.header.frame_id == 'map'
+        assert abs(filtered.info.resolution-.05) < 1e-6
+        values = np.array(filtered.data).reshape(filtered.info.height, filtered.info.width)
+        assert (values == 0).sum() > 500 and (values == 100).sum() > 10
+        assert (values == 100).sum() < 1000, 'ceiling must not fill the room with obstacles'
         point = list(read_points(decoded['/cloud_map'], field_names=('x', 'y', 'z')))[1]
         assert tuple(float(point[field]) for field in ('x', 'y', 'z')) == (1.0, 2.0, 3.0)
         assert decoded['/camera/color/image_raw'].encoding == 'rgb8'
@@ -237,10 +265,33 @@ def main():
         assert states[-1]['pose']['valid'] and states[-1]['pose']['tracked_frame'] == 'unmounted_lidar', states[-1]
         assert not states[-1]['pose']['body_frame']
         node.destroy_subscription(subscription)
+        # A single replacement snapshot must remove prior projected obstacles,
+        # including for subscribers joining while the map is otherwise static.
+        grids = []
+        grid_subscription = node.create_subscription(OccupancyGrid, '/miti/grid_map', grids.append, latched)
+        publishers['/cloud_map'].publish(create_cloud_xyz32(
+            Header(frame_id='map', stamp=node.get_clock().now().to_msg()), floor.tolist()))
+        deadline = time.monotonic()+3
+        while time.monotonic() < deadline:
+            rclpy.spin_once(node, timeout_sec=.1)
+            if grids and 100 not in grids[-1].data and list(grids[-1].data).count(0) > 500:
+                break
+        assert grids and 100 not in grids[-1].data and list(grids[-1].data).count(0) > 500
+        publishers['/cloud_map'].publish(create_cloud_xyz32(
+            Header(frame_id='map', stamp=node.get_clock().now().to_msg()), []))
+        deadline = time.monotonic()+3
+        while time.monotonic() < deadline:
+            rclpy.spin_once(node, timeout_sec=.1)
+            if grids and list(grids[-1].data) == [-1]:
+                break
+        assert list(grids[-1].data) == [-1], 'empty map must clear the old grid'
+        node.destroy_subscription(grid_subscription)
         result = {'passed': True, 'scope': 'HTTP + Foxglove WebSocket CDR + synthetic ROS messages',
                   'miti': '3.3.6', 'bridge': '3.6.0', 'domain': 91, 'topics': list(decoded),
                   'wall_doorway_preserved': True, 'map_body_pose_verified': True, 'pose_timeout_verified': True,
                   'device_clock_verified': True, 'frozen_stamp_verified': True, 'unmounted_reference_verified': True,
+                  'grid_height_filter_verified': True, 'grid_snapshot_replacement_verified': True,
+                  'grid_empty_map_cleared': True,
                   'browser_rendering_tested': False, 'real_sensors_tested': False}
         report = PROJECT / 'logs/miti/connection_test.json'
         report.parent.mkdir(parents=True, exist_ok=True)
