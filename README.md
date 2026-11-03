@@ -385,3 +385,54 @@ ros2 launch /home/jyfight/Project/rtabmap_slam/launch/livox_realsense_3dslam.lau
 ## 语义建图
 cd /home/jyfight/Project/rtabmap_slam
 bash scripts/start_semantic_slam.sh
+
+
+
+
+
+##  ####################################################
+
+## 雷达命令
+ssh unitree@192.168.123.18
+source ~/yao_space/ws_livox/install/setup.bash
+ros2 launch livox_ros_driver2 rviz_MID360_launch.py
+
+## 相机命令
+
+ssh unitree@192.168.123.18
+
+source /opt/ros/foxy/setup.bash
+
+/usr/bin/python3 /opt/ros/foxy/bin/ros2 launch realsense2_camera rs_launch.py \
+  config_file:="'/home/unitree/realsense_slam_sensor_qos.yaml'" \
+  rgb_camera.profile:=424x240x6 \
+  depth_module.profile:=640x480x6 \
+  align_depth.enable:=true \
+  enable_color:=true \
+  enable_depth:=true \
+  enable_sync:=true
+
+
+## 查看本地是否正常接收到传感器数据
+
+source go2env.sh
+ros2 topic list
+ros2 topic hz /livox/lidar
+ros2 topic hz /camera/color/image_raw
+
+## 最新建图命令  yolov8 分割模型
+bash /home/jyfight/Project/rtabmap_slam/scripts/start_semantic_slam.sh
+
+## yoloe 分割模型
+bash /home/jyfight/Project/rtabmap_slam/scripts/start_semantic_yoloe.sh
+
+
+## miti 展示
+
+启动建图后，新开终端执行：
+source go2env.sh
+cd /home/jyfight/Project/rtabmap_slam
+bash scripts/start_miti.sh
+
+打开浏览器 点击 应用项目布局并进入展示
+http://localhost:3000/rtabmap.html
