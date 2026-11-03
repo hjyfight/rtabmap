@@ -254,7 +254,7 @@ source /opt/ros/foxy/setup.bash
   enable_color:=true \
   enable_depth:=true \
   enable_sync:=true
-
+ 
 
 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch realsense2_camera rs_launch.py \
   rgb_camera.profile:=424x240x6 \
@@ -274,7 +274,7 @@ export ROS_LOCALHOST_ONLY=0
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="enxec1ac312a316"/></Interfaces></General></Domain></CycloneDDS>'
 
-
+  
 
 
 ros2 topic list
