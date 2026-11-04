@@ -63,6 +63,7 @@ foxglove_bridge **3.6.0** 和所需的 rosx-introspection / RapidJSON 包。
 | 实时雷达 | `/livox/lidar` | 默认隐藏；需要时在三维面板 Topics 中打开 |
 | 彩色画面 | `/camera/color/image_raw` | 默认最多绘制 15 FPS |
 | 对齐深度 | `/miti/aligned_depth/image_raw` | 仅显示校验通过的 RGB-D 深度帧，默认最多 10 FPS，16UC1 显示范围 0.3–4 m |
+| 左近红外 | `/camera/infra1/image_rect_raw` | 原生图像面板，640×480 mono8 灰度图，默认最多绘制 10 FPS |
 | 回环检测日志 | `/rosout` | 底部左侧，14 px 字体；默认筛选 `loop_closure_diagnostics` 节点的 INFO 及以上日志 |
 | 回环状态 | `/miti/loop_status` | 底部右侧的原生面板，显示检测状态、成功次数、最近匹配节点和输入频率；支持独立放大 |
 
@@ -70,8 +71,47 @@ foxglove_bridge **3.6.0** 和所需的 rosx-introspection / RapidJSON 包。
 在日志面板清除 `loop_closure_diagnostics` 搜索条件，可恢复查看所有节点的运行日志。
 它直接使用已有 ROS 日志话题，不依赖 Qt 窗口；回环诊断进程需要保持运行。
 日志面板显示接入后收到的消息，不会自动读取本地历史 JSONL 日志。
-更新布局后，打开 `/rtabmap.html` 并点击“应用项目布局并进入展示”；只刷新主页面会
-继续使用浏览器已保存的旧布局。应用前会自动备份旧布局。
+更新后，打开 `/rtabmap.html` 并点击“更新显示并保留当前布局”，自动补充本次新增的
+项目面板；需要重新排列所有窗口时选择“应用完整项目布局”。操作前会自动备份旧布局。
+
+### 近红外画面
+
+默认布局在右侧依次显示彩色、对齐深度和左近红外。已有项目布局打开
+`http://localhost:3000/rtabmap.html?refresh=1`，会更新控件并在相机面板下方补上
+近红外面板。该迁移仅执行一次，保留原有视角、面板设置和已添加的红外窗口；
+之后手动删除近红外面板也会被保留。可拖动分隔线调整画面大小。
+
+当前机器人 `192.168.123.18` 的 D435I 使用
+`/home/unitree/realsense_slam_sensor_qos.yaml` 启动，`/camera/camera` 的
+`ros__parameters` 下已保存 `enable_infra1: true` 和 `enable_infra2: true`。
+当前驱动组合实测单独启用左路时未出帧，同时启用两路后正常。已有驱动可在相同
+ROS 网络环境中执行：
+
+```bash
+ros2 param set /camera/camera enable_infra1 true
+ros2 param set /camera/camera enable_infra2 true
+```
+
+切换红外流会让深度模块短暂重启。MITI 直接订阅 `/camera/infra1/image_rect_raw`，
+沿用桥接器已有相机话题白名单；图像面板使用黑白渐变、灰度范围 0–255。
+实机支持 640×480 mono8、配置 6 FPS，左红外与原始深度使用相同内参；
+图中的亮点是红外投射器散斑。右路也已启用，在图像面板设置中将话题改为
+`/camera/infra2/image_rect_raw` 即可切换；面板默认只订阅左路。
+
+布局迁移保存在 `config/miti_infrared_display.js`，由现有安装器部署。
+验证：使用 MITI 随附 Node 运行 `tests/test_miti_infrared_display.js`；
+`scripts/check_miti_live.py` 也检查红外图像能否通过 MITI WebSocket 桥接器收到。
+2026-11-04 短时测试中，桥接器连续收到左右各 107 帧，约 6 Hz，编码 mono8；记录在
+`logs/miti/infrared_stream_check.json`，用户已确认面板有画面。
+但后续驱动重启出现 RGB 和彩色内参断流，导致 RGB-D 与 SLAM 停止更新。
+重新启用彩色流后，RGB-D 与 SLAM 恢复，而红外又停止输出。这组相机配置尚未通过
+RGB-D、红外同时持续运行的验证，不能仅凭面板有红外画面判定完整链路正常。
+红外 QoS 已在运行进程中改为 SENSOR_DATA，但 30 秒复测仍发生停帧，因此该调整
+不能视作修复，也尚未写入机器人启动配置。记录见
+`logs/miti/rgbd_after_infrared_qos.json`。重新启用彩色流后的恢复记录见
+`logs/miti/rgbd_after_color_restart.json`。本机已有 RTAB-Map 工具完成了独立重投影验证，
+没有下载或安装新的深度对齐组件，临时测试进程已关闭。后续 15 FPS 配置测试因网络
+接口暂时不可用而未执行；最新一轮日志中所有传感器均为 0 Hz，连通性待确认。
 
 ### 回环状态面板
 

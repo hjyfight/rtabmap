@@ -32,7 +32,7 @@ def replace_once(source, old, new):
     return source.replace(old, new, 1)
 
 
-def extend_bundle(path, source, panel, height_clip, title, camera_heading, heading_config, depth_display, map_details, grid_map):
+def extend_bundle(path, source, panel, height_clip, title, camera_heading, heading_config, depth_display, map_details, grid_map, infrared_display):
     if path.endswith('453.e8d48709a26a0ed3.js'):
         source = replace_once(source, 'function rO(e){',
             panel + '\nconst RtabmapLoopStatusPanel = rtabmapLoopStatusFactory(n).Component;\n' +
@@ -80,12 +80,12 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
             '!c.rtabmapGrid&&(0,r.jsx)(RtabmapHeightClip.Controls,{settings:c.heightClip,frame:D,'
             'onChange:e=>o({...l,scene:{...c,heightClip:e}})}),')
     source = replace_once(source, 'let k=[{type:"topics",',
-        depth_display + '\n' + map_details + '\n' + grid_map + '\nlet k=[{type:"loop-status",label:"回环状态",icon:"↻",'
+        depth_display + '\n' + map_details + '\n' + grid_map + '\n' + infrared_display + '\nlet k=[{type:"loop-status",label:"回环状态",icon:"↻",'
         'defaultSize:{w:4,h:8},minSize:{minW:2,minH:4}},{type:"topics",')
     source = replace_once(source,
         't({mosaic:r.mosaic,widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})})',
-        't(rtabmapMigrateGridLayout({mosaic:r.mosaic,widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})'
-        '.map(rtabmapMigrateDepthWidget).map(rtabmapMigrateWallWidget)}))')
+        't(rtabmapMigrateInfraredLayout(rtabmapMigrateGridLayout({mosaic:r.mosaic,widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})'
+        '.map(rtabmapMigrateDepthWidget).map(rtabmapMigrateWallWidget)})))')
     # The dashboard is client-rendered. Use text instead of the fixed-width logo,
     # with ellipsis on narrow screens and the full system name in its tooltip.
     title_js = json.dumps(title, ensure_ascii=True)
@@ -115,6 +115,7 @@ def install(app=APP):
     height_clip = (PROJECT / 'config/miti_height_clip.js').read_text()
     camera_heading = (PROJECT / 'config/miti_camera_heading.js').read_text()
     depth_display = (PROJECT / 'config/miti_depth_display.js').read_text()
+    infrared_display = (PROJECT / 'config/miti_infrared_display.js').read_text()
     map_details = (PROJECT / 'config/miti_map_details.js').read_text()
     grid_map = (PROJECT / 'config/miti_grid_map.js').read_text()
     heading_config = json.loads((PROJECT / 'config/miti_camera_heading.json').read_text())
@@ -144,7 +145,7 @@ def install(app=APP):
         if digest(original) != expected:
             raise ValueError(f'Original MITI bundle checksum mismatch: {backup}')
         updated = extend_bundle(name, original.decode(), panel, height_clip, title,
-                                camera_heading, heading_config, depth_display, map_details, grid_map).encode()
+                                camera_heading, heading_config, depth_display, map_details, grid_map, infrared_display).encode()
         prepared.append((name, target, backup, original, updated, current))
     # Syntax-check the actual combined bundles, not just the standalone component.
     with tempfile.TemporaryDirectory(prefix='miti_panel_check_') as directory:

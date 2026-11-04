@@ -50,15 +50,22 @@
     },
     {
       "i": "rtabmap-color", "type": "camera-viewer", "title": "RealSense · 彩色画面",
-      "x": 8, "y": 0, "w": 4, "h": 6,
+      "x": 8, "y": 0, "w": 4, "h": 4,
       "props": {"topic": "/camera/color/image_raw", "maxFps": 15}
     },
     {
       "i": "rtabmap-depth", "type": "camera-viewer", "title": "RealSense · 对齐深度",
       "rtabmapAlignedDepthVersion": 1,
-      "x": 8, "y": 6, "w": 4, "h": 6,
+      "rtabmapInfraredLayoutVersion": 1,
+      "x": 8, "y": 4, "w": 4, "h": 4,
       "props": {"topic": "/miti/aligned_depth/image_raw",
                 "maxFps": 10, "colorMode": "colormap", "valueMin": 300, "valueMax": 4000}
+    },
+    {
+      "i": "rtabmap-infrared", "type": "camera-viewer", "title": "RealSense · 左近红外",
+      "x": 8, "y": 8, "w": 4, "h": 4,
+      "props": {"topic": "/camera/infra1/image_rect_raw", "maxFps": 10,
+                "colorMode": "gradient", "gradient": ["#000000", "#ffffff"], "valueMin": 0, "valueMax": 255}
     },
     {
       "i": "rtabmap-log", "type": "log", "title": "回环检测日志",
@@ -79,7 +86,8 @@
     "direction": "column", "splitPercentage": 60,
     "first": {
       "direction": "row", "first": {"direction": "row", "first": "rtabmap-scene", "second": "rtabmap-grid-scene", "splitPercentage": 50}, "splitPercentage": 68,
-      "second": {"direction": "column", "first": "rtabmap-color", "second": "rtabmap-depth", "splitPercentage": 50}
+      "second": {"direction": "column", "first": "rtabmap-color", "splitPercentage": 33.33,
+                 "second": {"direction": "column", "first": "rtabmap-depth", "second": "rtabmap-infrared", "splitPercentage": 50}}
     },
     "second": {"direction": "row", "first": "rtabmap-log", "second": "rtabmap-loop-status", "splitPercentage": 65}
   }
