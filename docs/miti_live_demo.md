@@ -63,7 +63,8 @@ foxglove_bridge **3.6.0** 和所需的 rosx-introspection / RapidJSON 包。
 | 实时雷达 | `/livox/lidar` | 默认隐藏；需要时在三维面板 Topics 中打开 |
 | 彩色画面 | `/camera/color/image_raw` | 默认最多绘制 15 FPS |
 | 对齐深度 | `/miti/aligned_depth/image_raw` | 仅显示校验通过的 RGB-D 深度帧，默认最多 10 FPS，16UC1 显示范围 0.3–4 m |
-| 左近红外 | `/camera/infra1/image_rect_raw` | 原生图像面板，640×480 mono8 灰度图，默认最多绘制 10 FPS |
+| 右近红外 | `/camera/infra2/image_rect_raw` | 原生图像面板，640×480 mono8 灰度图，默认最多绘制 10 FPS |
+| ARC 相机 | `/arc_camera/image_raw` | 独立原生图像面板，640×480 bgr8 彩色图，默认最多绘制 15 FPS |
 | 回环检测日志 | `/rosout` | 底部左侧，14 px 字体；默认筛选 `loop_closure_diagnostics` 节点的 INFO 及以上日志 |
 | 回环状态 | `/miti/loop_status` | 底部右侧的原生面板，显示检测状态、成功次数、最近匹配节点和输入频率；支持独立放大 |
 
@@ -74,12 +75,30 @@ foxglove_bridge **3.6.0** 和所需的 rosx-introspection / RapidJSON 包。
 更新后，打开 `/rtabmap.html` 并点击“更新显示并保留当前布局”，自动补充本次新增的
 项目面板；需要重新排列所有窗口时选择“应用完整项目布局”。操作前会自动备份旧布局。
 
+### ARC 相机画面
+
+“ARC · 相机画面”面板通过 MITI 的 ROS 2 桥接器直接订阅
+`/arc_camera/image_raw`（`sensor_msgs/msg/Image`），使用原生彩色显示。
+启动脚本的桥接白名单包含 `/arc_camera/image_raw` 和对应的 `camera_info`。
+首次部署需重启 MITI 展示服务加载白名单，设备发布程序保持运行。
+
+接入背景（2026-11-05）：在当前设备与驱动配置下，发现启动整个 SLAM 程序后，
+RealSense 近红外流无法输出，即使已开启 `enable_infra1` 和 `enable_infra2` 仍会停帧。
+目前只能通过外部设备重新接入，使用 `/arc_camera/image_raw` 对应的 ARC 面板显示。
+这是当前的替代方案，RealSense 与 SLAM 同时输出近红外的问题尚未修复，根因待定位。
+ARC 桥接实测 10 秒收到 65 帧，图像格式为 640×480 bgr8；该结果只验证外部设备链路。
+
+已有项目布局打开 `http://localhost:3000/rtabmap.html?refresh=1`，会在近红外
+面板下方补上 ARC 面板，保留已有窗口和设置。迁移只执行一次，已有同话题
+窗口不会重复添加，之后主动删除 ARC 面板也会保留。可拖动分隔线或放大面板查看。
+
 ### 近红外画面
 
-默认布局在右侧依次显示彩色、对齐深度和左近红外。已有项目布局打开
+默认布局在右侧依次显示彩色、对齐深度、右近红外和 ARC 相机。已有项目布局打开
 `http://localhost:3000/rtabmap.html?refresh=1`，会更新控件并在相机面板下方补上
 近红外面板。该迁移仅执行一次，保留原有视角、面板设置和已添加的红外窗口；
-之后手动删除近红外面板也会被保留。可拖动分隔线调整画面大小。
+之后手动删除近红外面板也会被保留。原项目近红外面板会一次性切换到 infra2，
+保留配色、灰度范围和帧率设置。可拖动分隔线调整画面大小。
 
 当前机器人 `192.168.123.18` 的 D435I 使用
 `/home/unitree/realsense_slam_sensor_qos.yaml` 启动，`/camera/camera` 的
@@ -92,11 +111,11 @@ ros2 param set /camera/camera enable_infra1 true
 ros2 param set /camera/camera enable_infra2 true
 ```
 
-切换红外流会让深度模块短暂重启。MITI 直接订阅 `/camera/infra1/image_rect_raw`，
+修改驱动的红外启用参数会让深度模块短暂重启。MITI 直接订阅 `/camera/infra2/image_rect_raw`，
 沿用桥接器已有相机话题白名单；图像面板使用黑白渐变、灰度范围 0–255。
 实机支持 640×480 mono8、配置 6 FPS，左红外与原始深度使用相同内参；
-图中的亮点是红外投射器散斑。右路也已启用，在图像面板设置中将话题改为
-`/camera/infra2/image_rect_raw` 即可切换；面板默认只订阅左路。
+图中的亮点是红外投射器散斑。左路也已启用，在图像面板设置中将话题改为
+`/camera/infra1/image_rect_raw` 即可切回左路；面板默认只订阅右路。
 
 布局迁移保存在 `config/miti_infrared_display.js`，由现有安装器部署。
 验证：使用 MITI 随附 Node 运行 `tests/test_miti_infrared_display.js`；
@@ -111,7 +130,7 @@ RGB-D、红外同时持续运行的验证，不能仅凭面板有红外画面判
 `logs/miti/rgbd_after_infrared_qos.json`。重新启用彩色流后的恢复记录见
 `logs/miti/rgbd_after_color_restart.json`。本机已有 RTAB-Map 工具完成了独立重投影验证，
 没有下载或安装新的深度对齐组件，临时测试进程已关闭。后续 15 FPS 配置测试因网络
-接口暂时不可用而未执行；最新一轮日志中所有传感器均为 0 Hz，连通性待确认。
+接口暂时不可用而未执行；该轮日志中所有传感器均为 0 Hz，当时连通性待确认。
 
 ### 回环状态面板
 

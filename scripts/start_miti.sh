@@ -18,7 +18,7 @@ export ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0}
 export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
 # Advertise this project's display inputs. Robot control/custom telemetry packages are
 # not installed in this workspace and otherwise flood the bridge log with schema errors.
-export BRIDGE_TOPIC_WHITELIST="${BRIDGE_TOPIC_WHITELIST:-['^/(tf|tf_static|clock|rosout|cloud_map|map|grid_map|odom|icp_odom|robot_pose|mapGraph|mapData|info)$','^/livox/(lidar|imu)$','^/camera/.*(image_raw|image_rect_raw|camera_info)(/compressed)?$','^/(semantic|miti)/.*$']}"
+export BRIDGE_TOPIC_WHITELIST="${BRIDGE_TOPIC_WHITELIST:-['^/(tf|tf_static|clock|rosout|cloud_map|map|grid_map|odom|icp_odom|robot_pose|mapGraph|mapData|info)$','^/livox/(lidar|imu)$','^/camera/.*(image_raw|image_rect_raw|camera_info)(/compressed)?$','^/arc_camera/(image_raw|camera_info)(/compressed)?$','^/(semantic|miti)/.*$']}"
 # Match the project's sensor NIC when it is connected. Respect an explicit DDS configuration.
 if [[ -z ${CYCLONEDDS_URI:-} && $RMW_IMPLEMENTATION == rmw_cyclonedds_cpp ]]; then
   MITI_INTERFACE=${MITI_INTERFACE:-}

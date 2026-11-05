@@ -1,11 +1,26 @@
 /* Add the project's infrared view once without replacing a saved dashboard. */
 function rtabmapInfraredWidget() {
   return {
-    i: 'rtabmap-infrared', type: 'camera-viewer', title: 'RealSense · 左近红外',
+    i: 'rtabmap-infrared', type: 'camera-viewer', title: 'RealSense · 右近红外',
+    rtabmapInfraredSourceVersion: 2,
     x: 8, y: 8, w: 4, h: 4,
-    props: {topic: '/camera/infra1/image_rect_raw', maxFps: 10,
+    props: {topic: '/camera/infra2/image_rect_raw', maxFps: 10,
       colorMode: 'gradient', gradient: ['#000000', '#ffffff'], valueMin: 0, valueMax: 255}
   };
+}
+
+/* Switch the existing project infrared panel once; retain other image settings. */
+function rtabmapMigrateInfraredTopicWidget(widget) {
+  if (widget.i !== 'rtabmap-infrared' || widget.type !== 'camera-viewer' ||
+      widget.rtabmapInfraredSourceVersion === 2 ||
+      !['/camera/infra1/image_rect_raw', '/camera/infra2/image_rect_raw']
+        .includes(widget.props?.topic)) return widget;
+  const props = {...widget.props, topic: '/camera/infra2/image_rect_raw'};
+  if (props.calibrationTopic === '/camera/infra1/camera_info')
+    props.calibrationTopic = '/camera/infra2/camera_info';
+  return {...widget, rtabmapInfraredSourceVersion: 2,
+    title: widget.title === 'RealSense · 左近红外' ? 'RealSense · 右近红外' : widget.title,
+    props};
 }
 
 function rtabmapMigrateInfraredLayout(layout) {

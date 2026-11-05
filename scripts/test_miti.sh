@@ -25,6 +25,7 @@ python3 -m unittest discover -s "$MITI_PROJECT/tests" -p test_map_geometry_messa
 "$MITI_APP/node/bin/node" "$MITI_PROJECT/tests/test_miti_camera_heading.js"
 "$MITI_APP/node/bin/node" "$MITI_PROJECT/tests/test_miti_depth_display.js"
 "$MITI_APP/node/bin/node" "$MITI_PROJECT/tests/test_miti_infrared_display.js"
+"$MITI_APP/node/bin/node" "$MITI_PROJECT/tests/test_miti_arc_camera_display.js"
 bash "$MITI_PROJECT/scripts/start_miti.sh" --port 13000 >"$MITI_PROJECT/logs/miti/test_server.log" 2>&1 &
 MITI_TEST_PID=$!
 miti_test_cleanup() {

@@ -13,18 +13,19 @@
 <main>
   <div class="eyebrow">RTAB-MAP × MITI</div>
   <h1>实时建图，一屏呈现。</h1>
-  <p>上方并排查看三维点云、二维栅格地图与 RealSense 画面，下方查看回环日志和检测状态。</p>
+  <p>上方并排查看三维点云、二维栅格地图、RealSense 与 ARC 相机画面，下方查看回环日志和检测状态。</p>
   <div class="panels">
     <div class="card"><b>三维地图</b><small>墙面 · 位姿 · 标签 · 隐藏顶部</small></div>
     <div class="card"><b>二维栅格</b><small>地面识别 · 高度筛选 · 俯视地图</small></div>
     <div class="card"><b>彩色画面</b><small>RealSense 实时图像</small></div>
     <div class="card"><b>对齐深度</b><small>空间距离与有效范围</small></div>
-    <div class="card"><b>近红外画面</b><small>左路红外 · 实时灰度图</small></div>
+    <div class="card"><b>近红外画面</b><small>右路红外 · 实时灰度图</small></div>
+    <div class="card"><b>ARC 相机</b><small>独立设备 · 实时彩色图像</small></div>
     <div class="card"><b>回环监控</b><small>实时状态面板 · 详细日志</small></div>
   </div>
   <button id="refresh">更新显示并保留当前布局</button>
   <p><button id="apply">应用完整项目布局</button><a href="/">直接进入 →</a></p>
-  <p class="note">更新显示会在现有项目相机面板下方补上左近红外画面，并保留地图视角和已调整的设置。首次使用请选择“应用完整项目布局”。操作前会在当前浏览器中备份已有配置。</p>
+  <p class="note">更新显示会补上 ARC 相机和近红外面板，并将原项目近红外面板切换到右路 infra2，保留地图视角和其他设置。首次使用请选择“应用完整项目布局”。操作前会在当前浏览器中备份已有配置。</p>
   <div class="status" id="status" role="status"></div>
 </main>
 <script>
