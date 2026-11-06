@@ -10,6 +10,17 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export CYCLONEDDS_URI='<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="enxec1ac312a316"/></Interfaces></General></Domain></CycloneDDS>'
 
 FUSION_CHECK_FILE=$(mktemp /tmp/fusion_input_check_XXXXXX.json)
+FUSION_REGISTRATION_PID=''
+cleanup_registration() {
+  if [[ -n "$FUSION_REGISTRATION_PID" ]]; then
+    kill -INT "$FUSION_REGISTRATION_PID" 2>/dev/null || true
+    wait "$FUSION_REGISTRATION_PID" 2>/dev/null || true
+  fi
+  rm -f -- "$FUSION_CHECK_FILE"
+}
+trap cleanup_registration EXIT
+ros2 launch "$PROJECT_ROOT/launch/realsense_depth_registration.launch.py" &
+FUSION_REGISTRATION_PID=$!
 python3 "$PROJECT_ROOT/scripts/check_rgbd_input.py" \
   --seconds 5 --output "$FUSION_CHECK_FILE"
 python3 "$PROJECT_ROOT/scripts/verify_fusion_input.py" "$FUSION_CHECK_FILE"
@@ -34,7 +45,7 @@ printf '当前 livox_frame -> camera_link 外参：%s %s %s / %s %s %s（米 / �
   "$FUSION_CAM_ROLL" "$FUSION_CAM_PITCH" "$FUSION_CAM_YAW"
 
 ros2 launch "$PROJECT_ROOT/launch/livox_realsense_3dslam.launch.py" \
-  use_camera:=true use_imu:=true filter_imu:=true \
+  use_camera:=true use_imu:=true filter_imu:=true register_depth:=false \
   deskewing:=true assemble:="${ASSEMBLE:-false}" \
   min_loop_closure_overlap:="${MIN_LOOP_CLOSURE_OVERLAP:-0.2}" \
   fusion_stm_size:="${FUSION_STM_SIZE:-10}" \

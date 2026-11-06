@@ -1,5 +1,9 @@
 # MITI 实时验收展示
 
+2026-11-06 当前版本：USB 转发接入后，近红外、RGB、深度可同时显示，
+相机朝向、三维地图和二维栅格显示恢复。配置与实测见
+[深度配准修复](depth_registration_fix.md)；后文较早的红外中断记录保留作为历史排查信息。
+
 新增墙面显示开关和 XYZ / Roll / Pitch / Yaw 位姿读数，随展示服务自动启动。
 详见 [墙面显示与机器人位姿输出](walls_and_robot_pose.md)。
 
@@ -9,7 +13,8 @@ foxglove_bridge **3.6.0** 和所需的 rosx-introspection / RapidJSON 包。
 
 ## 启动与使用
 
-1. 按项目原来的流程启动 Livox、RealSense（启用对齐深度），并检查实际相机外参。
+1. 启动 Livox、RealSense 原始图像流，并检查实际相机外参。按
+   [深度配准修复](depth_registration_fix.md)关闭相机驱动内的对齐和同步，工作站建图入口自动配准。
 2. 启动建图，任选对应入口：
 
    ```bash
@@ -35,6 +40,28 @@ foxglove_bridge **3.6.0** 和所需的 rosx-introspection / RapidJSON 包。
 
 展示脚本只启动 MITI、foxglove_bridge 和显示消息转换节点。关闭此终端或按 Ctrl+C
 停止展示，传感器和 SLAM 仍由各自终端管理。需要切换地图会话时，建议同时重启展示脚本。
+
+网线、USB 网卡断开重连后，应重新启动展示脚本，使 DDS 重新建立网络连接。
+页面显示“已连接”只表示网页连上了桥接器，不代表桥接器仍能收到所有 ROS 数据。
+如果相机朝向、深度、三维地图和二维栅格一起消失，先检查展示连接，不要重启或清空地图。
+
+在工作站检查实际送往网页的数据：
+
+```bash
+source ~/go2env.sh
+source /home/jyfight/Project/rtabmap_slam/scripts/setup_miti.bash
+python3 /home/jyfight/Project/rtabmap_slam/scripts/check_miti_live.py --seconds 15
+```
+
+该检查同时验证相机完整 TF 链、RGB/深度尺寸与坐标系、非空三维点云及二维栅格。
+语义建图可追加 `--require-semantics`。地图和静态 TF 是保留的快照，静止期间不必连续
+发布；收到一份有效快照即可。红外不是四项主显示的必需输入，缺失会单独报告。
+
+2026-11-06 排查发现旧展示进程持续报告 `ddsi_udp_conn_write ... failed with retcode -1`，
+SLAM 仍有数据，浏览器桥接却缺少深度、地图和静态 TF。仅重启展示服务后，15 秒桥接
+实测收到 56 帧 424×240 深度、7019 点三维地图、230×146 栅格及完整相机 TF；
+用户确认四项显示恢复。报告：`logs/miti/display_recovery_20261106.json`。
+相机安装外参和 SLAM 进程未调整。
 
 ### 三维与二维地图并排显示
 

@@ -3,7 +3,7 @@
 MITI_PROJECT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 source "$MITI_PROJECT/setup.bash" || return 1
 if [[ -f "$MITI_PROJECT/install/semantic/setup.bash" ]]; then
-  source "$MITI_PROJECT/install/semantic/setup.bash" || return 1
+  source "$MITI_PROJECT/install/semantic/local_setup.bash" || return 1
 fi
 export MITI_APP="$MITI_PROJECT/.tools/miti/root/usr/lib/miti"
 export MITI_ROS_PREFIX="$MITI_PROJECT/.tools/miti/root/opt/ros/humble"

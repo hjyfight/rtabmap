@@ -15,6 +15,7 @@ for port in (13000, 18765):
         s.bind(('127.0.0.1', port))
 PY
 python3 -m unittest discover -s "$MITI_PROJECT/tests" -p test_miti_scene_adapter.py -v
+python3 -m unittest discover -s "$MITI_PROJECT/tests" -p test_miti_live_check.py -v
 OPENBLAS_NUM_THREADS=1 python3 -m unittest discover -s "$MITI_PROJECT/tests" -p test_wall_geometry.py -v
 OPENBLAS_NUM_THREADS=1 python3 -m unittest discover -s "$MITI_PROJECT/tests" -p test_grid_projection.py -v
 python3 -m unittest discover -s "$MITI_PROJECT/tests" -p test_map_geometry_messages.py -v

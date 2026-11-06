@@ -67,10 +67,23 @@ class SemanticLaunchTests(unittest.TestCase):
         resolve_launch(inspect_action=inspect)
         self.assertEqual(remaps['rgbd_sync']['rgbd_image'], 'rgbd_image_unchecked')
         self.assertEqual(remaps['rtabmap']['rgbd_image'], 'rgbd_image')
+        self.assertEqual(remaps['rgbd_sync']['depth/image'], '/camera/depth_registered/image_rect')
+        self.assertEqual(remaps['register_node']['depth/image_rect'], '/camera/depth/image_rect_raw')
+        self.assertEqual(remaps['register_node']['depth_registered/image_rect'],
+                         remaps['rgbd_sync']['depth/image'])
         guards = [cmd for cmd in commands if any(x.endswith('/guard_rgbd_input.py') for x in cmd)]
         self.assertEqual(len(guards), 1)
         self.assertIn('input:=rgbd_image_unchecked', guards[0])
         self.assertIn('output:=rgbd_image', guards[0])
+
+    def test_external_registered_depth_does_not_start_another_publisher(self):
+        nodes = resolve_launch(register_depth='false', depth_topic='/external/registered_depth')
+        self.assertNotIn('register_node', nodes)
+        self.assertIn('rgbd_sync', nodes)
+
+    def test_registration_rejects_feedback_topic(self):
+        with self.assertRaises(ValueError):
+            resolve_launch(raw_depth_topic='/same/depth', depth_topic='/same/depth')
 
     def assert_paired_map(self, nodes, database_path):
         self.assertIn('rgbd_sync', nodes)

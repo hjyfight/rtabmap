@@ -89,6 +89,21 @@ class PreflightTests(unittest.TestCase):
     def test_drivers_alone_can_start(self):
         self.assertEqual(preflight.verify(self.sample()), (424, 240))
 
+    def test_registration_preserves_depth_timestamp_within_sync_tolerance(self):
+        sample = self.sample()
+        sample['topics']['aligned_depth']['last_samples'] = [
+            dict(sample['topics']['aligned_depth']['last_samples'][0], stamp=7185689.03)]
+        self.assertEqual(preflight.verify(sample), (424, 240))
+        with self.assertRaises(ValueError):
+            preflight.verify(sample, max_interval=0.02)
+
+    def test_depth_timestamp_outside_sync_tolerance_is_rejected(self):
+        sample = self.sample()
+        sample['topics']['aligned_depth']['last_samples'] = [
+            dict(sample['topics']['aligned_depth']['last_samples'][0], stamp=7185689.06)]
+        with self.assertRaisesRegex(ValueError, '时间差'):
+            preflight.verify(sample)
+
     def test_guarded_launch_requires_three_valid_pairs_amid_bad_depth(self):
         sample = self.sample()
         for name, item in sample['topics'].items():

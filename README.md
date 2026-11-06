@@ -2,6 +2,12 @@
 
 目标目录：`/home/jyfight/Project/rtabmap_slam`。
 
+2026-11-06：USB 转发接入后，MITI 已支持近红外、RGB 和深度同时显示，
+相机朝向、三维地图和二维栅格显示已恢复。已修复 RealSense 对齐尺寸跳变引起的 SLAM 断流。
+现在使用原始深度、
+相机内参和内部 TF 在工作站完成配准，RGB 尺寸可独立选择。启动与验证见
+[深度配准修复](docs/depth_registration_fix.md)。
+
 MITI 三维地图新增墙面开关与机器人位姿读数，标准位姿输出为 `/robot_pose`。
 运行 `bash scripts/start_miti.sh` 自动启动；参考点、参数及验证说明见
 [墙面与位姿](docs/walls_and_robot_pose.md)。
@@ -23,7 +29,7 @@ MITI 三维地图新增墙面开关与机器人位姿读数，标准位姿输出
 ```bash
 bash scripts/install_semantic.sh
 bash scripts/build_semantic.sh
-# 启动原有 Livox / RealSense 驱动、启用对齐深度并设置实际 CAM_* 外参后：
+# 按深度配准说明启动 Livox / RealSense 原始数据并设置实际 CAM_* 外参后：
 bash scripts/start_semantic_slam.sh
 ```
 
@@ -39,9 +45,10 @@ bash scripts/start_verified_fusion.sh
 ```
 
 这是从 `rgbd_input_check_20261027/start_verified_fusion.sh` 整合的启动入口。
-请先启动 Livox 和 RealSense 驱动，并启用深度对齐。脚本使用项目内的
+请先按[深度配准说明](docs/depth_registration_fix.md)启动 Livox 和 RealSense 原始数据。
+脚本启动工作站配准后，使用项目内的
 `check_rgbd_input.py` 与 `verify_fusion_input.py` 采样 5 秒，确认 RGB、对齐深度和内参的
-尺寸、坐标系、时间戳一致，且没有旧建图节点后，启动融合建图。
+尺寸和坐标系一致、时间差在 0.05 秒内，且没有旧建图节点后，启动融合建图。
 
 默认沿用本机网络接口 `enxec1ac312a316`、ROS domain 0 与 CycloneDDS 配置；
 换机器时需调整网络接口，并准备 ROS 2 Humble 及传感器驱动。
@@ -175,7 +182,6 @@ ros2 launch livox_ros_driver2 rviz_MID360_launch.py
 
 # 终端 2：RealSense，启用深度对齐到彩色图
 source /opt/ros/humble/setup.bash
-ros2 launch realsense2_camera rs_launch.py align_depth.enable:=true
 ```
 
 确认数据：
@@ -239,35 +245,23 @@ source ~/yao_space/ws_livox/install/setup.bash
 ros2 launch livox_ros_driver2 rviz_MID360_launch.py
 
 
-ros2 launch realsense2_camera rs_launch.py align_depth.enable:=true
-
-
 ## 相机命令
+
+当前采用工作站深度配准。机载电脑运行下面命令；先退出已有相机驱动，再启动一次：
+
+```bash
 ssh unitree@192.168.123.18
 source /opt/ros/foxy/setup.bash
-/usr/bin/python3 /opt/ros/foxy/bin/ros2 launch realsense2_camera rs_launch.py rgb_camera.profile:=640x480x30 depth_module.profile:=640x480x30 align_depth.enable:=true rgb_camera.enable_auto_exposure:=false rgb_camera.exposure:=10000 rgb_camera.gain:=128
-
-
-ssh unitree@192.168.123.18
-source /opt/ros/foxy/setup.bash
-
 /usr/bin/python3 /opt/ros/foxy/bin/ros2 launch realsense2_camera rs_launch.py \
   config_file:="'/home/unitree/realsense_slam_sensor_qos.yaml'" \
-  rgb_camera.profile:=424x240x6 \
-  depth_module.profile:=424x240x6 \
-  align_depth.enable:=true \
-  enable_color:=true \
-  enable_depth:=true \
-  enable_sync:=true
- 
+  rgb_camera.profile:=424x240x6 depth_module.profile:=640x480x6 \
+  align_depth.enable:=false enable_sync:=false \
+  enable_color:=true enable_depth:=true
+```
 
-/usr/bin/python3 /opt/ros/foxy/bin/ros2 launch realsense2_camera rs_launch.py \
-  rgb_camera.profile:=424x240x6 \
-  depth_module.profile:=424x240x6 \
-  align_depth.enable:=true \
-  enable_color:=true \
-  enable_depth:=true \
-  enable_sync:=true
+工作站的融合/语义 launch 自动生成 `/camera/depth_registered/image_rect`。
+修改 RGB 尺寸时，输出深度会按 RGB CameraInfo 自动调整；详见
+[深度配准修复](docs/depth_registration_fix.md)。
 
 ## 本地cmd
 
@@ -312,7 +306,7 @@ ros2 launch /home/jyfight/Project/rtabmap_slam/launch/livox_realsense_3dslam.lau
 
 
 ## 融合建图
-source go2env.sh
+source ~/go2env.sh
 source /home/jyfight/Project/rtabmap_slam/setup.bash
 
 # 以下数值必须替换为实际测量的 livox_frame -> camera_link 外参
@@ -412,15 +406,15 @@ source /opt/ros/foxy/setup.bash
   config_file:="'/home/unitree/realsense_slam_sensor_qos.yaml'" \
   rgb_camera.profile:=424x240x6 \
   depth_module.profile:=640x480x6 \
-  align_depth.enable:=true \
+  align_depth.enable:=false \
   enable_color:=true \
   enable_depth:=true \
-  enable_sync:=true
+  enable_sync:=false
 
 
 ## 查看本地是否正常接收到传感器数据
 
-source go2env.sh
+source ~/go2env.sh
 ros2 topic list
 ros2 topic hz /livox/lidar
 ros2 topic hz /camera/color/image_raw
@@ -435,7 +429,7 @@ bash /home/jyfight/Project/rtabmap_slam/scripts/start_semantic_yoloe.sh
 ## miti 展示
 
 启动建图后，新开终端执行：
-source go2env.sh
+source ~/go2env.sh
 cd /home/jyfight/Project/rtabmap_slam
 bash scripts/start_miti.sh
 

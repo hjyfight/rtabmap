@@ -1,6 +1,13 @@
 /camera/camera:
   ros__parameters:
     color_qos: SENSOR_DATA
-    color_info_qos: SENSOR_DATA
-    depth_qos: SENSOR_DATA
-    depth_info_qos: SENSOR_DATA
+    # depth_image_proc's Humble subscriptions request Reliable QoS.
+    color_info_qos: DEFAULT
+    depth_qos: DEFAULT
+    depth_info_qos: DEFAULT
+    # Publish native frames; register depth on the workstation using calibration.
+    align_depth.enable: false
+    enable_sync: false
+    # Preserve the two infrared streams used by the verified camera configuration.
+    enable_infra1: true
+    enable_infra2: true

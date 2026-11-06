@@ -98,6 +98,11 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     rgb_topic = LaunchConfiguration('rgb_topic')
     depth_topic = LaunchConfiguration('depth_topic')
     camera_info_topic = LaunchConfiguration('camera_info_topic')
+    register_depth = use_camera and (
+        LaunchConfiguration('register_depth').perform(context).lower() in ('true', '1', 'yes', 'on'))
+    raw_depth_topic = LaunchConfiguration('raw_depth_topic')
+    if register_depth and raw_depth_topic.perform(context) == depth_topic.perform(context):
+        raise ValueError('raw_depth_topic 与 depth_topic 必须不同，避免深度配准回读自己的输出。')
 
     # ---- IMU 参数 ----
     imu_topic = LaunchConfiguration('imu_topic')
@@ -416,6 +421,27 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     #  节点构建
     # ============================================================
     nodes = []
+
+    # Register native, rectified depth into the color camera using CameraInfo + TF.
+    # Keep the original depth timestamp; rgbd_sync still enforces its time tolerance.
+    if register_depth:
+        nodes.append(
+            Node(
+                package='depth_image_proc', executable='register_node',
+                name='depth_registration', output='screen',
+                parameters=[{'use_sim_time': use_sim_time,
+                             'queue_size': LaunchConfiguration('sync_queue_size'),
+                             'use_rgb_timestamp': False,
+                             'fill_upsampling_holes': False}],
+                remappings=[
+                    ('depth/image_rect', raw_depth_topic.perform(context)),
+                    ('depth/camera_info', LaunchConfiguration('raw_depth_info_topic').perform(context)),
+                    ('rgb/camera_info', camera_info_topic.perform(context)),
+                    ('depth_registered/image_rect', depth_topic.perform(context)),
+                    ('depth_registered/camera_info', LaunchConfiguration('registered_depth_info_topic').perform(context)),
+                ],
+            )
+        )
 
     # ----- RGB-D Sync（同步RGB+Depth用于视觉回环检测）-----
     if use_camera:
@@ -843,8 +869,24 @@ def generate_launch_description():
             description='RGB 图像话题。'),
 
         DeclareLaunchArgument(
-            'depth_topic', default_value='/camera/aligned_depth_to_color/image_raw',
+            'depth_topic', default_value='/camera/depth_registered/image_rect',
             description='深度图像话题（与RGB对齐）。'),
+
+        DeclareLaunchArgument(
+            'register_depth', default_value='true',
+            description='使用 CameraInfo 和相机内部 TF 将原始深度投影到 RGB；已有可靠对齐输出时可关闭。'),
+
+        DeclareLaunchArgument(
+            'raw_depth_topic', default_value='/camera/depth/image_rect_raw',
+            description='配准输入：相机原始已校正深度图。'),
+
+        DeclareLaunchArgument(
+            'raw_depth_info_topic', default_value='/camera/depth/camera_info',
+            description='原始深度相机内参。'),
+
+        DeclareLaunchArgument(
+            'registered_depth_info_topic', default_value='/camera/depth_registered/camera_info',
+            description='配准深度的内参输出，与 RGB 内参一致。'),
 
         DeclareLaunchArgument(
             'camera_info_topic', default_value='/camera/color/camera_info',

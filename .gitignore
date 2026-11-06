@@ -9,6 +9,7 @@
 /.venv-yoloe/
 /.cache/yoloe-pip/
 /.tools/miti/
+/.tools/depth_registration/
 __pycache__/
 *.py[cod]
 *.bak

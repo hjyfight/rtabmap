@@ -20,7 +20,7 @@ from rtabmap_msgs.msg import Info, RGBDImage
 
 TOPICS = {
     'rgb': ('/camera/color/image_raw', Image),
-    'aligned_depth': ('/camera/aligned_depth_to_color/image_raw', Image),
+    'aligned_depth': ('/camera/depth_registered/image_rect', Image),
     'raw_depth': ('/camera/depth/image_rect_raw', Image),
     'color_info': ('/camera/color/camera_info', CameraInfo),
     'depth_info': ('/camera/depth/camera_info', CameraInfo),
@@ -60,8 +60,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--seconds', type=float, default=12)
     parser.add_argument('--camera-node', default='/camera/camera')
+    parser.add_argument('--depth-topic', default='/camera/depth_registered/image_rect',
+                        help='Registered depth topic used by the SLAM input.')
     parser.add_argument('--output', type=Path, default=Path('/tmp/rgbd_input_check.json'))
     args, ros_args = parser.parse_known_args()
+    TOPICS['aligned_depth'] = (args.depth_topic, Image)
     if args.seconds <= 0:
         parser.error('--seconds must be positive')
     os.environ.setdefault('ROS_LOG_DIR', '/tmp/rgbd_input_check_ros_logs')

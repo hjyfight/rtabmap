@@ -31,7 +31,7 @@ from visualization_msgs.msg import MarkerArray
 PROJECT = Path(__file__).resolve().parents[1]
 APP = PROJECT / '.tools/miti/root/usr/lib/miti'
 TYPES = {'/cloud_map': PointCloud2, '/camera/color/image_raw': Image,
-         '/camera/aligned_depth_to_color/image_raw': Image, '/tf_static': TFMessage,
+         '/camera/depth_registered/image_rect': Image, '/tf_static': TFMessage,
          '/miti/trajectory': RosPath, '/miti/semantic_markers': MarkerArray,
          '/miti/aligned_depth/image_raw': Image, '/miti/aligned_depth/camera_info': CameraInfo,
          '/miti/loop_status': String, '/robot_pose': PoseStamped,
@@ -127,7 +127,7 @@ def main():
     floor_x, floor_y = np.meshgrid(np.arange(-2, 4.01, .08), np.arange(-2, 2.01, .08))
     floor = np.column_stack((floor_x.ravel(), floor_y.ravel(), np.full(floor_x.size, -.5)))
     map_points = np.vstack((map_points, floor, floor+[0, 0, 3]))
-    for topic in ['/camera/color/image_raw', '/camera/aligned_depth_to_color/image_raw']:
+    for topic in ['/camera/color/image_raw', '/camera/depth_registered/image_rect']:
         publications.append((topic, Image, node.create_publisher(Image, topic, qos_profile_sensor_data)))
     try:
         start = time.monotonic()
@@ -179,7 +179,7 @@ def main():
                         '/rgbd_image': rgbd,
                         '/tf_static': TFMessage(transforms=[transform, mount]),
                         '/tf': TFMessage(transforms=[correction]), '/icp_odom': odom,
-                        '/camera/color/image_raw': rgb, '/camera/aligned_depth_to_color/image_raw': depth,
+                        '/camera/color/image_raw': rgb, '/camera/depth_registered/image_rect': depth,
                         '/miti/loop_status': loop_status}
             for topic, _, publisher in publications:
                 publisher.publish(messages[topic])
@@ -207,7 +207,7 @@ def main():
         point = list(read_points(decoded['/cloud_map'], field_names=('x', 'y', 'z')))[1]
         assert tuple(float(point[field]) for field in ('x', 'y', 'z')) == (1.0, 2.0, 3.0)
         assert decoded['/camera/color/image_raw'].encoding == 'rgb8'
-        assert decoded['/camera/aligned_depth_to_color/image_raw'].encoding == '16UC1'
+        assert decoded['/camera/depth_registered/image_rect'].encoding == '16UC1'
         display_depth = decoded['/miti/aligned_depth/image_raw']
         assert (display_depth.width, display_depth.height, display_depth.encoding) == (2, 2, '16UC1')
         assert bytes(display_depth.data) == bytes([232, 3] * 4)

@@ -3,11 +3,14 @@
 
 import argparse
 import json
+import math
 from pathlib import Path
 import sys
 
 
-def verify(data, guarded=False):
+def verify(data, guarded=False, max_interval=0.05):
+    if not math.isfinite(max_interval) or max_interval <= 0:
+        raise ValueError('同步时间容差必须为正的有限数。')
     # Failed launches may leave only preprocessing nodes alive. Two independent
     # IMU filters can publish different yaw estimates for the exact same stamp.
     running = set(data.get('nodes', [])) & {
@@ -47,25 +50,42 @@ def verify(data, guarded=False):
             if sample['frame_id'] != frame:
                 raise ValueError(f'{name} 坐标系为 {sample["frame_id"]}，与 RGB 的 {frame} 不一致。')
             valid_samples[name].append(sample)
-    common = set(sample['stamp'] for sample in valid_samples['rgb'])
-    for name in ('aligned_depth', 'color_info'):
-        common &= {sample['stamp'] for sample in valid_samples[name]}
-    if guarded and len(common) < 3:
-        raise ValueError('未找到至少 3 组尺寸、坐标系和时间戳一致的 RGB、对齐深度与内参。')
-    if not common:
-        raise ValueError('未找到时间戳一致的 RGB、对齐深度和内参消息。')
+    # Registration preserves depth acquisition time, which need not equal RGB time.
+    # Match with the same tolerance used by rgbd_sync and the runtime input guard.
+    stamps = {name: sorted({sample['stamp'] for sample in samples})
+              for name, samples in valid_samples.items()}
+    if not all(math.isfinite(stamp) for values in stamps.values() for stamp in values):
+        raise ValueError('图像时间戳包含非有限数。')
+    available_depth = set(stamps['aligned_depth'])
+    available_info = set(stamps['color_info'])
+    matched = 0
+    for rgb_stamp in stamps['rgb']:
+        if not available_depth or not available_info:
+            break
+        depth_stamp = min(available_depth, key=lambda t: abs(t - rgb_stamp))
+        info_stamp = min(available_info, key=lambda t: abs(t - rgb_stamp))
+        triple = (rgb_stamp, depth_stamp, info_stamp)
+        if max(triple) - min(triple) <= max_interval:
+            matched += 1
+            available_depth.remove(depth_stamp)
+            available_info.remove(info_stamp)
+    if guarded and matched < 3:
+        raise ValueError('未找到至少 3 组尺寸、坐标系有效且时间差在容差内的 RGB、对齐深度与内参。')
+    if not matched:
+        raise ValueError('未找到时间差在容差内的 RGB、对齐深度和内参消息。')
     return shape
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('sample', type=Path)
+    parser.add_argument('--max-interval', type=float, default=0.05)
     parser.add_argument('--guarded', action='store_true',
                         help='Only for launches with a continuous RGB-D validator: require valid pairs, tolerate rejected depth frames.')
     args = parser.parse_args()
     try:
         data = json.loads(args.sample.read_text())
-        shape = verify(data, guarded=args.guarded)
+        shape = verify(data, guarded=args.guarded, max_interval=args.max_interval)
     except (ValueError, KeyError, OSError, IndexError) as error:
         print('输入检查未通过：' + str(error), file=sys.stderr)
         sys.exit(1)
@@ -74,7 +94,7 @@ def main():
         if len(data['topics']['aligned_depth']['sizes']) != 1:
             print('相机警告：对齐深度仍混入其他尺寸；运行时会丢弃无效帧，不进行缩放。', file=sys.stderr)
     else:
-        print(f'输入检查通过：RGB、对齐深度、内参均为 {shape[0]}x{shape[1]}，坐标系与时间戳一致。')
+        print(f'输入检查通过：RGB、对齐深度、内参均为 {shape[0]}x{shape[1]}，坐标系一致，时间差不超过 {args.max_interval:g} 秒。')
 
 
 if __name__ == '__main__':

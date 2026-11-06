@@ -22,6 +22,7 @@ from loop_closure_diagnostics import detection_snapshot, read_stats
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--seconds', type=float, default=180)
+    parser.add_argument('--depth-topic', default='/camera/depth_registered/image_rect')
     args = parser.parse_args()
     if not 5 <= args.seconds <= 3600:
         parser.error('--seconds must be 5–3600')
@@ -106,7 +107,7 @@ def main():
 
     for topic, kind, key in [('/livox/lidar', PointCloud2, 'lidar'), ('/livox/imu', Imu, 'imu'),
                              ('/camera/color/image_raw', Image, 'rgb'),
-                             ('/camera/aligned_depth_to_color/image_raw', Image, 'depth'),
+                             (args.depth_topic, Image, 'depth'),
                              ('/icp_odom', Odometry, 'odom'), ('/mapGraph', MapGraph, 'graph'),
                              ('/info', Info, 'slam'), ('/cloud_map', PointCloud2, 'cloud'),
                              ('/semantic/status', String, 'semantic'),
