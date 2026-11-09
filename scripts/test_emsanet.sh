@@ -11,6 +11,9 @@ export CYCLONEDDS_URI='<CycloneDDS><Domain><General><AllowMulticast>false</Allow
 export MPLCONFIGDIR="$EMSANET_PROJECT/models/.matplotlib-emsanet"
 mkdir -p "$ROS_LOG_DIR"
 python3 -m unittest discover -s "$EMSANET_PROJECT/src/rtabmap_semantic/tests" -p 'test_emsanet.py' -v
+# Concat (cat + 1x1 conv) encoder fusion needs torch from the EMSANet runtime.
+"$EMSANET_PROJECT/.venv-emsanet/bin/python3" -m unittest discover \
+  -s "$EMSANET_PROJECT/src/rtabmap_semantic/tests" -p 'test_emsanet_fusion.py' -v
 python3 "$EMSANET_PROJECT/src/rtabmap_semantic/tests/ros_pipeline_check.py" --emsanet-fixture
 if [[ "${1:-}" == --fixture-only ]]; then
   exit 0
