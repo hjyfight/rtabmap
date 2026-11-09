@@ -134,6 +134,20 @@ class SemanticLaunchTests(unittest.TestCase):
         self.assertEqual(mapper['semantic_database_path'], '/tmp/custom.semantic.sqlite')
         self.assertFalse(nodes['keyframe_bridge'][0]['replay_existing'])
 
+    def test_emsanet_uses_separate_runtime_and_the_existing_rgbd_bridge(self):
+        model = str(ROOT / 'models/emsanet/nyuv2_r34_NBt1D_pre.pth')
+        python = str(ROOT / '.venv-emsanet/bin/python3')
+        nodes = resolve_launch(model_path=model, semantic_python=python,
+                               semantic_backend='emsanet', semantic_label_details='false',
+                               semantic_config=str(ROOT / 'src/rtabmap_semantic/config/emsanet.yaml'))
+        mapper, prefix = nodes['semantic_mapper']
+        self.assertEqual(mapper['detector_backend'], 'emsanet')
+        self.assertEqual(mapper['model_path'], model)
+        self.assertEqual(prefix, python)
+        self.assert_paired_map(nodes, mapper['database_path'])
+        self.assertIn('register_node', nodes)
+        self.assertFalse(nodes['rtabmap_viz'][0]['semantic_label_details'])
+
     def test_localization_uses_the_same_saved_map(self):
         database = '/tmp/semantic launch test/saved.db'
         nodes = resolve_launch(database_path=database, localization='true')

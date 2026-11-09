@@ -389,7 +389,7 @@ bash scripts/start_semantic_slam.sh
 
 
 
-##  ####################################################
+## 有线连接建图 ####################################################
 
 ## 雷达命令
 ssh unitree@192.168.123.18
@@ -415,6 +415,10 @@ source /opt/ros/foxy/setup.bash
 ## 查看本地是否正常接收到传感器数据
 
 source ~/go2env.sh
+
+
+cd /home/jyfight/Project/rtabmap_slam
+source scripts/ros2_wired_env.sh
 ros2 topic list
 ros2 topic hz /livox/lidar
 ros2 topic hz /camera/color/image_raw
@@ -426,12 +430,264 @@ bash /home/jyfight/Project/rtabmap_slam/scripts/start_semantic_slam.sh
 bash /home/jyfight/Project/rtabmap_slam/scripts/start_semantic_yoloe.sh
 
 
+## 红外+深度 语义分割
+cd /home/jyfight/Project/rtabmap_slam
+bash scripts/start_semantic_emsanet.sh
+
 ## miti 展示
 
 启动建图后，新开终端执行：
 source ~/go2env.sh
+
 cd /home/jyfight/Project/rtabmap_slam
+source scripts/ros2_wired_env.sh
 bash scripts/start_miti.sh
 
 打开浏览器 点击 应用项目布局并进入展示
 http://localhost:3000/rtabmap.html
+
+## 通过热点连接与传输
+
+本节记录本次已配置的热点连接方式：机载电脑连接 Wi-Fi 热点 `yxm`，通过无线链路和路由转发向工作站发送 ROS 2 数据。MID360 通过有线连接机载电脑，RealSense 通过 USB 连接机载电脑；工作站通过 USB 有线网卡接入现有转发链路。
+
+| 设备 / 接口 | 当前地址 | 用途 |
+| --- | --- | --- |
+| MID360 | `192.168.123.20` | 雷达原始数据源 |
+| 机载电脑 `eth1` | `192.168.123.18/24` | 有线接收雷达数据 |
+| 机载电脑 `wlan0` | `172.29.38.125/24` | 热点连接、SSH 和 ROS 2 数据传输 |
+| 工作站 `enxec1ac312a316` | `192.168.123.220/24` | 接入转发链路，接收 ROS 2 数据 |
+
+当前工作站到 `172.29.38.125/32` 的下一跳为 `192.168.123.221`；机载电脑到 `192.168.123.220/32` 的下一跳为 `172.29.38.168`。两条路由已保存到各自的 NetworkManager 连接配置。机载电脑的 `livox-eth1` 连接已配置自动连接及地址 `192.168.123.18/24`。
+
+两端处于不同网段，使用 CycloneDDS 单播 `Peers` 发现对方，统一设置 `ROS_DOMAIN_ID=0`、`ROS_LOCALHOST_ONLY=0`、`RMW_IMPLEMENTATION=rmw_cyclonedds_cpp`。两端各自的 `~/ros2_wifi_env.sh` 会加载 `~/ros2_wifi_cyclonedds.xml`：机载电脑绑定 `wlan0`，工作站绑定 `enxec1ac312a316`。这些文件已部署在本次两台机器的用户家目录中，不属于仓库文件；工作站的 `~/go2env.sh` 也已指向这份热点 DDS 配置。
+
+### 1. 通过热点 SSH 连接机载电脑
+
+在工作站终端执行：
+
+```bash
+ping -c 3 172.29.38.125
+ssh unitree@172.29.38.125
+```
+
+登录后，若出现 `ros:foxy(1) noetic(2) ?`，输入 `1`。机载电脑上可检查两个接口和雷达连接：
+
+```bash
+ip -br addr
+ping -c 3 192.168.123.20
+```
+
+应看到 `wlan0` 的热点地址和 `eth1` 的 `192.168.123.18/24`。若 `eth1` 地址未恢复，可在机载电脑执行 `sudo nmcli connection up livox-eth1`。
+
+### 2. 机载电脑启动 MID360（不启动 RViz）
+
+在第一个 SSH 终端运行；已有雷达驱动时先停止已有实例，再启动一次：
+
+```bash
+bash ~/start_livox_wifi.sh
+```
+
+这个已部署的脚本等效于下面三条命令，两种方式任选一种：
+
+```bash
+source ~/yao_space/ws_livox/install/setup.bash
+source ~/ros2_wifi_env.sh
+/usr/bin/python3 /opt/ros/foxy/bin/ros2 launch livox_ros_driver2 msg_MID360_launch.py
+```
+
+本次已核验机载电脑 `~/yao_space/ws_livox/src/livox_ros_driver2/launch_ROS2/msg_MID360_launch.py` 的 `xfer_format=0`，输出 `/livox/lidar`（`sensor_msgs/msg/PointCloud2`）和 `/livox/imu`。该文件不启动 RViz，适用于 SSH 会话。此处格式说明针对本次机载安装；其他版本的同名 launch 可能默认输出自定义消息。
+
+### 3. 机载电脑启动 RealSense
+
+在工作站另开一个终端，执行 `ssh unitree@172.29.38.125`，登录后选择 Foxy。已有相机驱动时先停止已有实例，再在这个 SSH 终端运行：
+
+```bash
+source ~/ros2_wifi_env.sh
+/usr/bin/python3 /opt/ros/foxy/bin/ros2 launch realsense2_camera rs_launch.py \
+  config_file:="'/home/unitree/realsense_slam_sensor_qos.yaml'" \
+  rgb_camera.profile:=424x240x6 \
+  depth_module.profile:=640x480x6 \
+  align_depth.enable:=false \
+  enable_color:=true \
+  enable_depth:=true \
+  enable_sync:=false
+```
+
+这里沿用项目的原始深度方案，在工作站完成深度配准。先检查 `/camera/color/image_raw` 和 `/camera/depth/image_rect_raw`；配准输出及尺寸要求见[深度配准修复](docs/depth_registration_fix.md)。`config_file` 参数需保留示例中的两层引号。
+
+### 4. 工作站加载热点环境并检查接收
+
+在工作站本地终端执行。先加载项目 setup，最后加载热点环境，确保 DDS 单播配置生效：
+
+```bash
+cd /home/jyfight/Project/rtabmap_slam
+source setup.bash
+source ~/ros2_wifi_env.sh
+
+# 切换 DDS 配置后重建 CLI daemon，清除旧环境影响。
+ros2 daemon stop
+ros2 daemon start
+ros2 topic list
+```
+
+应能看到 `/livox/lidar`、`/livox/imu`、`/camera/color/image_raw` 和 `/camera/depth/image_rect_raw`。下面每项采样 10 秒后自动停止：
+
+```bash
+ros2 topic type /livox/lidar
+timeout 10s ros2 topic hz /livox/lidar
+timeout 10s ros2 topic hz /livox/imu
+timeout 10s ros2 topic hz /camera/color/image_raw
+timeout 10s ros2 topic hz /camera/depth/image_rect_raw
+```
+
+需要 RViz 时，在工作站的图形桌面终端加载上述环境后执行 `ros2 run rviz2 rviz2`。机载 SSH 会话使用第 2 步的无 RViz 启动命令，避免 `could not connect to display` / `xcb` 错误。
+
+### 5. 工作站通过热点数据启动建图与 MITI
+
+完成传感器接收检查、项目安装及实际相机外参设置后，可在工作站启动现有 YOLOv8 语义建图入口：
+
+```bash
+cd /home/jyfight/Project/rtabmap_slam
+source setup.bash
+source ~/ros2_wifi_env.sh
+bash scripts/start_semantic_slam.sh
+```
+
+YOLOE 入口为 `bash scripts/start_semantic_yoloe.sh`，需先加载相同环境；两种建图入口任选一种。以上语义建图入口会保留已设置的 `CYCLONEDDS_URI`。原有 `scripts/start_verified_fusion.sh` 会重新设置 DDS 配置，热点模式请使用本节列出的入口。
+
+建图启动后，在工作站另开终端启动 MITI：
+
+```bash
+cd /home/jyfight/Project/rtabmap_slam
+source setup.bash
+source ~/ros2_wifi_env.sh
+bash scripts/start_miti.sh
+```
+
+浏览器打开 <http://localhost:3000/rtabmap.html>，应用项目布局。已有 SLAM、RViz 或 MITI 进程时，需要从热点环境重新启动对应进程，终端里的 `export` 不会改变已运行进程的环境。
+
+本节的热点命令按上述顺序执行；上文旧命令中仅指定有线接口的 `export CYCLONEDDS_URI=...` 会覆盖单播 `Peers` 配置。更换热点或地址后，需要同步更新两端 XML 中的对端 IP 和对应路由，不能只验证 SSH 连通。
+
+本次已实测工作站接收到雷达点云、IMU、彩色与原始深度图。雷达一次 12 秒采样收到 37 帧点云和 1040 条 IMU 消息，点云接收速率约 5 Hz，低于驱动设置的 10 Hz；热点带宽和链路质量仍会影响实际接收速率。
+
+######热点建图#####
+
+说明：以下是本次热点建图的日常操作汇总，按顺序执行即可。机载电脑连接热点 `yxm`，通过 `wlan0`（`172.29.38.125`）将雷达、IMU 和图像数据传给工作站（`192.168.123.220`）。雷达本体仍通过机载电脑的 `eth1`（`192.168.123.18`）有线接入，RealSense 通过 USB 接入；热点用于机载电脑到工作站之间的数据传输。
+
+两端的单播 DDS、转发路由和机载雷达网口已完成配置。雷达和相机分别在两个 SSH 终端运行，数据检查、建图、RViz 和 MITI 在工作站本地运行。登录机载电脑出现 ROS 版本选择时输入 `1`（Foxy）；已有同类驱动或建图进程时先停止已有实例，再启动一次。每个终端都要加载自己的环境，`source ~/ros2_wifi_env.sh` 放在其他 setup 命令之后。
+
+**1．雷达启动命令（终端 1）**
+
+在工作站打开终端，连接机载电脑：
+
+```bash
+ssh unitree@172.29.38.125
+```
+
+登录成功后，在机载电脑执行：
+
+```bash
+source ~/yao_space/ws_livox/install/setup.bash
+source ~/ros2_wifi_env.sh
+/usr/bin/python3 /opt/ros/foxy/bin/ros2 launch livox_ros_driver2 msg_MID360_launch.py
+```
+
+这三条命令也可用 `bash ~/start_livox_wifi.sh` 一条代替，两种方式选一种。当前机载版本输出 `/livox/lidar`（PointCloud2）和 `/livox/imu`，不启动 RViz。
+
+**2．图像启动命令（终端 2）**
+
+在工作站另开终端，再连接一次机载电脑：
+
+```bash
+ssh unitree@172.29.38.125
+```
+
+登录成功后，在机载电脑执行：
+
+```bash
+source ~/ros2_wifi_env.sh
+/usr/bin/python3 /opt/ros/foxy/bin/ros2 launch realsense2_camera rs_launch.py \
+  config_file:="'/home/unitree/realsense_slam_sensor_qos.yaml'" \
+  rgb_camera.profile:=424x240x6 \
+  depth_module.profile:=640x480x6 \
+  align_depth.enable:=false \
+  enable_color:=true \
+  enable_depth:=true \
+  enable_sync:=false
+```
+
+输出彩色图 `/camera/color/image_raw` 和原始深度图 `/camera/depth/image_rect_raw`；建图时由工作站完成深度配准。保留 `config_file` 的两层引号。
+
+**3．本机检查雷达和图像（终端 3，不进入 SSH）**
+
+```bash
+cd /home/jyfight/Project/rtabmap_slam
+source setup.bash
+source ~/ros2_wifi_env.sh
+ros2 daemon stop
+ros2 daemon start
+ros2 topic list
+
+# 确认点云类型，并分别采样 10 秒。
+ros2 topic type /livox/lidar
+timeout 10s ros2 topic hz /livox/lidar
+timeout 10s ros2 topic hz /livox/imu
+timeout 10s ros2 topic hz /camera/color/image_raw
+timeout 10s ros2 topic hz /camera/depth/image_rect_raw
+```
+
+点云类型应为 `sensor_msgs/msg/PointCloud2`，四个话题都应实际收到数据。首次切换 DDS 环境或话题列表异常时，执行上面的 daemon 重启命令。
+
+**4．本机启动建图（终端 4，不进入 SSH）**
+
+沿用项目已安装的建图环境，启动前用 `export 变量名=标定值` 设置 `CAM_X`、`CAM_Y`、`CAM_Z`、`CAM_ROLL`、`CAM_PITCH`、`CAM_YAW`。YOLOv8 语义建图命令：
+
+```bash
+cd /home/jyfight/Project/rtabmap_slam
+source setup.bash
+source ~/ros2_wifi_env.sh
+bash scripts/start_semantic_slam.sh
+```
+
+若使用已安装的 YOLOE 模型，则选择下面这一组命令；与 YOLOv8 建图任选一种：
+
+```bash
+cd /home/jyfight/Project/rtabmap_slam
+source setup.bash
+source ~/ros2_wifi_env.sh
+bash scripts/start_semantic_yoloe.sh
+```
+
+**5．本机启动 MITI 展示（终端 5，不进入 SSH）**
+
+```bash
+cd /home/jyfight/Project/rtabmap_slam
+source setup.bash
+source ~/ros2_wifi_env.sh
+bash scripts/start_miti.sh
+```
+
+浏览器打开 <http://localhost:3000/rtabmap.html>，点击应用项目布局。需要 RViz 时，在工作站另一个图形桌面终端执行：
+
+```bash
+source /home/jyfight/Project/rtabmap_slam/setup.bash
+source ~/ros2_wifi_env.sh
+ros2 run rviz2 rviz2
+```
+
+**连接异常时检查：** 工作站先执行 `ping -c 3 172.29.38.125`；机载电脑执行 `ip -br addr` 和 `ping -c 3 192.168.123.20`。如果机载 `eth1` 没有 `192.168.123.18/24`，执行 `sudo nmcli connection up livox-eth1`。若仍提示 `eth0: does not match an available interface`，在对应启动终端重新执行 `source ~/ros2_wifi_env.sh`。本流程使用已部署的用户目录脚本和配置；更换热点或 IP 后，需要同步更新两端 DDS 配置及路由。
+
+## EMSANet RGB-D 实例分割（可选）
+
+EMSANet 让 RGB 与注册深度共同参与网络分割，实例结果继续接入现有三维标签地图。使用独立启动文件，原 YOLOv8 / YOLOE 命令及墙面模块保持原状。
+
+```bash
+# 首次准备；本机 Clash 代理端口为 7897
+bash scripts/install_emsanet.sh --proxy http://127.0.0.1:7897
+bash scripts/build_semantic.sh
+
+# 加载当前连接方式对应的 ROS 环境后运行；先退出已有建图进程
+bash scripts/start_semantic_emsanet.sh
+```
+
+网线连接可先 `source scripts/ros2_wired_env.sh`；热点连接沿用已经验证的热点环境。新模型使用 NYUv2 室内类别和独立的 `.emsanet.semantic.sqlite`，不需要开启近红外。配置、离线推理与验证说明见 [EMSANet RGB-D 建图](docs/emsanet_semantic_mapping.md)。

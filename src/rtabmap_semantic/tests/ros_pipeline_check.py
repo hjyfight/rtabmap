@@ -36,7 +36,19 @@ class FixtureDetector:
         return [dict(label='chair', confidence=0.9, mask=mask)]
 
 
+class FixtureRgbdDetector(FixtureDetector):
+    def detect(self, rgb, depth):
+        # Check that the exact decoded keyframe depth reached the RGB-D backend,
+        # including when the bridge decoded RTAB-Map's compressed PNG payload.
+        assert depth.dtype == np.uint16
+        assert depth.shape == rgb.shape[:2]
+        assert np.all(depth == 2000)
+        return super().detect(rgb)
+
+
 def main():
+    emsanet_fixture = '--emsanet-fixture' in sys.argv
+    real_emsanet = '--real-emsanet' in sys.argv
     real_yoloe = '--real-yoloe' in sys.argv
     real_yolo = '--real-yolo' in sys.argv or real_yoloe
     project = Path(__file__).resolve().parents[3]
@@ -50,6 +62,12 @@ def main():
         executor = SingleThreadedExecutor()
         probe = rclpy.create_node('semantic_pipeline_probe')
         params = [Parameter('database_path', value=str(Path(directory)/'map.db'))]
+        if emsanet_fixture or real_emsanet:
+            import yaml
+            config = yaml.safe_load((project/'src/rtabmap_semantic/config/emsanet.yaml').read_text())['semantic_mapper']['ros__parameters']
+            params.extend([Parameter(name, value=value) for name, value in config.items()])
+        if real_emsanet:
+            params.append(Parameter('model_path', value=str(project/'models/emsanet/nyuv2_r34_NBt1D_pre.pth')))
         if real_yolo:
             weights = 'yoloe-11s-seg-pf.pt' if real_yoloe else 'yolov8n-seg.pt'
             params.append(Parameter('model_path', value=str(project/'models'/weights)))
@@ -58,7 +76,13 @@ def main():
             config = yaml.safe_load((project/'src/rtabmap_semantic/config/yoloe.yaml').read_text())['semantic_mapper']['ros__parameters']
             params.extend([Parameter(name, value=value) for name, value in config.items()])
             params.append(Parameter('detector_backend', value='yoloe_pf'))
-        mapper = SemanticMapper(detector=None if real_yolo else FixtureDetector(), parameter_overrides=params)
+        def make_mapper():
+            detector = None if real_yolo or real_emsanet else (FixtureRgbdDetector() if emsanet_fixture else FixtureDetector())
+            return SemanticMapper(detector=detector, parameter_overrides=params)
+
+        mapper = make_mapper()
+        if emsanet_fixture or real_emsanet:
+            assert mapper.store.path.name == 'map.emsanet.semantic.sqlite'
         if real_yoloe:
             from rtabmap_semantic.labels import chinese_label, canonical_label
             assert mapper.store.path.name == 'map.yoloe.stable.semantic.sqlite'
@@ -73,15 +97,19 @@ def main():
         received = []
         subscription = probe.create_subscription(SemanticMap, '/semantic/objects', received.append, latched)
         cv = CvBridge()
-        if real_yolo:
+        if real_emsanet:
+            rgb = cv2.imread(str(project/'.tools/emsanet/samples/sample_rgb.png'))
+            sample_depth = cv2.imread(str(project/'.tools/emsanet/samples/sample_depth.png'), cv2.IMREAD_UNCHANGED)
+            assert rgb is not None and sample_depth is not None
+        elif real_yolo:
             import ultralytics
             rgb = cv2.imread(str(Path(ultralytics.__file__).parent/'assets/bus.jpg'))
             assert rgb is not None
         else:
             rgb = np.full((100, 100, 3), 128, np.uint8)
         height, width = rgb.shape[:2]
-        target_label = 'bus' if real_yolo else 'chair'
-        display_label = '公交车' if real_yoloe else target_label
+        target_label = 'sofa' if real_emsanet else ('bus' if real_yolo else 'chair')
+        display_label = '沙发' if real_emsanet else ('椅子' if emsanet_fixture else ('公交车' if real_yoloe else target_label))
         frame_count = mapper.config['min_observations']
 
         def until(predicate, seconds=15):
@@ -108,7 +136,7 @@ def main():
                 node = GraphNode(id=node_id, stamp=float(node_id))
                 node.data.header.stamp.sec = node_id
                 node.data.header.frame_id = 'camera_color_optical_frame'
-                depth = np.full((height, width), 2000, np.uint16)
+                depth = sample_depth if real_emsanet else np.full((height, width), 2000, np.uint16)
                 if node_id == 2:
                     # RTAB-Map's PNG RGB-D compression, matching saved keyframe payloads.
                     node.data.left_compressed = cv2.imencode('.png', rgb)[1].tobytes()
@@ -134,7 +162,12 @@ def main():
             until(lambda: received and any(o.label == display_label for o in received[-1].objects))
             obj = next(o for o in received[-1].objects if o.label == display_label)
             assert len(obj.observations) == frame_count
-            if not real_yolo:
+            if real_emsanet:
+                # The calibration here is synthetic: check valid projection and
+                # loop correction, not the true metric location of the sample.
+                assert all(mapper.config['min_depth'] <= o.position.z <= mapper.config['max_depth']
+                           for o in obj.observations)
+            elif not real_yolo:
                 np.testing.assert_allclose([obj.observations[0].position.x,
                                         obj.observations[0].position.y,
                                         obj.observations[0].position.z], [0.2, 0, 2], atol=1e-5)
@@ -149,7 +182,7 @@ def main():
             original_uuid = mapper.state.map_uuid
             executor.remove_node(mapper)
             mapper.destroy_node()
-            mapper = SemanticMapper(detector=None if real_yolo else FixtureDetector(), parameter_overrides=params)
+            mapper = make_mapper()
             executor.add_node(mapper)
             assert mapper.state.map_uuid == original_uuid
             assert any(o.label == target_label for o in mapper.state.objects)
@@ -170,12 +203,18 @@ def main():
             report = dict(passed=True, frames=frame_count, label=target_label, display_label=display_label,
                           confirmation_window=mapper.config['confirmation_window'], real_yolo=real_yolo,
                           real_yoloe=real_yoloe,
+                          emsanet_fixture=emsanet_fixture,
+                          real_emsanet=real_emsanet,
                           compressed_keyframe=True, projection=True, loop_reprojection=True,
                           reload=True, map_reset=True)
             print(json.dumps(report))
             output = project/'logs/semantic_validation'
             output.mkdir(parents=True, exist_ok=True)
             filename = 'ros_real_yoloe.json' if real_yoloe else ('ros_real_yolo.json' if real_yolo else 'ros_pipeline.json')
+            if emsanet_fixture:
+                filename = 'ros_emsanet_pipeline.json'
+            if real_emsanet:
+                filename = 'ros_real_emsanet.json'
             (output/filename).write_text(json.dumps(report, indent=2))
         finally:
             executor.remove_node(mapper)

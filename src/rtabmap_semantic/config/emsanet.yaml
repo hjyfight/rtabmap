@@ -1,0 +1,20 @@
+semantic_mapper:
+  ros__parameters:
+    detector_backend: emsanet
+    device: cpu
+    image_size: 640
+    cpu_threads: 2
+    # Official panoptic confidence = center score * mean semantic probability.
+    confidence: 0.35
+    min_depth: 0.3
+    max_depth: 4.0
+    min_depth_points: 30
+    min_observations: 3
+    association_distance: 0.45
+    max_observations: 30
+    confirmation_window: 5
+    dynamic_min_observations: 2
+    dynamic_classes: [person]
+    dynamic_ttl: 3.0
+    label_language: zh
+    classes: ['*']

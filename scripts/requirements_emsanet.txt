@@ -1,0 +1,10 @@
+# Python 3.10 / ROS Humble. Torch CPU wheels are installed separately.
+numpy==1.24.4
+opencv-python==4.10.0.84
+scipy==1.10.1
+matplotlib==3.7.5
+Pillow==10.4.0
+torchmetrics==0.10.2
+tqdm==4.66.6
+cityscapesScripts==1.5.0
+gdown==5.2.0

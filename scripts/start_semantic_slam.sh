@@ -39,9 +39,10 @@ cleanup_registration() {
   rm -f -- "$SEMANTIC_CHECK"
 }
 trap cleanup_registration EXIT
-ros2 launch "$SEMANTIC_PROJECT/launch/realsense_depth_registration.launch.py" 9>&- &
+python3 -c 'import os, signal, sys; signal.signal(signal.SIGINT, signal.SIG_DFL); os.execvp("ros2", ["ros2", "launch"] + sys.argv[1:])' \
+  "$SEMANTIC_PROJECT/launch/realsense_depth_registration.launch.py" 9>&- &
 SEMANTIC_REGISTRATION_PID=$!
-python3 "$SEMANTIC_PROJECT/scripts/check_rgbd_input.py" --seconds 5 --output "$SEMANTIC_CHECK"
+python3 "$SEMANTIC_PROJECT/scripts/check_rgbd_input.py" --seconds "${SEMANTIC_INPUT_CHECK_SECONDS:-5}" --output "$SEMANTIC_CHECK"
 python3 "$SEMANTIC_PROJECT/scripts/verify_fusion_input.py" "$SEMANTIC_CHECK" --guarded
 for SEMANTIC_CAM_VAR in CAM_X CAM_Y CAM_Z CAM_ROLL CAM_PITCH CAM_YAW; do
   if [[ -z "${!SEMANTIC_CAM_VAR}" ]]; then

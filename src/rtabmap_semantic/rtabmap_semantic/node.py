@@ -36,6 +36,9 @@ def store_config(config, model_hash):
         for key, default in (('confirmation_window', 0), ('dynamic_min_observations', 1)):
             if persistent.get(key) == default:
                 persistent.pop(key)
+    elif persistent.get('detector_backend') == 'emsanet':
+        from .emsanet_detector import EMSANET_POLICY_VERSION
+        persistent['emsanet_policy_version'] = EMSANET_POLICY_VERSION
     else:
         persistent['label_policy_version'] = YOLOE_LABEL_POLICY_VERSION
     persistent['model_sha256'] = model_hash
@@ -56,8 +59,8 @@ class SemanticMapper(Node):
         c = self.config
         if not c['database_path']:
             raise ValueError('database_path must identify the paired RTAB-Map database')
-        if c['detector_backend'] not in ('yolov8', 'yoloe_pf'):
-            raise ValueError('detector_backend must be yolov8 or yoloe_pf')
+        if c['detector_backend'] not in ('yolov8', 'yoloe_pf', 'emsanet'):
+            raise ValueError('detector_backend must be yolov8, yoloe_pf or emsanet')
         if c['label_language'] not in ('en', 'zh'):
             raise ValueError('label_language must be en or zh')
         if not (0 < c['confidence'] <= 1 and 0 < c['min_depth'] < c['max_depth'] and
@@ -67,11 +70,13 @@ class SemanticMapper(Node):
         self.map_key = str(Path(c['database_path']).expanduser().resolve())
         suffix = ('.yoloe.stable.semantic.sqlite' if c['confirmation_window'] else '.yoloe.semantic.sqlite') \
             if c['detector_backend'] == 'yoloe_pf' else '.semantic.sqlite'
+        if c['detector_backend'] == 'emsanet':
+            suffix = '.emsanet.semantic.sqlite'
         semantic_path = c['semantic_database_path'] or str(Path(self.map_key).with_suffix(suffix))
         self.state = SemanticState(c['min_observations'], c['association_distance'],
                                    c['dynamic_classes'], c['dynamic_ttl'], c['max_observations'],
                                    c['confirmation_window'], c['dynamic_min_observations'],
-                                   unique_objects=c['detector_backend'] == 'yoloe_pf')
+                                   unique_objects=c['detector_backend'] in ('yoloe_pf', 'emsanet'))
         model_path = Path(c['model_path']).expanduser()
         # Detect replaced weights even if the filename did not change.
         model_hash = hashlib.sha256(model_path.read_bytes()).hexdigest() if model_path.is_file() else ''
@@ -79,12 +84,17 @@ class SemanticMapper(Node):
         self.store = SemanticStore(semantic_path, self.map_key, persistent_config)
         self.store.load(self.state)
         if detector is None:
-            from .detector import YoloDetector
-            detector = YoloDetector(c['model_path'], c['device'], c['confidence'],
-                                    c['image_size'], c['cpu_threads'], c['detector_backend'])
+            if c['detector_backend'] == 'emsanet':
+                from .emsanet_detector import EmsanetDetector
+                detector = EmsanetDetector(c['model_path'], c['device'], c['confidence'],
+                                           c['image_size'], c['cpu_threads'])
+            else:
+                from .detector import YoloDetector
+                detector = YoloDetector(c['model_path'], c['device'], c['confidence'],
+                                        c['image_size'], c['cpu_threads'], c['detector_backend'])
         self.detector = detector
         self.bridge = CvBridge()
-        self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix='semantic_yolo')
+        self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix='semantic_inference')
         self.future = None
         self.active = None
         self.pending = None
@@ -138,7 +148,9 @@ class SemanticMapper(Node):
         camera = frame.camera_info
         transform = ros_matrix(frame.camera_to_node)
         detections = []
-        for detection in self.detector.detect(rgb):
+        predictions = self.detector.detect(rgb, depth) if self.config['detector_backend'] == 'emsanet' \
+            else self.detector.detect(rgb)
+        for detection in predictions:
             if self.config['classes'] != ['*'] and detection['label'] not in self.config['classes']:
                 continue
             geometry = lift_mask(detection['mask'], depth, camera.k,
@@ -180,8 +192,12 @@ class SemanticMapper(Node):
         if self.graph_stamp is not None:
             message.header.stamp = self.graph_stamp
         message.map_key, message.map_uuid = self.map_key, self.state.map_uuid
+        display_label = chinese_label
+        if self.config['detector_backend'] == 'emsanet':
+            from .emsanet_detector import emsanet_chinese_label
+            display_label = emsanet_chinese_label
         for obj in self.state.visible_objects():
-            label = chinese_label(obj.label) if self.config['label_language'] == 'zh' else obj.label
+            label = display_label(obj.label) if self.config['label_language'] == 'zh' else obj.label
             item = SemanticObject(object_id=obj.object_id, label=label,
                                   confidence=obj.confidence, dynamic=obj.dynamic)
             for observation in self.state.inlier_observations(obj):
@@ -192,6 +208,7 @@ class SemanticMapper(Node):
             message.objects.append(item)
         self.publisher.publish(message)
         self.status.publish(String(data=json.dumps(dict(processed=self.processed, failed=self.failed,
+            detector_backend=self.config['detector_backend'],
             active_node=self.active.node_id if self.active else None,
             confirmed_objects=len(message.objects), total_objects=len(self.state.objects),
             last_inference_seconds=self.last_inference_seconds, map_uuid=self.state.map_uuid))))

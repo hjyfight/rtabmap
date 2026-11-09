@@ -7,7 +7,10 @@
 /models/
 /.venv-semantic/
 /.venv-yoloe/
+/.venv-emsanet/
 /.cache/yoloe-pip/
+/.cache/emsanet-pip/
+/.tools/emsanet/
 /.tools/miti/
 /.tools/depth_registration/
 __pycache__/

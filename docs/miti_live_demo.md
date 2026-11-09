@@ -63,6 +63,29 @@ SLAM 仍有数据，浏览器桥接却缺少深度、地图和静态 TF。仅重
 用户确认四项显示恢复。报告：`logs/miti/display_recovery_20261106.json`。
 相机安装外参和 SLAM 进程未调整。
 
+2026-11-08 切换有线后再次遇到三维窗口空白：SLAM 使用项目的
+`config/wired_cyclonedds.xml`，仍在运行的旧 MITI 使用热点配置
+`~/ros2_wifi_cyclonedds.xml`。重启前桥接缺少 `/cloud_map` 和 `/tf_static`，
+页面提示 `No transform: camera_depth_optical_frame -> livox_frame`。
+按有线环境重启展示服务后，15 秒桥接检查收到 8619 点地图、完整相机 TF、
+173×220 栅格，以及 RGB、深度和右近红外；检查结果为 `passed=true`。
+当前 SLAM 进程和地图会话继续运行。桥接检查未自动测试浏览器渲染；
+随后用户确认三维地图与相机方向箭头已恢复显示。
+
+有线模式下先在原展示终端 Ctrl+C，随后在工作站运行：
+
+```bash
+cd /home/jyfight/Project/rtabmap_slam
+source scripts/ros2_wired_env.sh
+bash scripts/start_miti.sh
+```
+
+重启前后记录分别为 `logs/miti/wired_display_before_20261108.json` 和
+`logs/miti/wired_display_after_20261108.json`。该次 `/arc_camera/image_raw` 无发布端，
+ARC 等待图像属于独立输入未启动；RealSense 近红外使用
+`/camera/infra2/image_rect_raw`。语义消息已送达，但当时只处理了一个关键帧，
+确认对象数为零，不能把空标签列表当作展示连接失败。
+
 ### 三维与二维地图并排显示
 
 第二个窗口显示 `/miti/grid_map` 的二维栅格，先识别地面并筛选距地面 0.15～1.60 m
