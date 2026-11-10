@@ -3,8 +3,10 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -75,6 +77,26 @@ class FrontendInstallTests(unittest.TestCase):
             self.install()
         for name, original in originals.items():
             self.assertEqual((self.app / name).read_bytes(), original)
+
+    def test_actual_patched_client_replays_grid_and_clears_cache_on_reset_or_disconnect(self):
+        self.install()
+        result = subprocess.run([str(self.app/'node/bin/node'), '--test',
+            str(ROOT/'tests/test_miti_retained_grid.js')], capture_output=True, text=True,
+            env={**os.environ, 'MITI_TEST_CLIENT_BUNDLE': str(self.app/installer.PAGE_CHUNK)})
+        self.assertEqual(result.returncode, 0, result.stdout+'\n'+result.stderr)
+
+    def test_stable_semantic_labels_are_scoped_to_each_scene_and_preserve_native_markers(self):
+        manifest = self.install()
+        renderer = self.app / manifest['assets'][0].split('?', 1)[0].replace('/_next/', '.next/', 1)
+        source = renderer.read_text()
+        self.assertIn('RtabmapSemanticLabels.Provider,{settings:c,children:', source)
+        self.assertIn('if(RtabmapSemanticLabels.isSemantic(n))return(0,r.jsx)(RtabmapSemanticLabels.Label,', source)
+        self.assertIn('if(9===n.type)return(0,r.jsx)(ta.V,', source)
+        self.assertIn('rtabmapMapDetailsFactory(n,x,RtabmapHeightClip,RtabmapSemanticLabels)', source)
+        result = subprocess.run([str(self.app/'node/bin/node'),
+            str(ROOT/'tests/test_miti_semantic_labels.js')], capture_output=True, text=True,
+            env={**os.environ, 'MITI_TEST_RENDERER_BUNDLE': str(renderer)})
+        self.assertEqual(result.returncode, 0, result.stdout+'\n'+result.stderr)
 
 
 if __name__ == '__main__':

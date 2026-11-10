@@ -99,6 +99,36 @@ test('navigation status shows geometric candidates and an explicit insufficient-
   cleanups.forEach(f=>f?.());
 });
 
+test('navigation information can be hidden and restored without changing map or mode', () => {
+  const settings = widget('topology').props;
+  const waiting = {schema:1,kind:'navigation',state:'waiting',frame_id:'map',epoch:1,
+    reason:'已知空闲区域不足以容纳当前机器人净空',
+    topology:{nodes:0,links:0,regions:0,corridors:0,doorways:0,components:0}};
+  const expanded = renderToStaticMarkup(React.createElement(ui.View,
+    {kind:'topology',mode:'navigation',data:waiting,connected:true}));
+  assert.ok(expanded.includes('隐藏导航信息'));
+  assert.ok(expanded.includes('当前仅显示栅格背景，尚未生成导航节点和连线'));
+  const hidden = renderToStaticMarkup(React.createElement(ui.View,
+    {kind:'topology',mode:'navigation',data:waiting,connected:true,collapsed:true}));
+  assert.ok(hidden.includes('展开导航信息'));
+  assert.ok(hidden.includes('aria-expanded="false"'));
+  for (const text of ['净空半径','候选门口','适应地图',waiting.reason]) assert.equal(hidden.includes(text),false);
+  let changed;
+  const hooks = {createElement:React.createElement,useState:v=>[v,()=>{}],useRef:v=>({current:v}),useEffect(){}};
+  const controls = factory(hooks).Controls({client:null,settings,onChange:value=>{changed=value;}});
+  controls.props.onCollapse();
+  assert.equal(changed.scene.rtabmapGraphControlsCollapsed,true);
+  assert.equal(changed.view,settings.view);
+  assert.equal(changed.topics,settings.topics);
+  assert.equal(changed.scene.rtabmapTopologyMode,'navigation');
+  const switched = setMode(changed,'pose_graph');
+  assert.equal(switched.scene.rtabmapGraphControlsCollapsed,true);
+  const restored = factory(hooks).Controls({client:null,settings:changed,onChange:value=>{changed=value;}});
+  assert.equal(restored.props.collapsed,true);
+  restored.props.onCollapse();
+  assert.equal(changed.scene.rtabmapGraphControlsCollapsed,false);
+});
+
 test('repairs saved map scenes with missing tags even after layout migration', () => {
   const maps = ['topology', 'features'].map(kind => {
     const scene = widget(kind);

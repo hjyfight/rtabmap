@@ -142,7 +142,7 @@ test('a static latched grid reaches the renderer even when its information bar m
   // Exercise MITI's actual subscribe method: ordinary topics have no replay
   // cache for late callbacks sharing an already-bound ROS subscription.
   const page = fs.readFileSync(path.join(root,
-    '.tools/miti/root/usr/lib/miti/.next/static/chunks/app/page-a3758698d17bc097.js'),'utf8');
+    '.tools/miti/root/usr/lib/miti/rtabmap-panel-originals/.next/static/chunks/app/page-a3758698d17bc097.js'),'utf8');
   const begin = page.indexOf('subscribe(e,t,r,n){');
   const end = page.indexOf('unsubscribe(e,t){',begin);
   assert.ok(begin>0 && end>begin);

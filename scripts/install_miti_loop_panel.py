@@ -41,12 +41,13 @@ def replace_once(source, old, new):
     return source.replace(old, new, 1)
 
 
-def extend_bundle(path, source, panel, height_clip, title, camera_heading, heading_config, depth_display, map_details, grid_map, infrared_display, arc_camera_display, graph_feature_maps, panel_revision=''):
+def extend_bundle(path, source, panel, height_clip, title, camera_heading, heading_config, depth_display, map_details, grid_map, infrared_display, arc_camera_display, graph_feature_maps, retained_grid, semantic_labels, panel_revision=''):
     if path.endswith('453.e8d48709a26a0ed3.js'):
         source = replace_once(source, 'function rO(e){',
             panel + '\nconst RtabmapLoopStatusPanel = rtabmapLoopStatusFactory(n).Component;\n' +
             height_clip + '\nconst RtabmapHeightClip = rtabmapHeightClipFactory(n);\n' +
-            map_details + '\nconst RtabmapMapDetails = rtabmapMapDetailsFactory(n,x,RtabmapHeightClip);\n' +
+            semantic_labels + '\nconst RtabmapSemanticLabels = rtabmapSemanticLabelsFactory(n,ta.V);\n' +
+            map_details + '\nconst RtabmapMapDetails = rtabmapMapDetailsFactory(n,x,RtabmapHeightClip,RtabmapSemanticLabels);\n' +
             grid_map + '\nconst RtabmapGridMap = rtabmapGridMapFactory(n);\n' +
             graph_feature_maps + '\nconst RtabmapGraphFeatureMaps = rtabmapGraphFeatureMapsFactory(n);\n' +
             camera_heading + '\nconst RtabmapCameraHeading = rtabmapCameraHeadingFactory(' +
@@ -60,6 +61,10 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
             '{level:"ok",message:RtabmapCameraHeading.status(o)}')
         source = replace_once(source, 'if(11===n.type)return(0,r.jsx)(ty,{marker:n,opacity:d});',
             'if(11===n.type)return(0,r.jsx)(n.ns.startsWith("rtabmap/walls/")?RtabmapMapDetails.WallMesh:ty,{marker:n,opacity:d});')
+        source = replace_once(source, 'if(9===n.type)return(0,r.jsx)(ta.V,',
+            'if(RtabmapSemanticLabels.isSemantic(n))return(0,r.jsx)(RtabmapSemanticLabels.Label,'
+            '{marker:n,color:"#".concat(u.getHexString()),opacity:d,labelScale:c});'
+            'if(9===n.type)return(0,r.jsx)(ta.V,')
         source = replace_once(source, '(0,r.jsx)(t7,{config:l,',
             '(0,r.jsx)(t7,{client:t,config:l,')
         source = replace_once(source, 'className:"scene-settings",children:[(0,r.jsxs)(eM,{title:"Frame",',
@@ -82,7 +87,8 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
         scene = '(0,r.jsx)(ab,{client:t,topics:a,topicRows:W,layers:l.layers,tfTree:A,fixedFrame:D,' \
                 'displayFrame:L,sync:s.syncTimestamps,transforms:u,scene:c,meshEpoch:S,onStatus:h,onInfo:g,onFrame:y})'
         source = replace_once(source, scene,
-            '(0,r.jsx)(RtabmapHeightClip.Provider,{settings:c.heightClip,follow:B,children:' + scene + '})')
+            '(0,r.jsx)(RtabmapHeightClip.Provider,{settings:c.heightClip,follow:B,children:'
+            '(0,r.jsx)(RtabmapSemanticLabels.Provider,{settings:c,children:' + scene + '})})')
         return replace_once(source, 'className:d.u4.urdfViewer.container,children:[',
             'className:d.u4.urdfViewer.container,children:['
             'rtabmapGraphMapKind(l)?(0,r.jsx)(RtabmapGraphFeatureMaps.Controls,{client:t,settings:l,onChange:o}):'
@@ -90,6 +96,23 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
             '(0,r.jsx)(RtabmapMapDetails.Controls,{client:t,settings:l,onChange:o}),'
             '!c.rtabmapGrid&&!rtabmapGraphMapKind(l)&&(0,r.jsx)(RtabmapHeightClip.Controls,{settings:c.heightClip,frame:D,'
             'onChange:e=>o({...l,scene:{...c,heightClip:e}})}),')
+    # The client is a separate webpack module from the panel registry. Inject
+    # the cache helpers into its own lexical scope, beside the pinned class.
+    source = replace_once(source, 'class S{connect(){return this.control.connect()}',
+                          retained_grid + '\nclass S{connect(){return this.control.connect()}')
+    source = replace_once(source,
+        '(null==i?void 0:i.size)&&t({transforms:Array.from(i.values())})}unsubscribe(e,t){',
+        '(null==i?void 0:i.size)&&t({transforms:Array.from(i.values())}),rtabmapReplayGridMessage(s,t)}unsubscribe(e,t){')
+    source = replace_once(source, 'deliver(e,t,r){this.retainTransforms(e,r),',
+        'deliver(e,t,r){rtabmapRememberGridMessage(e,t,r),this.retainTransforms(e,r),')
+    source = replace_once(source, 'unbind(e){e.timer&&',
+        'unbind(e){rtabmapClearGridMessage(e),e.timer&&')
+    source = replace_once(source, '===e&&(t.binding=void 0)}),e!==this.control)',
+        '===e&&(rtabmapClearGridMessage(t),t.binding=void 0)}),e!==this.control)')
+    source = replace_once(source, 'this.staticTransformCache.clear();let r=e=>',
+        'this.staticTransformCache.clear(),this.subscriptions.forEach(rtabmapClearGridMessage);let r=e=>')
+    source = replace_once(source, '(e.subscriptionTopics.delete(n.subscriptionId),r.binding=void 0)',
+        '(e.subscriptionTopics.delete(n.subscriptionId),rtabmapClearGridMessage(r),r.binding=void 0)')
     source = replace_once(source, 'let k=[{type:"topics",',
         depth_display + '\n' + map_details + '\n' + grid_map + '\n' + infrared_display + '\n' + arc_camera_display + '\n' + graph_feature_maps +
         '\nrtabmapVersionPanelChunk(r,' + json.dumps(panel_revision) + ');\n'
@@ -133,6 +156,8 @@ def install(app=APP):
     map_details = (PROJECT / 'config/miti_map_details.js').read_text()
     grid_map = (PROJECT / 'config/miti_grid_map.js').read_text()
     graph_feature_maps = (PROJECT / 'config/miti_graph_feature_maps.js').read_text()
+    retained_grid = (PROJECT / 'config/miti_retained_grid.js').read_text()
+    semantic_labels = (PROJECT / 'config/miti_semantic_labels.js').read_text()
     heading_config = json.loads((PROJECT / 'config/miti_camera_heading.json').read_text())
     if (not isinstance(heading_config, dict) or
             not isinstance(heading_config.get('enabled'), bool) or
@@ -166,7 +191,7 @@ def install(app=APP):
     for name, expected in UPSTREAM.items():
         target, backup, original, current = original_file(name, expected)
         updated = extend_bundle(name, original.decode(), panel, height_clip, title,
-                                camera_heading, heading_config, depth_display, map_details, grid_map, infrared_display, arc_camera_display, graph_feature_maps, panel_revision).encode()
+                                camera_heading, heading_config, depth_display, map_details, grid_map, infrared_display, arc_camera_display, graph_feature_maps, retained_grid, semantic_labels, panel_revision).encode()
         if name.endswith('453.e8d48709a26a0ed3.js'):
             # Next marks this pinned vendor filename immutable. Version its lazy
             # import URL so a fresh page cannot pair with an older cached renderer.

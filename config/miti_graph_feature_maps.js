@@ -150,14 +150,16 @@ function rtabmapGraphFeatureMapsFactory(React) {
       thetaOffset: topDown ? -90 : 45, rtabmapTopDown: Boolean(topDown),
       distance: span * 1.2 / (2 * Math.tan(fovy * Math.PI / 360)), targetOffset: bounds.center};
   }
-  function View({kind, mode, data, connected, stale, onFit, onView, onMode, topDown, panelRef}) {
+  function View({kind, mode, data, connected, stale, onFit, onView, onMode, topDown, panelRef,
+                 collapsed = false, onCollapse}) {
     const topology = kind === 'topology', item = data?.[kind === 'topology' ? 'topology' : 'features'];
     const navigation = topology && mode === 'navigation';
+    const isCollapsed = topology && collapsed;
     const summary = !connected ? '等待连接' : stale ? '地图显示更新已中断' :
       data?.state !== 'ready' ? data?.reason || '等待地图数据' : topology
         ? navigation ? `${item.regions} 个区域 · ${item.corridors} 条通道 · ${item.doorways} 个候选门口`
           : `${item.nodes} 个关键帧 · ${item.links} 条约束` : `${item.points.toLocaleString()} 个视觉特征点`;
-    return h('div', {className: 'rtab-graph-controls', ref: panelRef,
+    return h('div', {className: 'rtab-graph-controls', ref: panelRef, 'data-collapsed': isCollapsed,
       onPointerDown: e => e.stopPropagation(), onPointerUp: e => e.stopPropagation()},
       h('style', null, `
         .rtab-graph-controls {position:absolute;top:10px;left:10px;z-index:3;max-width:calc(100% - 20px);
@@ -166,9 +168,16 @@ function rtabmapGraphFeatureMapsFactory(React) {
         .rtab-graph-controls button {margin-left:8px;border:1px solid #526777;border-radius:4px;
           padding:2px 6px;background:#253644;color:inherit;font:inherit;cursor:pointer;}
         .rtab-graph-controls button:disabled {opacity:.5;cursor:default;}
+        .rtab-graph-collapse {float:right;}
+        .rtab-graph-controls[data-collapsed="true"] {padding:3px 5px;}
+        .rtab-graph-controls[data-collapsed="true"] .rtab-graph-collapse {float:none;margin:0;}
         .rtab-graph-legend {display:flex;gap:10px;flex-wrap:wrap;font-size:10px;color:#bbccd9;}
         .rtab-graph-legend i {display:inline-block;width:12px;height:3px;vertical-align:middle;margin-right:4px;}
       `),
+      topology ? h('button', {type: 'button', className: 'rtab-graph-collapse',
+        'aria-expanded': !isCollapsed, 'aria-label': isCollapsed ? '展开导航信息' : '隐藏导航信息',
+        onClick: onCollapse}, isCollapsed ? '展开导航信息' : '隐藏') : null,
+      !isCollapsed ? h(React.Fragment, null,
       h('div', {role: 'status'}, summary,
         h('button', {type: 'button', disabled: !item?.bounds, onClick: onFit}, '适应地图'),
         h('button', {type: 'button', onClick: onView}, topDown ? '三维视角' : '俯视')),
@@ -185,8 +194,10 @@ function rtabmapGraphFeatureMapsFactory(React) {
       navigation ? h('div', {style: {fontSize: 10, color: '#bbccd9'}},
         `几何候选 · ${item?.components ?? 0} 个连通分量 · 净空半径 ≥ ${Number(item?.required_clearance_m ?? .45).toFixed(2)} m`,
         data?.robot_region ? ` · 当前位置 ${data.robot_region}` : '') : null,
+      navigation && item?.nodes === 0 ? h('div', {style: {fontSize: 11, color: '#edc47f'}},
+        '当前仅显示栅格背景，尚未生成导航节点和连线') : null,
       data?.updated_at ? h('div', {style: {fontSize: 10, color: '#9eb3c4'}},
-        `${data.frame_id} · 最近地图更新 ${new Date(data.updated_at * 1000).toLocaleTimeString()}`) : null);
+        `${data.frame_id} · 最近地图更新 ${new Date(data.updated_at * 1000).toLocaleTimeString()}`) : null) : null);
   }
   function Controls({client, settings, onChange}) {
     const [sample, setSample] = React.useState(null), [now, setNow] = React.useState(Date.now);
@@ -220,6 +231,12 @@ function rtabmapGraphFeatureMapsFactory(React) {
     React.useEffect(() => {const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer);}, []);
     return h(View, {kind, mode, data: sample?.data, connected: Boolean(client),
       stale: Boolean(sample && now - sample.received > 4000), panelRef,
+      collapsed: Boolean(settings.scene?.rtabmapGraphControlsCollapsed),
+      onCollapse: () => {
+        const {settings: current, onChange: change} = latest.current;
+        change({...current, scene: {...current.scene,
+          rtabmapGraphControlsCollapsed: !current.scene?.rtabmapGraphControlsCollapsed}});
+      },
       topDown: settings.view.rtabmapTopDown, onFit: () => fit(sample?.data),
       onMode: value => onChange(rtabmapSetTopologyMode(settings, value)),
       onView: () => {
