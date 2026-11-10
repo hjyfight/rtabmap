@@ -1,0 +1,15 @@
+navigation_topology:
+  ros__parameters:
+    grid_topic: /miti/grid_map
+    update_interval: 2.0
+    # Conservative circular footprint; replace with measured robot requirements.
+    robot_radius: 0.40
+    safety_margin: 0.05
+    room_core_clearance: 1.0
+    min_core_area: 0.30
+    min_region_area: 0.25
+    corridor_elongation: 3.0
+    doorway_max_width: 1.6
+    free_threshold: 25
+    max_cells: 1000000
+    max_regions: 256

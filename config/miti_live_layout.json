@@ -5,8 +5,9 @@
       "rtabmapWallsVersion": 1,
       "rtabmapPoseDisplayVersion": 1,
       "rtabmapGridLayoutVersion": 1,
+      "rtabmapGraphFeatureLayoutVersion": 1,
       "rtabmapArcCameraLayoutVersion": 1,
-      "x": 0, "y": 0, "w": 4, "h": 16,
+      "x": 0, "y": 0, "w": 4, "h": 8,
       "props": {
         "version": 2,
         "frame": {"fixedFrame": "map", "displayFrame": "map", "followMode": "fixed", "syncTimestamps": false},
@@ -29,7 +30,7 @@
     {
       "i": "rtabmap-grid-scene", "type": "urdf-viewer", "title": "二维栅格地图",
       "rtabmapGridProjectionVersion": 1,
-      "x": 4, "y": 0, "w": 4, "h": 16,
+      "x": 4, "y": 0, "w": 4, "h": 8,
       "props": {
         "version": 2,
         "frame": {"fixedFrame": "map", "displayFrame": "map", "followMode": "fixed", "syncTimestamps": false},
@@ -45,6 +46,161 @@
           "/robot_pose": {"visible": true, "type": "pose", "poseType": "arrow", "axisScale": 0.5,
                           "color": "#20c997", "opacity": 1, "staleAfter": 2},
           "/miti/trajectory": {"visible": true, "type": "path", "poseType": "line", "lineWidth": 0.035, "color": "#ed9b21"}
+        },
+        "layers": []
+      }
+    },
+    {
+      "i": "rtabmap-topology-scene",
+      "type": "urdf-viewer",
+      "title": "导航连通图 · 区域与通道",
+      "x": 0,
+      "y": 8,
+      "w": 4,
+      "h": 8,
+      "props": {
+        "version": 2,
+        "frame": {
+          "fixedFrame": "map",
+          "displayFrame": "map",
+          "followMode": "fixed",
+          "syncTimestamps": false
+        },
+        "scene": {
+          "background": "#111923",
+          "renderStats": false,
+          "labelScale": 1,
+          "rtabmapGraphMap": "topology",
+          "heightClip": {
+            "enabled": false,
+            "height": 2
+          },
+          "rtabmapTopologyMode": "navigation"
+        },
+        "view": {
+          "perspective": false,
+          "distance": 12,
+          "thetaOffset": -90,
+          "phi": 0.01,
+          "targetOffset": [
+            0,
+            0,
+            0
+          ],
+          "rtabmapTopDown": true
+        },
+        "transforms": {
+          "visible": false,
+          "tfTopics": [
+            "/tf",
+            "/tf_static"
+          ],
+          "staticTfTopics": [
+            "/tf_static"
+          ]
+        },
+        "topics": {
+          "/miti/topological_map": {
+            "visible": false,
+            "type": "markers"
+          },
+          "/robot_pose": {
+            "visible": true,
+            "type": "pose",
+            "poseType": "arrow",
+            "axisScale": 0.5,
+            "color": "#ffffff",
+            "opacity": 1,
+            "staleAfter": 2
+          },
+          "/miti/navigation_map": {
+            "type": "markers",
+            "visible": true
+          },
+          "/miti/grid_map": {
+            "type": "map",
+            "mapColorMode": "custom",
+            "minColor": "#b8c6c9",
+            "maxColor": "#111923",
+            "unknownColor": "#25313b",
+            "opacity": 0.4,
+            "drawBehind": true,
+            "frameLocked": false,
+            "visible": true
+          }
+        },
+        "layers": []
+      },
+      "rtabmapNavigationVersion": 1
+    },
+    {
+      "i": "rtabmap-features-scene",
+      "type": "urdf-viewer",
+      "title": "稀疏特征地图 · 视觉特征点",
+      "x": 4,
+      "y": 8,
+      "w": 4,
+      "h": 8,
+      "props": {
+        "version": 2,
+        "frame": {
+          "fixedFrame": "map",
+          "displayFrame": "map",
+          "followMode": "fixed",
+          "syncTimestamps": false
+        },
+        "scene": {
+          "background": "#111923",
+          "renderStats": false,
+          "labelScale": 1,
+          "rtabmapGraphMap": "features",
+          "heightClip": {
+            "enabled": false,
+            "height": 2
+          }
+        },
+        "view": {
+          "perspective": true,
+          "distance": 12,
+          "thetaOffset": 45,
+          "phi": 60,
+          "targetOffset": [
+            0,
+            0,
+            0
+          ],
+          "rtabmapTopDown": false
+        },
+        "transforms": {
+          "visible": false,
+          "tfTopics": [
+            "/tf",
+            "/tf_static"
+          ],
+          "staticTfTopics": [
+            "/tf_static"
+          ]
+        },
+        "topics": {
+          "/miti/sparse_features": {
+            "visible": true,
+            "type": "pointcloud",
+            "pointSize": 4,
+            "maxPoints": 150000,
+            "colorMode": "colormap",
+            "colorField": "z",
+            "maxRate": 2,
+            "staleAfter": 30
+          },
+          "/robot_pose": {
+            "visible": true,
+            "type": "pose",
+            "poseType": "arrow",
+            "axisScale": 0.5,
+            "color": "#ffffff",
+            "opacity": 1,
+            "staleAfter": 2
+          }
         },
         "layers": []
       }
@@ -92,7 +248,9 @@
   "mosaic": {
     "direction": "column", "splitPercentage": 60,
     "first": {
-      "direction": "row", "first": {"direction": "row", "first": "rtabmap-scene", "second": "rtabmap-grid-scene", "splitPercentage": 50}, "splitPercentage": 68,
+      "direction": "row", "first": {"direction": "column", "splitPercentage": 50,
+                "first": {"direction": "row", "first": "rtabmap-scene", "second": "rtabmap-grid-scene", "splitPercentage": 50},
+                "second": {"direction": "row", "first": "rtabmap-topology-scene", "second": "rtabmap-features-scene", "splitPercentage": 50}}, "splitPercentage": 68,
       "second": {"direction": "column", "first": "rtabmap-color", "splitPercentage": 25,
                  "second": {"direction": "column", "first": "rtabmap-depth", "splitPercentage": 33.33,
                             "second": {"direction": "column", "first": "rtabmap-infrared", "second": "rtabmap-arc-camera", "splitPercentage": 50}}}

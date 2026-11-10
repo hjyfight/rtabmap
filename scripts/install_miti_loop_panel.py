@@ -20,6 +20,15 @@ UPSTREAM = {
     '.next/static/chunks/app/page-a3758698d17bc097.js':
         'cda0901d64d8d42ffb66b0088a992402c02049b656a60a3482e8561911d67375',
 }
+ENTRYPOINTS = {
+    '.next/app-build-manifest.json':
+        '7ed467ee1ef62d2041471166ba99cddec2fed75129ab0400ed05fee185521fe7',
+    '.next/server/app/page_client-reference-manifest.js':
+        'f5729aea5d12e14929f0768a6d875b1c6d79103f321ad283c9d5356b7dabd8f8',
+    '.next/server/app/_not-found/page_client-reference-manifest.js':
+        'e6564479d2aae85f8ae66a0dc5f7266a465d1de162151b10813ca7da6fd79094',
+}
+PAGE_CHUNK = '.next/static/chunks/app/page-a3758698d17bc097.js'
 
 
 def digest(data):
@@ -32,13 +41,14 @@ def replace_once(source, old, new):
     return source.replace(old, new, 1)
 
 
-def extend_bundle(path, source, panel, height_clip, title, camera_heading, heading_config, depth_display, map_details, grid_map, infrared_display, arc_camera_display):
+def extend_bundle(path, source, panel, height_clip, title, camera_heading, heading_config, depth_display, map_details, grid_map, infrared_display, arc_camera_display, graph_feature_maps, panel_revision=''):
     if path.endswith('453.e8d48709a26a0ed3.js'):
         source = replace_once(source, 'function rO(e){',
             panel + '\nconst RtabmapLoopStatusPanel = rtabmapLoopStatusFactory(n).Component;\n' +
             height_clip + '\nconst RtabmapHeightClip = rtabmapHeightClipFactory(n);\n' +
             map_details + '\nconst RtabmapMapDetails = rtabmapMapDetailsFactory(n,x,RtabmapHeightClip);\n' +
             grid_map + '\nconst RtabmapGridMap = rtabmapGridMapFactory(n);\n' +
+            graph_feature_maps + '\nconst RtabmapGraphFeatureMaps = rtabmapGraphFeatureMapsFactory(n);\n' +
             camera_heading + '\nconst RtabmapCameraHeading = rtabmapCameraHeadingFactory(' +
             json.dumps(heading_config) + ',w);\nfunction rO(e){')
         source = replace_once(source,
@@ -54,7 +64,7 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
             '(0,r.jsx)(t7,{client:t,config:l,')
         source = replace_once(source, 'className:"scene-settings",children:[(0,r.jsxs)(eM,{title:"Frame",',
             'className:"scene-settings",children:['
-            '!t.scene.rtabmapGrid&&(0,r.jsx)(RtabmapMapDetails.Controls,{client:e.client,settings:t,onChange:a,inline:true}),'
+            '!t.scene.rtabmapGrid&&!rtabmapGraphMapKind(t)&&(0,r.jsx)(RtabmapMapDetails.Controls,{client:e.client,settings:t,onChange:a,inline:true}),'
             '(0,r.jsxs)(eM,{title:"Frame",')
         source = replace_once(source, '(0,r.jsx)(Z.z,{ref:o,makeDefault:!0,enabled:i,onEnd:',
             '(0,r.jsx)(Z.z,{ref:o,makeDefault:!0,enabled:i,enableRotate:!t.rtabmapTopDown,onEnd:')
@@ -75,17 +85,20 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
             '(0,r.jsx)(RtabmapHeightClip.Provider,{settings:c.heightClip,follow:B,children:' + scene + '})')
         return replace_once(source, 'className:d.u4.urdfViewer.container,children:[',
             'className:d.u4.urdfViewer.container,children:['
+            'rtabmapGraphMapKind(l)?(0,r.jsx)(RtabmapGraphFeatureMaps.Controls,{client:t,settings:l,onChange:o}):'
             'c.rtabmapGrid?(0,r.jsx)(RtabmapGridMap.Controls,{client:t,settings:l,onChange:o}):'
             '(0,r.jsx)(RtabmapMapDetails.Controls,{client:t,settings:l,onChange:o}),'
-            '!c.rtabmapGrid&&(0,r.jsx)(RtabmapHeightClip.Controls,{settings:c.heightClip,frame:D,'
+            '!c.rtabmapGrid&&!rtabmapGraphMapKind(l)&&(0,r.jsx)(RtabmapHeightClip.Controls,{settings:c.heightClip,frame:D,'
             'onChange:e=>o({...l,scene:{...c,heightClip:e}})}),')
     source = replace_once(source, 'let k=[{type:"topics",',
-        depth_display + '\n' + map_details + '\n' + grid_map + '\n' + infrared_display + '\n' + arc_camera_display + '\nlet k=[{type:"loop-status",label:"回环状态",icon:"↻",'
+        depth_display + '\n' + map_details + '\n' + grid_map + '\n' + infrared_display + '\n' + arc_camera_display + '\n' + graph_feature_maps +
+        '\nrtabmapVersionPanelChunk(r,' + json.dumps(panel_revision) + ');\n'
+        'let k=[{type:"loop-status",label:"回环状态",icon:"↻",'
         'defaultSize:{w:4,h:8},minSize:{minW:2,minH:4}},{type:"topics",')
     source = replace_once(source,
         't({mosaic:r.mosaic,widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})})',
-        't(rtabmapMigrateArcCameraLayout(rtabmapMigrateInfraredLayout(rtabmapMigrateGridLayout({mosaic:r.mosaic,widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})'
-        '.map(rtabmapMigrateDepthWidget).map(rtabmapMigrateInfraredTopicWidget).map(rtabmapMigrateWallWidget)}))))')
+        't(rtabmapMigrateGraphFeatureLayout(rtabmapMigrateArcCameraLayout(rtabmapMigrateInfraredLayout(rtabmapMigrateGridLayout({mosaic:r.mosaic,widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})'
+        '.map(rtabmapMigrateDepthWidget).map(rtabmapMigrateInfraredTopicWidget).map(rtabmapMigrateWallWidget)})))))')
     # The dashboard is client-rendered. Use text instead of the fixed-width logo,
     # with ellipsis on narrow screens and the full system name in its tooltip.
     title_js = json.dumps(title, ensure_ascii=True)
@@ -119,6 +132,7 @@ def install(app=APP):
     arc_camera_display = (PROJECT / 'config/miti_arc_camera_display.js').read_text()
     map_details = (PROJECT / 'config/miti_map_details.js').read_text()
     grid_map = (PROJECT / 'config/miti_grid_map.js').read_text()
+    graph_feature_maps = (PROJECT / 'config/miti_graph_feature_maps.js').read_text()
     heading_config = json.loads((PROJECT / 'config/miti_camera_heading.json').read_text())
     if (not isinstance(heading_config, dict) or
             not isinstance(heading_config.get('enabled'), bool) or
@@ -133,8 +147,9 @@ def install(app=APP):
     state_file = state_dir / 'installed.json'
     previous = json.loads(state_file.read_text()) if state_file.exists() else {}
     prepared = []
-    # Validate every input before modifying any frontend bundle.
-    for name, expected in UPSTREAM.items():
+    panel_revision = ''
+
+    def original_file(name, expected):
         target, backup = app / name, state_dir / name
         current = target.read_bytes()
         if digest(current) == expected:
@@ -145,16 +160,41 @@ def install(app=APP):
             original = backup.read_bytes()
         if digest(original) != expected:
             raise ValueError(f'Original MITI bundle checksum mismatch: {backup}')
+        return target, backup, original, current
+
+    # Validate every input before modifying any frontend bundle or entrypoint.
+    for name, expected in UPSTREAM.items():
+        target, backup, original, current = original_file(name, expected)
         updated = extend_bundle(name, original.decode(), panel, height_clip, title,
-                                camera_heading, heading_config, depth_display, map_details, grid_map, infrared_display, arc_camera_display).encode()
+                                camera_heading, heading_config, depth_display, map_details, grid_map, infrared_display, arc_camera_display, graph_feature_maps, panel_revision).encode()
+        if name.endswith('453.e8d48709a26a0ed3.js'):
+            # Next marks this pinned vendor filename immutable. Version its lazy
+            # import URL so a fresh page cannot pair with an older cached renderer.
+            panel_revision = digest(updated)[:12]
+        prepared.append((name, target, backup, original, updated, current))
+    page = next(row[4] for row in prepared if row[0] == PAGE_CHUNK)
+    versioned_page = '.next/static/chunks/app/page-' + digest(page)[:16] + '.js'
+    for name, expected in ENTRYPOINTS.items():
+        target, backup, original, current = original_file(name, expected)
+        old = PAGE_CHUNK.removeprefix('.next/').encode()
+        if old not in original:
+            raise ValueError(f'MITI page entrypoint changed: {target}')
+        updated = original.replace(old, versioned_page.removeprefix('.next/').encode())
         prepared.append((name, target, backup, original, updated, current))
     # Syntax-check the actual combined bundles, not just the standalone component.
     with tempfile.TemporaryDirectory(prefix='miti_panel_check_') as directory:
         for name, _, _, _, updated, _ in prepared:
+            if not name.endswith('.js'):
+                json.loads(updated)
+                continue
             check = Path(directory) / Path(name).name
             check.write_bytes(updated)
             subprocess.run([str(app / 'node/bin/node'), '--check', str(check)], check=True)
-    changed = False
+    # Install the new content-addressed script before pointing any entrypoint at it.
+    versioned_target = app / versioned_page
+    changed = not versioned_target.exists() or versioned_target.read_bytes() != page
+    if changed:
+        atomic_write(versioned_target, page)
     for _, target, backup, original, updated, current in prepared:
         if not backup.exists():
             atomic_write(backup, original)
@@ -163,9 +203,12 @@ def install(app=APP):
             changed = True
     hashes = {name: digest(updated) for name, _, _, _, updated, _ in prepared}
     atomic_write(state_file, (json.dumps(hashes, indent=2) + '\n').encode())
-    # The launcher refreshes these two cached bundles before applying the new layout.
+    # The eager page and its lazy renderer both have version-specific URLs.
     assets = {'version': digest(json.dumps(hashes, sort_keys=True).encode())[:12],
-              'assets': [name.replace('.next/', '/_next/', 1) for name in UPSTREAM]}
+              'assets': [
+                  '/_next/static/chunks/453.e8d48709a26a0ed3.js?rtabmap_panel=' + panel_revision,
+                  versioned_page.replace('.next/', '/_next/', 1),
+              ]}
     atomic_write(app / 'public/rtabmap-panel-assets.json',
                  (json.dumps(assets, indent=2) + '\n').encode())
     print('MITI project frontend extensions: ' + ('installed' if changed else 'up to date'))

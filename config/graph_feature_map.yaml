@@ -1,0 +1,6 @@
+graph_feature_map:
+  ros__parameters:
+    snapshot_interval: 15.0
+    publish_interval: 1.0
+    feature_voxel_size: 0.02
+    max_feature_points: 150000

@@ -3,7 +3,7 @@ set -eo pipefail
 MITI_PROJECT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 if [[ ${1:-} == --help ]]; then
   printf '用法：bash scripts/start_miti.sh [--port 3000]\n'
-  printf '变量：ROS_DOMAIN_ID、MITI_INTERFACE、CYCLONEDDS_URI、BRIDGE_PORT、MITI_ADAPTER=0、MITI_GEOMETRY=0、MITI_GRID=0\n'
+  printf '变量：ROS_DOMAIN_ID、MITI_INTERFACE、CYCLONEDDS_URI、BRIDGE_PORT、MITI_ADAPTER=0、MITI_GEOMETRY=0、MITI_GRID=0、MITI_GRAPH_FEATURES=0、MITI_NAVIGATION=0\n'
   printf '只启动展示服务；传感器和 SLAM 使用项目原启动入口。Ctrl+C 关闭展示。\n'
   exit 0
 fi
@@ -78,6 +78,16 @@ fi
 if [[ ${MITI_GRID:-1} != 0 ]]; then
   OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python3 -u "$MITI_PROJECT/scripts/grid_projection_node.py" \
     --ros-args --params-file "$MITI_PROJECT/config/grid_projection.yaml" &
+  MITI_CHILDREN+=("$!")
+fi
+if [[ ${MITI_GRAPH_FEATURES:-1} != 0 ]]; then
+  OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python3 -u "$MITI_PROJECT/scripts/graph_feature_map_node.py" \
+    --ros-args --params-file "$MITI_PROJECT/config/graph_feature_map.yaml" &
+  MITI_CHILDREN+=("$!")
+fi
+if [[ ${MITI_NAVIGATION:-1} != 0 ]]; then
+  OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python3 -u "$MITI_PROJECT/scripts/navigation_topology_node.py" \
+    --ros-args --params-file "$MITI_PROJECT/config/navigation_topology.yaml" &
   MITI_CHILDREN+=("$!")
 fi
 "$MITI_APP/node/bin/node" "$MITI_APP/scripts/start-miti.mjs" --bridge "$@" &

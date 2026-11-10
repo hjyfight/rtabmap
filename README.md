@@ -14,6 +14,10 @@ MITI 三维地图新增墙面开关与机器人位姿读数，标准位姿输出
 
 ## MITI 网页实时展示
 
+拓扑窗口现支持从二维空闲栅格抽象的导航连通图（区域、通道、候选门口），并保留
+关键帧位姿图切换。未知或净空不足的区域不生成可通行连接；配置和当前实机输入限制见
+[导航连通图说明](docs/navigation_topology.md)。
+
 项目内已部署 MITI 3.3.6 与 foxglove_bridge 3.6.0。传感器和 SLAM 启动后，
 在新终端运行 `bash scripts/start_miti.sh`，浏览器打开
 <http://localhost:3000/rtabmap.html> 并应用项目布局，可查看三维地图、优化轨迹、
@@ -396,6 +400,19 @@ ssh unitree@192.168.123.18
 source ~/yao_space/ws_livox/install/setup.bash
 ros2 launch livox_ros_driver2 rviz_MID360_launch.py
 
+
+
+## 新命令
+source ~/yao_space/ws_livox/install/setup.bash
+
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export ROS_DOMAIN_ID=0
+export ROS_LOCALHOST_ONLY=0
+export CYCLONEDDS_URI='<CycloneDDS><Domain><General><NetworkInterfaceAddress>eth0</NetworkInterfaceAddress></General></Domain></CycloneDDS>'
+
+ros2 launch livox_ros_driver2 msg_MID360_launch.py
+
+
 ## 相机命令
 
 ssh unitree@192.168.123.18
@@ -409,6 +426,25 @@ source /opt/ros/foxy/setup.bash
   align_depth.enable:=false \
   enable_color:=true \
   enable_depth:=true \
+  enable_sync:=false
+
+## 新命令
+source /opt/ros/foxy/setup.bash
+
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export ROS_DOMAIN_ID=0
+export ROS_LOCALHOST_ONLY=0
+export CYCLONEDDS_URI='<CycloneDDS><Domain><General><NetworkInterfaceAddress>eth0</NetworkInterfaceAddress></General></Domain></CycloneDDS>'
+
+/usr/bin/python3 /opt/ros/foxy/bin/ros2 launch realsense2_camera rs_launch.py \
+  config_file:="'/home/unitree/realsense_slam_sensor_qos.yaml'" \
+  rgb_camera.profile:=424x240x6 \
+  depth_module.profile:=640x480x6 \
+  align_depth.enable:=false \
+  enable_color:=true \
+  enable_depth:=true \
+  enable_infra1:=true \
+  enable_infra2:=true \
   enable_sync:=false
 
 

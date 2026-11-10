@@ -7,6 +7,10 @@
 新增墙面显示开关和 XYZ / Roll / Pitch / Yaw 位姿读数，随展示服务自动启动。
 详见 [墙面显示与机器人位姿输出](walls_and_robot_pose.md)。
 
+2026-11-09 新增独立的**拓扑地图**与**稀疏特征地图**面板。前者显示关键帧及实际
+相邻/回环约束，后者显示随优化位姿更新的三维视觉特征。
+已有网页从 `/rtabmap.html?refresh=1` 更新接入；详见[两种地图说明](graph_feature_maps.md)。
+
 本机为 Ubuntu 22.04 amd64 / ROS 2 Humble，已在项目内安装 MITI **3.3.6**、
 foxglove_bridge **3.6.0** 和所需的 rosx-introspection / RapidJSON 包。
 使用官方预编译包，无需 npm、Docker 或 sudo。
