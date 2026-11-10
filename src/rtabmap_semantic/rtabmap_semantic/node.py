@@ -31,6 +31,10 @@ def ros_matrix(pose):
 def store_config(config, model_hash):
     persistent = {k: v for k, v in config.items() if k not in
                   ('database_path', 'semantic_database_path', 'device', 'cpu_threads', 'label_language')}
+    # Preserve existing fingerprints for add fusion and both YOLO backends.
+    if (persistent.get('detector_backend') != 'emsanet' or
+            persistent.get('emsanet_fusion', 'se-add-uni-rgb') == 'se-add-uni-rgb'):
+        persistent.pop('emsanet_fusion', None)
     # Retain the exact old fingerprint for existing YOLOv8 maps.
     if persistent.get('detector_backend') == 'yolov8':
         persistent.pop('detector_backend')
@@ -55,13 +59,19 @@ class SemanticMapper(Node):
                         min_observations=3, association_distance=0.45,
                         dynamic_classes=['person', 'cat', 'dog'], dynamic_ttl=3.0,
                         max_observations=30, classes=['*'], detector_backend='yolov8',
-                        label_language='en', confirmation_window=0, dynamic_min_observations=1)
+                        label_language='en', confirmation_window=0, dynamic_min_observations=1,
+                        emsanet_fusion='se-add-uni-rgb')
         self.config = {name: self.declare_parameter(name, value).value for name, value in defaults.items()}
         c = self.config
         if not c['database_path']:
             raise ValueError('database_path must identify the paired RTAB-Map database')
         if c['detector_backend'] not in ('yolov8', 'yoloe_pf', 'emsanet'):
             raise ValueError('detector_backend must be yolov8, yoloe_pf or emsanet')
+        from .emsanet_detector import EMSANET_FUSION_MODES
+        if c['emsanet_fusion'] not in EMSANET_FUSION_MODES:
+            raise ValueError(f'emsanet_fusion must be one of {EMSANET_FUSION_MODES}')
+        if c['detector_backend'] != 'emsanet' and c['emsanet_fusion'] != 'se-add-uni-rgb':
+            raise ValueError('Fixed concat fusion requires the emsanet backend')
         if c['label_language'] not in ('en', 'zh'):
             raise ValueError('label_language must be en or zh')
         if not (0 < c['confidence'] <= 1 and 0 < c['min_depth'] < c['max_depth'] and
@@ -72,7 +82,8 @@ class SemanticMapper(Node):
         suffix = ('.yoloe.stable.semantic.sqlite' if c['confirmation_window'] else '.yoloe.semantic.sqlite') \
             if c['detector_backend'] == 'yoloe_pf' else '.semantic.sqlite'
         if c['detector_backend'] == 'emsanet':
-            suffix = '.emsanet.semantic.sqlite'
+            suffix = ('.emsanet.concat_fixed.semantic.sqlite'
+                      if c['emsanet_fusion'] == 'se-concat-fixed-uni-rgb' else '.emsanet.semantic.sqlite')
         semantic_path = c['semantic_database_path'] or str(Path(self.map_key).with_suffix(suffix))
         self.state = SemanticState(c['min_observations'], c['association_distance'],
                                    c['dynamic_classes'], c['dynamic_ttl'], c['max_observations'],
@@ -88,12 +99,14 @@ class SemanticMapper(Node):
             if c['detector_backend'] == 'emsanet':
                 from .emsanet_detector import EmsanetDetector
                 detector = EmsanetDetector(c['model_path'], c['device'], c['confidence'],
-                                           c['image_size'], c['cpu_threads'])
+                                           c['image_size'], c['cpu_threads'], fusion=c['emsanet_fusion'])
             else:
                 from .detector import YoloDetector
                 detector = YoloDetector(c['model_path'], c['device'], c['confidence'],
                                         c['image_size'], c['cpu_threads'], c['detector_backend'])
         self.detector = detector
+        if c['detector_backend'] == 'emsanet':
+            self.get_logger().info(f'EMSANet encoder fusion: {c["emsanet_fusion"]}')
         self.bridge = CvBridge()
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix='semantic_inference')
         self.future = None
@@ -256,6 +269,8 @@ class SemanticMapper(Node):
         self.publisher.publish(message)
         self.status.publish(String(data=json.dumps(dict(processed=self.processed, failed=self.failed,
             detector_backend=self.config['detector_backend'],
+            encoder_fusion=(self.config['emsanet_fusion']
+                            if self.config['detector_backend'] == 'emsanet' else None),
             active_node=self.active.node_id if self.active else None,
             confirmed_objects=len(message.objects), total_objects=len(self.state.objects),
             last_inference_seconds=self.last_inference_seconds, map_uuid=self.state.map_uuid))))

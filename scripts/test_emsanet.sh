@@ -14,6 +14,8 @@ python3 -m unittest discover -s "$EMSANET_PROJECT/src/rtabmap_semantic/tests" -p
 # Concat (cat + 1x1 conv) encoder fusion needs torch from the EMSANet runtime.
 "$EMSANET_PROJECT/.venv-emsanet/bin/python3" -m unittest discover \
   -s "$EMSANET_PROJECT/src/rtabmap_semantic/tests" -p 'test_emsanet_fusion.py' -v
+"$EMSANET_PROJECT/.venv-emsanet/bin/python3" -m unittest discover \
+  -s "$EMSANET_PROJECT/src/rtabmap_semantic/tests" -p 'test_emsanet_fixed_concat.py' -v
 python3 "$EMSANET_PROJECT/src/rtabmap_semantic/tests/ros_pipeline_check.py" --emsanet-fixture
 if [[ "${1:-}" == --fixture-only ]]; then
   exit 0

@@ -25,6 +25,7 @@ def main():
     p.add_argument('--warmup', type=int, default=2)
     p.add_argument('--require-model-timing', action='store_true',
                    help='Fail unless every frame has valid RGB/depth/fusion module timings')
+    p.add_argument('--fusion', choices=['se-add-uni-rgb', 'se-concat-fixed-uni-rgb'], default='se-add-uni-rgb')
     p.add_argument('--bridge', type=Path, default=ROOT/'install/cycle/rtabmap_semantic/lib/rtabmap_semantic/keyframe_bridge')
     args = p.parse_args()
     if os.environ.get('ROS_DOMAIN_ID', '0') == '0' or os.environ.get('ROS_LOCALHOST_ONLY') != '1':
@@ -52,6 +53,7 @@ def main():
         p.error('capture must contain more frames than warmup')
     args.output.parent.mkdir(parents=True, exist_ok=True)
     config = yaml.safe_load((ROOT/'src/rtabmap_semantic/config/emsanet.yaml').read_text())['semantic_mapper']['ros__parameters']
+    config['emsanet_fusion'] = args.fusion
     rclpy.init()
     executor = SingleThreadedExecutor()
     probe = rclpy.create_node('fusion_cycle_replay_probe')

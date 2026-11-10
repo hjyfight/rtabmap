@@ -13,6 +13,8 @@ def generate_launch_description():
         DeclareLaunchArgument('semantic_database_path', default_value=''),
         DeclareLaunchArgument('semantic_device', default_value='cpu'),
         DeclareLaunchArgument('semantic_backend', default_value='yolov8'),
+        DeclareLaunchArgument('semantic_emsanet_fusion', default_value='se-add-uni-rgb',
+                              choices=['se-add-uni-rgb', 'se-concat-fixed-uni-rgb']),
         DeclareLaunchArgument('semantic_config', default_value=PathJoinSubstitution([
             FindPackageShare('rtabmap_semantic'), 'config', 'semantic.yaml'])),
         DeclareLaunchArgument('semantic_replay_existing', default_value='true'),
@@ -23,6 +25,7 @@ def generate_launch_description():
                  'semantic_database_path': LaunchConfiguration('semantic_database_path'),
                  'model_path': LaunchConfiguration('model_path'),
                  'detector_backend': LaunchConfiguration('semantic_backend'),
+                 'emsanet_fusion': LaunchConfiguration('semantic_emsanet_fusion'),
                  'device': LaunchConfiguration('semantic_device')}]),
         Node(package='rtabmap_semantic', executable='keyframe_bridge', output='screen',
              parameters=[{'replay_existing': LaunchConfiguration('semantic_replay_existing')}]),

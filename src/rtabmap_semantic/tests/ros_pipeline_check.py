@@ -50,6 +50,9 @@ class FixtureRgbdDetector(FixtureDetector):
 def main():
     emsanet_fixture = '--emsanet-fixture' in sys.argv
     real_emsanet = '--real-emsanet' in sys.argv
+    fixed_concat = '--fixed-concat' in sys.argv
+    if fixed_concat and not real_emsanet:
+        raise ValueError('--fixed-concat requires --real-emsanet')
     real_yoloe = '--real-yoloe' in sys.argv
     real_yolo = '--real-yolo' in sys.argv or real_yoloe
     project = Path(__file__).resolve().parents[3]
@@ -69,6 +72,8 @@ def main():
             params.extend([Parameter(name, value=value) for name, value in config.items()])
         if real_emsanet:
             params.append(Parameter('model_path', value=str(project/'models/emsanet/nyuv2_r34_NBt1D_pre.pth')))
+            if fixed_concat:
+                params.append(Parameter('emsanet_fusion', value='se-concat-fixed-uni-rgb'))
         if real_yolo:
             weights = 'yoloe-11s-seg-pf.pt' if real_yoloe else 'yolov8n-seg.pt'
             params.append(Parameter('model_path', value=str(project/'models'/weights)))
@@ -83,7 +88,8 @@ def main():
 
         mapper = make_mapper()
         if emsanet_fixture or real_emsanet:
-            assert mapper.store.path.name == 'map.emsanet.semantic.sqlite'
+            expected_name = 'map.emsanet.concat_fixed.semantic.sqlite' if fixed_concat else 'map.emsanet.semantic.sqlite'
+            assert mapper.store.path.name == expected_name
         if real_yoloe:
             from rtabmap_semantic.labels import chinese_label, canonical_label
             assert mapper.store.path.name == 'map.yoloe.stable.semantic.sqlite'
@@ -169,6 +175,10 @@ def main():
                 assert measured['metrics_ms']['bridge_to_semantic']['count'] == node_id, measured
                 assert measured['quality']['invalid_records'] == 0, measured
                 assert all(isinstance(c['valid_3d_count'], int) for c in measured['cycles']), measured
+                if fixed_concat:
+                    profiles = [t['stages']['model_timing'] for t in timing if t.get('event') == 'completed']
+                    assert all(p['state'] == 'valid' and p['fusion_name'] == 'se-concat-fixed-uni-rgb'
+                               for p in profiles), profiles
                 if node_id < frame_count:
                     assert not any(o.label == target_label for o in mapper.state.visible_objects())
             until(lambda: received and any(o.label == display_label for o in received[-1].objects))
@@ -217,6 +227,7 @@ def main():
                           real_yoloe=real_yoloe,
                           emsanet_fixture=emsanet_fixture,
                           real_emsanet=real_emsanet,
+                          encoder_fusion=mapper.config['emsanet_fusion'] if real_emsanet else None,
                           compressed_keyframe=True, projection=True, loop_reprojection=True,
                           reload=True, map_reset=True)
             print(json.dumps(report))
@@ -226,7 +237,7 @@ def main():
             if emsanet_fixture:
                 filename = 'ros_emsanet_pipeline.json'
             if real_emsanet:
-                filename = 'ros_real_emsanet.json'
+                filename = 'ros_real_emsanet_fixed_concat.json' if fixed_concat else 'ros_real_emsanet.json'
             (output/filename).write_text(json.dumps(report, indent=2))
         finally:
             executor.remove_node(mapper)

@@ -10,9 +10,10 @@ so the network learns a per-channel linear mixing of both modalities instead
 of a fixed 1:1 sum.  The third-party sources under ``.tools/`` are untouched;
 ``use_concat_fusion`` swaps the fusion modules of an already built encoder.
 
-The pretrained NYUv2 checkpoint was trained with add fusion.  All its weights
-still fit a concat model except the new projection layers, so a concat model
-must be fine-tuned before it is used for mapping.
+The learned Conv-BN-Act variant needs fine-tuning. The separate fixed variant
+below preserves the loaded SE modules and implements [I I] on concatenated
+channels without new parameters, normalization, or activation. It is an
+equivalent implementation of the original sum, not a new learned fusion.
 """
 from typing import Type
 
@@ -119,4 +120,82 @@ def use_concat_fusion(encoder, name: str = 'se-concat-uni-rgb',
     reference = next(encoder.parameters())
     # New modules default to train mode; follow the encoder (e.g. eval BN stats).
     encoder.fusions = modules.to(device=reference.device, dtype=reference.dtype).train(encoder.training)
+    return encoder
+
+
+class FixedConcatProjection(nn.Module):
+    """Parameter-free sparse linear projection [I I]: 2C -> C.
+
+    Evaluate only the two nonzero entries of each matrix row. This avoids a
+    dense convolution's zero products/reduction order and preserves the original
+    pairwise addition, including negative values. The input is the *actual*
+    concatenated tensor; no bypass of the concatenation is used.
+    """
+
+    def __init__(self, n_channels, input_memory_layout):
+        super().__init__()
+        if n_channels <= 0 or input_memory_layout not in _CHANNEL_AXIS:
+            raise ValueError('Invalid fixed concat projection channels/layout')
+        self.n_channels = n_channels
+        self.channel_axis = _CHANNEL_AXIS[input_memory_layout]
+
+    def forward(self, stacked):
+        if stacked.ndim != 4 or stacked.shape[self.channel_axis] != 2 * self.n_channels:
+            raise ValueError('Fixed concat projection requires a 4D tensor with 2C channels')
+        rgb = stacked.narrow(self.channel_axis, 0, self.n_channels)
+        depth = stacked.narrow(self.channel_axis, self.n_channels, self.n_channels)
+        return rgb + depth
+
+
+class EncoderRGBDFusionFixedConcat(nn.Module):
+    """Reuse an existing weighted-add layer's SE weights and output routing."""
+
+    def __init__(self, source):
+        super().__init__()
+        if not isinstance(source, EncoderRGBDFusionWeightedAdd) or hasattr(source, 'projection'):
+            raise ValueError('Fixed concat conversion requires an original weighted-add layer')
+        self._n_channels_in = source._n_channels_in
+        self._input_memory_layout = source._input_memory_layout
+        self._use_se_weighting = source._use_se_weighting
+        self._destinations = source._destinations
+        if self._use_se_weighting:
+            # Same module objects, parameters, device, dtype, and state_dict keys.
+            self.weighting_rgb = source.weighting_rgb
+            self.weighting_depth = source.weighting_depth
+        self.projection = FixedConcatProjection(self._n_channels_in, self._input_memory_layout)
+        self.projection.train(source.training)
+        self.training = source.training
+
+    def forward(self, x):
+        rgb, depth = x['rgb'], x['depth']
+        axis = _CHANNEL_AXIS[self._input_memory_layout]
+        if rgb.ndim != 4 or rgb.shape != depth.shape or rgb.shape[axis] != self._n_channels_in:
+            raise ValueError('Fixed concat fusion requires matching RGB/depth feature scales')
+        if self._use_se_weighting:
+            rgb_weighted = _apply_NCHW_operation(rgb, self.weighting_rgb, self._input_memory_layout)
+            depth_weighted = _apply_NCHW_operation(depth, self.weighting_depth, self._input_memory_layout)
+        else:
+            rgb_weighted, depth_weighted = rgb, depth
+        stacked = torch.cat((rgb_weighted, depth_weighted), dim=axis)
+        fused = self.projection(stacked)
+        return {'rgb': fused if 'rgb' in self._destinations else rgb,
+                'depth': fused if 'depth' in self._destinations else depth}
+
+
+def use_fixed_concat_fusion(encoder):
+    """Convert loaded add fusion in place, preserving every checkpoint tensor.
+
+    Call before attaching timing hooks. Converting twice is a no-op; learned
+    concat layers and incompatible encoders are rejected before any mutation.
+    """
+    if (getattr(encoder, 'backbone_rgb', None) is None or
+            getattr(encoder, 'backbone_depth', None) is None or
+            not hasattr(encoder, 'fusions') or not len(encoder.fusions)):
+        raise ValueError('Fixed concat fusion needs a dual-backbone FusedRGBDEncoder')
+    if all(isinstance(f, EncoderRGBDFusionFixedConcat) for f in encoder.fusions):
+        return encoder
+    replacements = [EncoderRGBDFusionFixedConcat(f) for f in encoder.fusions]
+    modules = nn.ModuleList(replacements)
+    modules.training = encoder.fusions.training
+    encoder.fusions = modules
     return encoder

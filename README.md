@@ -474,6 +474,13 @@ bash /home/jyfight/Project/rtabmap_slam/scripts/start_semantic_yoloe.sh
 cd /home/jyfight/Project/rtabmap_slam
 bash scripts/start_semantic_emsanet.sh
 
+## 添加拼接过程的红外+深度语义分割
+cd ~/Project/rtabmap_slam
+bash scripts/start_semantic_emsanet.sh \
+  semantic_emsanet_fusion:=se-concat-fixed-uni-rgb
+
+
+
 ## miti 展示
 
 启动建图后，新开终端执行：

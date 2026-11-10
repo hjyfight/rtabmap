@@ -28,6 +28,60 @@ bash scripts/start_semantic_emsanet.sh \
 
 已有地图必须含 RGB-D 关键帧。回放读取各节点保存的 RGB 和深度，不依赖实时近红外。默认允许回放；只处理之后的新关键帧可以传入 `semantic_replay_existing:=false`。
 
+### 免训练的固定投影拼接
+
+使用现有官方权重，启用五级 `SE → 通道拼接 → 固定投影`：
+
+```bash
+bash scripts/start_semantic_emsanet.sh \
+  semantic_emsanet_fusion:=se-concat-fixed-uni-rgb
+```
+
+若当前正在建图，先在原建图终端正常退出，再使用这条命令启动。增加
+`database_path:=/完整路径/已有地图.db localization:=true` 可沿用已有地图。
+省略融合参数仍使用原来的 `se-add-uni-rgb`；显式传入该值也可切回。
+
+实现先严格加载原检查点，再复用已加载的 SE 模块，不重新初始化任何权重。
+两路 C 通道特征经过 SE 加权后，实际执行 `torch.cat`，得到 `[RGB | Depth]`
+的 2C 通道张量。固定投影为 `P([a;b]) = a + b`，相当于矩阵 `[I I]`。
+代码只计算该稀疏矩阵的非零项，以保持原来的逐元素加法次序；没有稠密卷积、
+新增可训练参数、BN 或额外激活。投影的输入就是拼接结果，不旁路拼接。
+
+这是原相加融合的等价实现，不能据此声称新增了学习型融合能力或提升了感知精度。
+`se-concat-uni-rgb` 是另一个可学习的 Conv-BN-Act 实验模块，需要微调，不能作为
+此入口的免训练选项。固定拼接增加临时张量与内存访问，其耗时应重新测量。
+
+启动日志和 `/semantic/status` 的 `encoder_fusion` 显示实际模式；
+`/semantic/timing` 中 `stages.model_timing.fusion_name` 同样记录模式。
+原有计时脚本继续适用。离线预测与隔离回放分别支持：
+
+```bash
+.venv-emsanet/bin/python3 scripts/predict_emsanet.py \
+  --fusion se-concat-fixed-uni-rgb --output logs/emsanet/concat_fixed_sample
+
+# 先按 docs/fusion_cycle_measurement.md 设置隔离 ROS 环境
+.venv-emsanet/bin/python3 scripts/benchmark_fusion_cycle.py \
+  --capture logs/fusion_cycle/capture_encoder_timing_20261110 \
+  --fusion se-concat-fixed-uni-rgb --require-model-timing \
+  --input-period-ms 1500 --output logs/fusion_cycle/concat_fixed_replay
+```
+
+默认语义数据库为 `map.emsanet.concat_fixed.semantic.sqlite`，融合模式写入数据库指纹，
+便于区分两个实验。原相加模式及 YOLO 的旧指纹保持兼容。显式指定语义数据库时，
+不要把原相加模式的文件直接指定给固定拼接模式。
+
+2026-11-10 的 CPU 验证：官方样例的类别、置信度、逐像素实例掩膜完全一致；
+编码器输出与跳接特征逐元素一致。测试还检查了真实拼接数据流、负值保留、
+NCHW/NHWC 布局、检查点严格加载、无新增参数和五个融合阶段计时。
+这证明本次结构转换的等价性，不是新的场景精度验收。
+
+本机 `install/semantic` 与 `install/cycle` 已同步，当前进程不热切换。
+34 项 EMSANet 输入/模型/融合/计时测试、9 项启动测试及 4 项原检测器测试通过。
+隔离 ROS 域内的真实模型链路也通过，覆盖压缩关键帧、三维投影、多次观测确认、
+中文标签、回环修正、保存重载、地图重置和固定拼接计时模式。
+记录见 `logs/semantic_validation/ros_real_emsanet_fixed_concat.json`；
+部署记录与旧文件备份见 `logs/emsanet/fixed_concat_deployment_20261110_143723/`。
+
 ### 切换建图后显示为空或出现旧点云
 
 网页 `Ctrl+R` 是正常刷新，不会修改地图或传感器标定。若 MITI 在上一轮建图时已经启动，重新订阅后仍可能收到桥接缓存中的旧点云；先核对 `/cloud_map` 的点数和时间戳。2026-11-08 的现场检查中，ROS 当前地图为 9,192 点，而网页桥接还回放上一轮的 119,019 点。保持原网络配置重启网页桥接后，网页恢复为当前地图，SLAM 无需重启。
@@ -94,6 +148,7 @@ EMSANET_MODEL_PATH=/完整路径/nyuv2_r34_NBt1D_pre.pth \
 | YOLOv8 | `map.semantic.sqlite` |
 | YOLOE 稳定配置 | `map.yoloe.stable.semantic.sqlite` |
 | EMSANet | `map.emsanet.semantic.sqlite` |
+| EMSANet 固定投影拼接 | `map.emsanet.concat_fixed.semantic.sqlite` |
 
 新数据库指纹包含模型 SHA-256 和 EMSANet 适配版本。显式指定 `semantic_database_path` 时，应指定对应后端自己的文件。更新模型或推理阈值后，使用新的语义数据库路径，保留旧结果用于比较。
 

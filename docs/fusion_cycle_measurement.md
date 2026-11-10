@@ -196,6 +196,11 @@ export PYTHONNOUSERSITE=1
 出现在不同帧，不能将分支的最大值相加替代“合计”的逐帧最大值。
 同轮后端跨帧物体关联与融合平均 4.96 ms，属于另一个阶段。
 
+新增的免训练拼接模式 `se-concat-fixed-uni-rgb` 使用相同计时入口，但包含实际的
+通道拼接及固定投影。`/semantic/timing` 的 `stages.model_timing.fusion_name` 区分
+两种模式，隔离回放通过 `--fusion se-concat-fixed-uni-rgb` 启用。
+上表是原相加模式的历史测量，不是新拼接模式的耗时。
+
 原始与汇总记录：`logs/fusion_cycle/encoder_timing_20261110.{jsonl,json,md}`；
 源数据：`logs/fusion_cycle/capture_encoder_timing_20261110/`。
 测试同时验证了开启/关闭分层计时后官方样例的类别、置信度和逐像素掩膜完全一致。

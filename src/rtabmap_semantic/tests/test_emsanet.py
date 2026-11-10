@@ -43,6 +43,10 @@ class EmsanetInputTests(unittest.TestCase):
         self.assertEqual(detector.detect(np.zeros((4, 6, 3), np.uint8),
                                          np.zeros((4, 6), np.uint16)), [])
 
+    def test_untrained_fusion_mode_is_rejected_before_weight_loading(self):
+        with self.assertRaisesRegex(ValueError, 'Unsupported EMSANet fusion'):
+            EmsanetDetector('/nonexistent.pth', fusion='se-concat-uni-rgb')
+
 
 class EmsanetOutputTests(unittest.TestCase):
     def test_nyuv2_display_names_keep_existing_yolo_translation_policy(self):
@@ -93,6 +97,16 @@ class EmsanetOutputTests(unittest.TestCase):
         self.assertNotIn('label_policy_version', ems)
         self.assertNotEqual(ems, store_config({**config, 'detector_backend': 'yolov8'}, 'hash'))
         self.assertNotEqual(ems, store_config({**config, 'detector_backend': 'yoloe_pf'}, 'hash'))
+
+    def test_fixed_concat_cache_is_distinct_and_old_default_fingerprints_survive(self):
+        for backend in ('emsanet', 'yolov8', 'yoloe_pf'):
+            config = dict(model_path='/models/model.pth', detector_backend=backend)
+            original = store_config(config, 'hash')
+            self.assertEqual(original, store_config({**config, 'emsanet_fusion': 'se-add-uni-rgb'}, 'hash'))
+            if backend == 'emsanet':
+                fixed = store_config({**config, 'emsanet_fusion': 'se-concat-fixed-uni-rgb'}, 'hash')
+                self.assertNotEqual(original, fixed)
+                self.assertEqual(fixed['emsanet_fusion'], 'se-concat-fixed-uni-rgb')
 
 
 if __name__ == '__main__':

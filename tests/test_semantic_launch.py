@@ -155,6 +155,14 @@ class SemanticLaunchTests(unittest.TestCase):
         self.assertEqual(nodes['rtabmap_viz'][0]['init_cache_path'], database)
         self.assertEqual(nodes['rtabmap'][0]['Mem/IncrementalMemory'], 'False')
 
+    def test_fixed_concat_override_reaches_mapper_and_bad_mode_is_rejected(self):
+        nodes = resolve_launch(semantic_backend='emsanet',
+                               semantic_emsanet_fusion='se-concat-fixed-uni-rgb')
+        self.assertEqual(nodes['semantic_mapper'][0]['emsanet_fusion'], 'se-concat-fixed-uni-rgb')
+        self.assertEqual(resolve_launch()['semantic_mapper'][0]['emsanet_fusion'], 'se-add-uni-rgb')
+        with self.assertRaises(RuntimeError):
+            resolve_launch(semantic_emsanet_fusion='se-concat-uni-rgb')
+
 
 if __name__ == '__main__':
     unittest.main()

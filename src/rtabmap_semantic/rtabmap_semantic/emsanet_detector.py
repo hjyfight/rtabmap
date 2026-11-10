@@ -12,6 +12,7 @@ import numpy as np
 
 
 EMSANET_POLICY_VERSION = 2
+EMSANET_FUSION_MODES = ('se-add-uni-rgb', 'se-concat-fixed-uni-rgb')
 _NYUV2_CHINESE = {
     'blinds': '百叶窗', 'shelves': '置物架', 'clothes': '衣物', 'books': '书籍',
     'refrigerator': '冰箱', 'night stand': '床头柜', 'toilet': '马桶',
@@ -82,7 +83,11 @@ class EmsanetDetector:
     """Official R34-NBt1D NYUv2 checkpoint; no dataset download is required."""
     backend = 'emsanet'
 
-    def __init__(self, model_path, device='cpu', confidence=0.35, image_size=640, threads=2):
+    def __init__(self, model_path, device='cpu', confidence=0.35, image_size=640, threads=2,
+                 fusion='se-add-uni-rgb'):
+        if fusion not in EMSANET_FUSION_MODES:
+            raise ValueError(f'Unsupported EMSANet fusion: {fusion}; choose {EMSANET_FUSION_MODES}')
+        self.fusion_name = fusion
         path = Path(model_path).expanduser().resolve()
         if not path.is_file():
             raise FileNotFoundError(f'EMSANet weights not found: {path}. Run bash scripts/install_emsanet.sh')
@@ -126,6 +131,11 @@ class EmsanetDetector:
         # leaving randomly initialized heads or copying only some categories.
         state = {key.replace('fused_encoders.', 'encoder.'): value for key, value in state.items()}
         self.model.load_state_dict(state, strict=True)
+        if fusion == 'se-concat-fixed-uni-rgb':
+            from .emsanet_fusion import use_fixed_concat_fusion
+            use_fixed_concat_fusion(self.model.encoder)
+        # Report the actual execution structure, including in stage timing.
+        self.model.args.encoder_fusion = fusion
         self.model.eval().to(self.device)
         self.label_divisor = self.model.decoders['panoptic_helper'].postprocessing.max_instances_per_category
         self.preprocessor = get_preprocessor(args, dataset=dataset, phase='test',

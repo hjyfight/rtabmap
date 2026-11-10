@@ -15,6 +15,8 @@ def generate_launch_description():
         DeclareLaunchArgument('model_path', default_value=str(project / 'models' / 'yolov8n-seg.pt')),
         DeclareLaunchArgument('semantic_python', default_value=str(project / '.venv-semantic' / 'bin' / 'python3')),
         DeclareLaunchArgument('semantic_backend', default_value='yolov8'),
+        DeclareLaunchArgument('semantic_emsanet_fusion', default_value='se-add-uni-rgb',
+                              choices=['se-add-uni-rgb', 'se-concat-fixed-uni-rgb']),
         IncludeLaunchDescription(PythonLaunchDescriptionSource(
             str(project / 'launch' / 'livox_realsense_3dslam.launch.py')),
             launch_arguments={'use_camera': 'true', 'semantic_enabled': 'true',
@@ -27,5 +29,6 @@ def generate_launch_description():
                 'model_path': LaunchConfiguration('model_path'),
                 'semantic_python': LaunchConfiguration('semantic_python'),
                 'semantic_backend': LaunchConfiguration('semantic_backend'),
+                'semantic_emsanet_fusion': LaunchConfiguration('semantic_emsanet_fusion'),
             }.items()),
     ])

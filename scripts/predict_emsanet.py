@@ -13,7 +13,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 os.environ.setdefault('MPLCONFIGDIR', str(ROOT / 'models/.matplotlib-emsanet'))
 sys.path.insert(0, str(ROOT / 'src/rtabmap_semantic'))
-from rtabmap_semantic.emsanet_detector import EmsanetDetector
+from rtabmap_semantic.emsanet_detector import EmsanetDetector, EMSANET_FUSION_MODES
 
 
 def main():
@@ -23,6 +23,7 @@ def main():
                         help='Registered uint16 PNG in mm, or float32 .npy in metres')
     parser.add_argument('--model', type=Path, default=ROOT / 'models/emsanet/nyuv2_r34_NBt1D_pre.pth')
     parser.add_argument('--device', default='cpu')
+    parser.add_argument('--fusion', choices=EMSANET_FUSION_MODES, default='se-add-uni-rgb')
     parser.add_argument('--confidence', type=float, default=0.35)
     parser.add_argument('--image-size', type=int, default=640)
     parser.add_argument('--output', type=Path, default=ROOT / 'logs/emsanet/sample')
@@ -33,7 +34,7 @@ def main():
     if rgb is None or depth is None:
         parser.error('Unable to load the supplied RGB/depth images')
     started = time.monotonic()
-    model = EmsanetDetector(args.model, args.device, args.confidence, args.image_size)
+    model = EmsanetDetector(args.model, args.device, args.confidence, args.image_size, fusion=args.fusion)
     load_seconds = time.monotonic() - started
     started = time.monotonic()
     detections = model.detect(rgb, depth)
@@ -55,7 +56,8 @@ def main():
         masks[f'instance_{index}'] = detection['mask']
     cv2.imwrite(str(args.output / 'instances.png'), overlay)
     np.savez_compressed(args.output / 'masks.npz', **masks)
-    report = dict(backend='emsanet', modalities=list(model.model.args.input_modalities),
+    report = dict(backend='emsanet', fusion=model.fusion_name, model_timing=model.last_timing,
+                  modalities=list(model.model.args.input_modalities),
                   rgb=str(args.rgb), depth=str(args.depth), depth_encoding=str(depth.dtype),
                   source_shape=list(rgb.shape), model=str(args.model), device=args.device,
                   model_load_seconds=load_seconds, inference_seconds=elapsed, instances=records)
