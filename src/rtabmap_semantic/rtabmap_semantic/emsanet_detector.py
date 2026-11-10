@@ -5,6 +5,7 @@ NYUv2 model consumes millimetres; ROS 32FC1 images arrive in metres. Network
 resizing is undone by upstream full-resolution postprocessing before lifting.
 """
 from pathlib import Path
+import time
 
 import cv2
 import numpy as np
@@ -129,20 +130,33 @@ class EmsanetDetector:
         self.label_divisor = self.model.decoders['panoptic_helper'].postprocessing.max_instances_per_category
         self.preprocessor = get_preprocessor(args, dataset=dataset, phase='test',
                                              multiscale_downscales=None)
+        from .emsanet_timing import EmsanetStageTimer
+        self.stage_timer = EmsanetStageTimer(self.model, self.device)
+        self.last_timing = None
 
     def detect(self, image, depth):
+        self.last_timing = None  # An invalid/failed frame never inherits prior timings.
+        started = time.perf_counter_ns()
         rgb, depth_mm = prepare_rgbd(image, depth)
         if not np.any(depth_mm):
             return []
         sample = self.preprocessor({'rgb': rgb, 'depth': depth_mm, 'identifier': 'keyframe'})
         batch = self.to_device(self.collate([sample]), device=self.device)
+        prepared = time.perf_counter_ns()
         # The mapper calls this on a worker thread; inference mode is thread-local.
         with self.torch.inference_mode():
-            predictions = self.model(batch, do_postprocessing=True)
+            predictions, timing = self.stage_timer.measure(lambda: self.model(batch, do_postprocessing=True))
+        forwarded = time.perf_counter_ns()
         panoptic = predictions['panoptic_segmentation_deeplab_fullres'][0].cpu().numpy()
         if panoptic.shape != image.shape[:2]:
             raise ValueError('EMSANet masks were not restored to the source RGB resolution')
         metadata = predictions['panoptic_segmentation_deeplab_instance_meta'][0]
         instance_ids = predictions['panoptic_segmentation_deeplab_ids'][0]
-        return panoptic_detections(panoptic, instance_ids, metadata, self.labels,
-                                   self.confidence, self.label_divisor)
+        detections = panoptic_detections(panoptic, instance_ids, metadata, self.labels,
+                                        self.confidence, self.label_divisor)
+        ended = time.perf_counter_ns()
+        timing['detector_preprocess_ms'] = (prepared-started)/1e6
+        timing['detector_adapter_postprocess_ms'] = (ended-forwarded)/1e6
+        timing['detector_total_ms'] = (ended-started)/1e6
+        self.last_timing = timing
+        return detections

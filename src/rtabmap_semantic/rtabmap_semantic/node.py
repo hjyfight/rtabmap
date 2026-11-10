@@ -17,6 +17,7 @@ from rtabmap_semantic_msgs.msg import Keyframe, Observation, SemanticMap, Semant
 from .fusion import SemanticState, SemanticStore
 from .geometry import rigid_matrix, lift_mask
 from .labels import chinese_label, YOLOE_LABEL_POLICY_VERSION
+from .timing import CycleRecorder
 
 
 def ros_matrix(pose):
@@ -108,6 +109,11 @@ class SemanticMapper(Node):
                              durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.publisher = self.create_publisher(SemanticMap, '/semantic/objects', latched)
         self.status = self.create_publisher(String, '/semantic/status', 1)
+        self.timing_publisher = self.create_publisher(String, '/semantic/timing', 100)
+        self.timing = CycleRecorder(lambda row: self.timing_publisher.publish(
+            String(data=json.dumps(row, ensure_ascii=False, allow_nan=False))))
+        self.pending_received_ns = None
+        self.active_received_ns = None
         self.ack = self.create_publisher(Int32, '/semantic/processed_node', 10)
         self.create_subscription(Keyframe, '/semantic/keyframes', self.on_frame, 5)
         self.create_subscription(MapGraph, '/semantic/graph', self.on_graph, latched)
@@ -132,24 +138,38 @@ class SemanticMapper(Node):
             self.get_logger().warning(f'Invalid graph transform: {error}')
 
     def on_frame(self, message):
+        received_ns = time.monotonic_ns()
         key = (message.node_id, message.node_stamp)
         if self.active and key == (self.active.node_id, self.active.node_stamp):
+            self.timing.record(message, 'duplicate_active')
             return  # Bridge retry while inference is running.
         if self.state.nodes.get(message.node_id) == message.node_stamp:
+            self.timing.record(message, 'already_processed')
             self.ack.publish(Int32(data=message.node_id))
             return
         if self.active is None:
+            if self.pending is not None:
+                if key == (self.pending.node_id, self.pending.node_stamp):
+                    self.timing.record(message, 'duplicate_pending')
+                    return  # Preserve the original arrival time across retries.
+                self.timing.record(self.pending, 'dropped', reason='pending_replaced')
             self.pending = message
+            self.pending_received_ns = received_ns
+            self.timing.record(message, 'accepted', received_ns=received_ns)
+        else:
+            self.timing.record(message, 'dropped', reason='busy_unaccepted')
 
     def infer(self, frame):
-        started = time.monotonic()
+        started = time.monotonic_ns()
         rgb = self.bridge.imgmsg_to_cv2(frame.rgb, desired_encoding='bgr8')
         depth = self.bridge.imgmsg_to_cv2(frame.depth, desired_encoding='passthrough')
         camera = frame.camera_info
         transform = ros_matrix(frame.camera_to_node)
         detections = []
+        prepared = time.monotonic_ns()
         predictions = self.detector.detect(rgb, depth) if self.config['detector_backend'] == 'emsanet' \
             else self.detector.detect(rgb)
+        detected = time.monotonic_ns()
         for detection in predictions:
             if self.config['classes'] != ['*'] and detection['label'] not in self.config['classes']:
                 continue
@@ -159,31 +179,58 @@ class SemanticMapper(Node):
             if geometry is not None:
                 detections.append({**geometry, 'label': detection['label'],
                                    'confidence': detection['confidence']})
-        return detections, time.monotonic()-started
+        finished = time.monotonic_ns()
+        return detections, (finished-started)/1e9, dict(
+            worker_start_ns=started, prepared_ns=prepared, detected_ns=detected,
+            worker_end_ns=finished, prediction_count=len(predictions), valid_3d_count=len(detections),
+            model_timing=getattr(self.detector, 'last_timing', None))
 
     def poll(self):
         if self.future is not None and self.future.done():
+            frame = self.active
+            stages = {}
+            outcome, reason = 'completed', ''
             try:
-                detections, self.last_inference_seconds = self.future.result()
+                detections, self.last_inference_seconds, stages = self.future.result()
+                stages['fusion_start_ns'] = time.monotonic_ns()
                 result = self.state.add_frame(self.active.node_id, self.active.node_stamp, detections)
                 if result == 'reset':
                     self.state.update_graph(self.latest_graph_poses)
                     self.get_logger().warning('Reused graph node ID detected; started a new semantic epoch. Old epoch retained.')
+                stages['fusion_end_ns'] = time.monotonic_ns()
                 self.store.save(self.state)
+                stages['persist_end_ns'] = time.monotonic_ns()
                 self.processed += 1
                 self.get_logger().info(f'Node {self.active.node_id}: {len(detections)} valid 3D detections, '
                                        f'{self.last_inference_seconds:.2f}s inference')
             except Exception as error:
+                outcome, reason = 'failed', str(error)
                 self.failed += 1
                 self.get_logger().error(f'Node {self.active.node_id} failed: {error}')
             finally:
                 self.ack.publish(Int32(data=self.active.node_id))
                 self.future = self.active = None
-                self.publish()
+                stages['publish_start_ns'] = time.monotonic_ns()
+                try:
+                    self.publish()
+                except Exception as error:
+                    outcome, reason = 'failed', 'publish: ' + str(error)
+                    self.get_logger().error(reason)
+                    raise
+                finally:
+                    stages['publish_end_ns'] = time.monotonic_ns()
+                    self.timing.record(frame, outcome, received_ns=self.active_received_ns,
+                        submitted_ns=self.active_submitted_ns, stages=stages, reason=reason,
+                        backend=self.config['detector_backend'], device=self.config['device'],
+                        image_size=self.config['image_size'], map_uuid=self.state.map_uuid,
+                        objects_in_state=len(self.state.objects))
+                    self.active_received_ns = None
         if self.future is None and self.pending is not None:
             if self.pending.node_id not in self.state.poses:
                 return  # Wait for the exact graph node, never substitute the latest TF.
             self.active, self.pending = self.pending, None
+            self.active_received_ns, self.pending_received_ns = self.pending_received_ns, None
+            self.active_submitted_ns = time.monotonic_ns()
             self.future = self.pool.submit(self.infer, self.active)
 
     def publish(self):

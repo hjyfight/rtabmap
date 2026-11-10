@@ -25,6 +25,7 @@ from geometry_msgs.msg import Pose, Transform
 from rtabmap_msgs.msg import MapData, MapGraph, Node as GraphNode
 from rtabmap_semantic_msgs.msg import SemanticMap
 from sensor_msgs.msg import CameraInfo
+from std_msgs.msg import String
 
 from rtabmap_semantic.node import SemanticMapper
 
@@ -96,6 +97,9 @@ def main():
         graphs = probe.create_publisher(MapGraph, '/mapGraph', 5)
         received = []
         subscription = probe.create_subscription(SemanticMap, '/semantic/objects', received.append, latched)
+        timing = []
+        timing_subscriptions = [probe.create_subscription(String, topic, lambda m: timing.append(json.loads(m.data)), 100)
+                                for topic in ('/semantic/timing', '/semantic/bridge_timing')]
         cv = CvBridge()
         if real_emsanet:
             rgb = cv2.imread(str(project/'.tools/emsanet/samples/sample_rgb.png'))
@@ -157,6 +161,14 @@ def main():
                 data.nodes = [node]
                 maps.publish(data)
                 until(lambda: mapper.processed == node_id)
+                until(lambda: sum(t.get('event') == 'completed' for t in timing) == node_id)
+                sys.path.insert(0, str(project/'scripts'))
+                from fusion_cycle_report import summarize
+                until(lambda: summarize(timing)['metrics_ms']['bridge_to_semantic']['count'] == node_id)
+                measured = summarize(timing)
+                assert measured['metrics_ms']['bridge_to_semantic']['count'] == node_id, measured
+                assert measured['quality']['invalid_records'] == 0, measured
+                assert all(isinstance(c['valid_3d_count'], int) for c in measured['cycles']), measured
                 if node_id < frame_count:
                     assert not any(o.label == target_label for o in mapper.state.visible_objects())
             until(lambda: received and any(o.label == display_label for o in received[-1].objects))
