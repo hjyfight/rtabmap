@@ -92,11 +92,21 @@ class FrontendInstallTests(unittest.TestCase):
         self.assertIn('RtabmapSemanticLabels.Provider,{settings:c,children:', source)
         self.assertIn('if(RtabmapSemanticLabels.isSemantic(n))return(0,r.jsx)(RtabmapSemanticLabels.Label,', source)
         self.assertIn('if(9===n.type)return(0,r.jsx)(ta.V,', source)
-        self.assertIn('rtabmapMapDetailsFactory(n,x,RtabmapHeightClip,RtabmapSemanticLabels)', source)
+        self.assertIn('rtabmapMapDetailsFactory(n,x,RtabmapHeightClip,RtabmapSemanticLabels,RtabmapDynamicCloud)', source)
         result = subprocess.run([str(self.app/'node/bin/node'),
             str(ROOT/'tests/test_miti_semantic_labels.js')], capture_output=True, text=True,
             env={**os.environ, 'MITI_TEST_RENDERER_BUNDLE': str(renderer)})
         self.assertEqual(result.returncode, 0, result.stdout+'\n'+result.stderr)
+
+    def test_dynamic_cloud_migration_and_controls_are_installed_in_the_correct_modules(self):
+        manifest = self.install()
+        renderer = (self.app / manifest['assets'][0].split('?', 1)[0].replace('/_next/', '.next/', 1)).read_text()
+        page = (self.app / manifest['assets'][1].replace('/_next/', '.next/', 1)).read_text()
+        self.assertIn('const RtabmapDynamicCloud = rtabmapDynamicCloudFactory(n)', renderer)
+        self.assertIn('children:rtabmapLiveScanVisible(o,y,C)?W.node:null', renderer)
+        self.assertIn('cloudControls: DynamicCloud ? h(DynamicCloud.Controls, {client, settings, onChange})', renderer)
+        self.assertIn('function rtabmapMigrateDynamicCloudWidget(widget)', page)
+        self.assertIn('.map(rtabmapMigrateDynamicCloudWidget)', page)
 
 
 if __name__ == '__main__':

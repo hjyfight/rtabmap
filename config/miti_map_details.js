@@ -1,5 +1,5 @@
 /* Wall toggle and numerical pose, embedded in each native 3D view. */
-function rtabmapMapDetailsFactory(React, THREE, HeightClip, SemanticLabels) {
+function rtabmapMapDetailsFactory(React, THREE, HeightClip, SemanticLabels, DynamicCloud) {
   'use strict';
   const h = React.createElement, wallTopic = '/miti/walls';
   const finiteVector = (v, n) => Array.isArray(v) && v.length === n && v.every(Number.isFinite);
@@ -46,7 +46,7 @@ function rtabmapMapDetailsFactory(React, THREE, HeightClip, SemanticLabels) {
     .rtab-pose-wait {color:#edc47f;margin:5px 0;}
     @media(max-width:700px) {.rtab-map-details {width:252px;}}
   `;
-  function View({data, pose, connected, stale, expanded, wallsVisible, onToggle, onExpand, inline = false, labelControls = null}) {
+  function View({data, pose, connected, stale, expanded, wallsVisible, onToggle, onExpand, inline = false, labelControls = null, cloudControls = null}) {
     const waiting = !connected ? '等待连接' : stale ? '位姿更新已中断' : data?.pose.reason || '等待定位数据';
     return h('section', {className: 'rtab-map-details' + (inline ? ' rtab-map-inline' : ''), 'aria-label': '墙面与机器人位姿',
       onPointerDown: e => e.stopPropagation(), onPointerMove: e => e.stopPropagation(), onPointerUp: e => e.stopPropagation()},
@@ -56,6 +56,7 @@ function rtabmapMapDetailsFactory(React, THREE, HeightClip, SemanticLabels) {
         h('span', {className: 'rtab-pose-note'}, data?.walls.state === 'ready' ? data.walls.count + ' 处' : '等待地图'),
         h('button', {type: 'button', 'aria-expanded': expanded, onClick: onExpand}, expanded ? '收起位姿' : '展开位姿')),
       labelControls,
+      cloudControls,
       expanded ? h('div', {className: 'rtab-pose-body'},
         h('div', {className: 'rtab-pose-title'}, '机器人位姿'),
         pose ? h(React.Fragment, null,
@@ -83,6 +84,7 @@ function rtabmapMapDetailsFactory(React, THREE, HeightClip, SemanticLabels) {
     React.useEffect(() => {const timer = setInterval(() => setNow(performance.now()), 250); return () => clearInterval(timer);}, []);
     return h(View, {data: sample?.data, pose: freshPose(sample, now, Boolean(client)), connected: Boolean(client), inline,
       labelControls: SemanticLabels ? h(SemanticLabels.Controls, {settings, onChange}) : null,
+      cloudControls: DynamicCloud ? h(DynamicCloud.Controls, {client, settings, onChange}) : null,
       stale: Boolean(sample && now-sample.received >= 2000), expanded,
       wallsVisible: settings.topics?.[wallTopic]?.visible !== false,
       onToggle: () => onChange(toggleWalls(settings)), onExpand: () => setExpanded(value => !value)});

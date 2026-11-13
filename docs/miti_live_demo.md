@@ -110,7 +110,8 @@ ARC 等待图像属于独立输入未启动；RealSense 近红外使用
 
 | 面板 / 图层 | 话题 | 说明 |
 | --- | --- | --- |
-| 三维地图 | `/cloud_map` | 固定坐标系 `map`，按高度着色，最多显示 30 万点 |
+| 三维地图 | `/miti/clean_map` | 保留环境并按射线证据清理历史残影，固定坐标系 `map`，最多显示 30 万点；可切回 `/cloud_map` 对照 |
+| 当前扫描 | `/miti/live_scan` | 按采集时刻位姿映射到 `map`，整帧替换，断流后移除；显示实际输出 Hz |
 | 优化轨迹 | `/miti/trajectory` | 从 `/mapGraph` 的当前优化位姿生成 Path，回环后随图更新 |
 | 语义标签 | `/miti/semantic_markers` | 将 `/semantic/objects` 的节点锚点转换为地图坐标下的 MarkerArray |
 | 当前位姿 | `/icp_odom` | 位置来自 ICP 里程计并通过 TF 映射到地图；箭头指向深度相机光轴 |

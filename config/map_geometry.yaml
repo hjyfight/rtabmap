@@ -5,7 +5,7 @@ map_geometry:
     # Set an explicit frame to require its calibrated transform (no automatic fallback).
     robot_frame: auto
     odom_topic: /icp_odom
-    cloud_topic: /cloud_map
+    cloud_topic: /miti/clean_map
     pose_timeout: 1.0
     transform_max_age: 3.0
     wall_update_interval: 2.0

@@ -41,13 +41,14 @@ def replace_once(source, old, new):
     return source.replace(old, new, 1)
 
 
-def extend_bundle(path, source, panel, height_clip, title, camera_heading, heading_config, depth_display, map_details, grid_map, infrared_display, arc_camera_display, graph_feature_maps, retained_grid, semantic_labels, panel_revision=''):
+def extend_bundle(path, source, panel, height_clip, title, camera_heading, heading_config, depth_display, map_details, grid_map, infrared_display, arc_camera_display, graph_feature_maps, retained_grid, semantic_labels, dynamic_cloud, panel_revision=''):
     if path.endswith('453.e8d48709a26a0ed3.js'):
         source = replace_once(source, 'function rO(e){',
             panel + '\nconst RtabmapLoopStatusPanel = rtabmapLoopStatusFactory(n).Component;\n' +
             height_clip + '\nconst RtabmapHeightClip = rtabmapHeightClipFactory(n);\n' +
             semantic_labels + '\nconst RtabmapSemanticLabels = rtabmapSemanticLabelsFactory(n,ta.V);\n' +
-            map_details + '\nconst RtabmapMapDetails = rtabmapMapDetailsFactory(n,x,RtabmapHeightClip,RtabmapSemanticLabels);\n' +
+            dynamic_cloud + '\nconst RtabmapDynamicCloud = rtabmapDynamicCloudFactory(n);\n' +
+            map_details + '\nconst RtabmapMapDetails = rtabmapMapDetailsFactory(n,x,RtabmapHeightClip,RtabmapSemanticLabels,RtabmapDynamicCloud);\n' +
             grid_map + '\nconst RtabmapGridMap = rtabmapGridMapFactory(n);\n' +
             graph_feature_maps + '\nconst RtabmapGraphFeatureMaps = rtabmapGraphFeatureMapsFactory(n);\n' +
             camera_heading + '\nconst RtabmapCameraHeading = rtabmapCameraHeadingFactory(' +
@@ -65,6 +66,10 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
             'if(RtabmapSemanticLabels.isSemantic(n))return(0,r.jsx)(RtabmapSemanticLabels.Label,'
             '{marker:n,color:"#".concat(u.getHexString()),opacity:d,labelScale:c});'
             'if(9===n.type)return(0,r.jsx)(ta.V,')
+        # Native staleAfter only changes the status badge. Actually remove a
+        # stopped live scan, including when the producer/bridge itself has exited.
+        source = replace_once(source, '(0,r.jsx)(t_,{resetKey:v,onError:E,children:W.node})',
+            '(0,r.jsx)(t_,{resetKey:v,onError:E,children:rtabmapLiveScanVisible(o,y,C)?W.node:null})')
         source = replace_once(source, '(0,r.jsx)(t7,{config:l,',
             '(0,r.jsx)(t7,{client:t,config:l,')
         source = replace_once(source, 'className:"scene-settings",children:[(0,r.jsxs)(eM,{title:"Frame",',
@@ -114,14 +119,14 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
     source = replace_once(source, '(e.subscriptionTopics.delete(n.subscriptionId),r.binding=void 0)',
         '(e.subscriptionTopics.delete(n.subscriptionId),rtabmapClearGridMessage(r),r.binding=void 0)')
     source = replace_once(source, 'let k=[{type:"topics",',
-        depth_display + '\n' + map_details + '\n' + grid_map + '\n' + infrared_display + '\n' + arc_camera_display + '\n' + graph_feature_maps +
+        depth_display + '\n' + map_details + '\n' + grid_map + '\n' + infrared_display + '\n' + arc_camera_display + '\n' + graph_feature_maps + '\n' + dynamic_cloud +
         '\nrtabmapVersionPanelChunk(r,' + json.dumps(panel_revision) + ');\n'
         'let k=[{type:"loop-status",label:"回环状态",icon:"↻",'
         'defaultSize:{w:4,h:8},minSize:{minW:2,minH:4}},{type:"topics",')
     source = replace_once(source,
         't({mosaic:r.mosaic,widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})})',
         't(rtabmapMigrateGraphFeatureLayout(rtabmapMigrateArcCameraLayout(rtabmapMigrateInfraredLayout(rtabmapMigrateGridLayout({mosaic:r.mosaic,widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})'
-        '.map(rtabmapMigrateDepthWidget).map(rtabmapMigrateInfraredTopicWidget).map(rtabmapMigrateWallWidget)})))))')
+        '.map(rtabmapMigrateDepthWidget).map(rtabmapMigrateInfraredTopicWidget).map(rtabmapMigrateWallWidget).map(rtabmapMigrateDynamicCloudWidget)})))))')
     # The dashboard is client-rendered. Use text instead of the fixed-width logo,
     # with ellipsis on narrow screens and the full system name in its tooltip.
     title_js = json.dumps(title, ensure_ascii=True)
@@ -158,6 +163,7 @@ def install(app=APP):
     graph_feature_maps = (PROJECT / 'config/miti_graph_feature_maps.js').read_text()
     retained_grid = (PROJECT / 'config/miti_retained_grid.js').read_text()
     semantic_labels = (PROJECT / 'config/miti_semantic_labels.js').read_text()
+    dynamic_cloud = (PROJECT / 'config/miti_dynamic_cloud.js').read_text()
     heading_config = json.loads((PROJECT / 'config/miti_camera_heading.json').read_text())
     if (not isinstance(heading_config, dict) or
             not isinstance(heading_config.get('enabled'), bool) or
@@ -191,7 +197,7 @@ def install(app=APP):
     for name, expected in UPSTREAM.items():
         target, backup, original, current = original_file(name, expected)
         updated = extend_bundle(name, original.decode(), panel, height_clip, title,
-                                camera_heading, heading_config, depth_display, map_details, grid_map, infrared_display, arc_camera_display, graph_feature_maps, retained_grid, semantic_labels, panel_revision).encode()
+                                camera_heading, heading_config, depth_display, map_details, grid_map, infrared_display, arc_camera_display, graph_feature_maps, retained_grid, semantic_labels, dynamic_cloud, panel_revision).encode()
         if name.endswith('453.e8d48709a26a0ed3.js'):
             # Next marks this pinned vendor filename immutable. Version its lazy
             # import URL so a fresh page cannot pair with an older cached renderer.

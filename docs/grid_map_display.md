@@ -7,8 +7,9 @@
 ## 数据来源
 
 第二个窗口现在使用 `/miti/grid_map`（`nav_msgs/msg/OccupancyGrid`）。独立的
-`grid_projection` 节点读取原有 `/cloud_map` 完整快照，输出按地面高度筛选后的
-二维地图。原始点云、墙面、位姿以及 RTAB-Map 原生 `/map` 不被修改。
+`grid_projection` 节点读取 `/miti/clean_map` 完整快照，输出按地面高度筛选后的
+二维地图。该快照来自原始 `/cloud_map` 的[动态残影清理](dynamic_cloud.md)；原始点云、
+位姿以及 RTAB-Map 原生 `/map` 不被修改。
 
 处理过程：
 

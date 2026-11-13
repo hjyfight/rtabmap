@@ -70,6 +70,13 @@ if [[ ${MITI_ADAPTER:-1} != 0 ]]; then
   python3 -u "$MITI_PROJECT/scripts/miti_scene_adapter.py" &
   MITI_CHILDREN+=("$!")
 fi
+if [[ ! -f "$MITI_PROJECT/build/dynamic_cloud/libdynamic_cloud.so" ||
+      "$MITI_PROJECT/scripts/dynamic_cloud_filter.cpp" -nt "$MITI_PROJECT/build/dynamic_cloud/libdynamic_cloud.so" ]]; then
+  bash "$MITI_PROJECT/scripts/build_dynamic_cloud.sh"
+fi
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python3 -u "$MITI_PROJECT/scripts/dynamic_cloud_node.py" \
+  --ros-args --params-file "$MITI_PROJECT/config/dynamic_cloud.yaml" &
+MITI_CHILDREN+=("$!")
 if [[ ${MITI_GEOMETRY:-1} != 0 ]]; then
   OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 python3 -u "$MITI_PROJECT/scripts/map_geometry_node.py" \
     --ros-args --params-file "$MITI_PROJECT/config/map_geometry.yaml" &
