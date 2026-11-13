@@ -82,6 +82,8 @@ def main():
             config = yaml.safe_load((project/'src/rtabmap_semantic/config/yoloe.yaml').read_text())['semantic_mapper']['ros__parameters']
             params.extend([Parameter(name, value=value) for name, value in config.items()])
             params.append(Parameter('detector_backend', value='yoloe_pf'))
+        if (real_yolo or real_emsanet) and os.environ.get('SEMANTIC_TEST_DEVICE'):
+            params.append(Parameter('device', value=os.environ['SEMANTIC_TEST_DEVICE']))
         def make_mapper():
             detector = None if real_yolo or real_emsanet else (FixtureRgbdDetector() if emsanet_fixture else FixtureDetector())
             return SemanticMapper(detector=detector, parameter_overrides=params)
@@ -223,6 +225,7 @@ def main():
             assert set(mapper.state.nodes) == {1}
             assert not any(o.label == target_label for o in mapper.state.visible_objects())
             report = dict(passed=True, frames=frame_count, label=target_label, display_label=display_label,
+                          device=mapper.config['device'],
                           confirmation_window=mapper.config['confirmation_window'], real_yolo=real_yolo,
                           real_yoloe=real_yoloe,
                           emsanet_fixture=emsanet_fixture,

@@ -13,6 +13,10 @@
 /.tools/emsanet/
 /.tools/miti/
 /.tools/depth_registration/
+/.tools/torchvision/
+/.tools/livox-sdk2/
+/.tools/livox_ros_driver2/
+/.tools/opencv-ros/
 __pycache__/
 *.py[cod]
 *.bak
