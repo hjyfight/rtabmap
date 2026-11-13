@@ -39,6 +39,18 @@ HEADER = struct.Struct('!BBII')  # stream index, shuffle width, raw size, compre
 MAX_FRAME = 16 * 1024 * 1024
 
 
+def sender_stream_indices(lidar_only=False, lidar_imu_only=False):
+    if lidar_only and lidar_imu_only:
+        raise ValueError('choose only one lidar transport mode')
+    wanted = None
+    if lidar_imu_only:
+        wanted = {'/livox/lidar', '/livox/imu', '/tf_static'}
+    elif lidar_only:
+        wanted = {'/livox/lidar', '/tf_static'}
+    return tuple(index for index, (topic, _) in enumerate(STREAMS)
+                 if wanted is None or topic in wanted)
+
+
 def shuffle(data, width, reverse=False):
     """Reversible transpose of byte columns, also preserving row padding bytes."""
     if width <= 1 or len(data) % width:
@@ -174,7 +186,11 @@ class Transport(Node):
         self.last_link_warning = 0.0
         self.outputs = []
         self.subscriptions_owned = []
+        send_indices = sender_stream_indices(getattr(args, 'lidar_only', False),
+                                             getattr(args, 'lidar_imu_only', False))
         for index, (topic, kind) in enumerate(STREAMS):
+            if args.mode == 'send' and index not in send_indices:
+                continue
             qos = QoSProfile(depth=100 if kind is Imu else 5,
                              reliability=ReliabilityPolicy.BEST_EFFORT)
             if kind in (PointCloud2, CameraInfo, TFMessage) or topic in (
@@ -293,7 +309,7 @@ class Transport(Node):
                     else:
                         connection = socket.create_connection((self.args.host, self.args.port), timeout=5)
                     connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                    connection.settimeout(5)
+                    connection.settimeout(getattr(self.args, 'socket_timeout', 5))
                     self.active_connection = connection
                     self.get_logger().info('Compressed sensor link connected')
                     if listener:
@@ -333,9 +349,18 @@ def main():
     parser.add_argument('--port', type=int, default=7447)
     parser.add_argument('--jpeg-quality', type=int, default=0,
                         help='RGB-only JPEG quality 1..100; 0 keeps RGB lossless')
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument('--lidar-only', action='store_true',
+                           help='Send only lidar and static TF, retaining the existing wire stream IDs')
+    selection.add_argument('--lidar-imu-only', action='store_true',
+                           help='Send lidar, its IMU and static TF, without camera streams')
+    parser.add_argument('--socket-timeout', type=float, default=5,
+                        help='Established TCP read/write timeout in seconds')
     args = parser.parse_args()
     if not 0 <= args.jpeg_quality <= 100:
         parser.error('--jpeg-quality must be between 0 and 100')
+    if not 0 < args.socket_timeout < float('inf'):
+        parser.error('--socket-timeout must be positive and finite')
     # Humble's default C signal handler invalidates the context before the network
     # thread has stopped. Foxy has no signal_handler_options argument.
     import inspect

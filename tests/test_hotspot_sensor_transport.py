@@ -3,6 +3,7 @@ from pathlib import Path
 import struct
 import sys
 import unittest
+from unittest.mock import patch
 import numpy as np
 
 from rclpy.serialization import deserialize_message, serialize_message
@@ -11,10 +12,33 @@ from geometry_msgs.msg import TransformStamped
 from tf2_msgs.msg import TFMessage
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from hotspot_sensor_transport import HEADER, decode, encode
+from hotspot_sensor_transport import HEADER, STREAMS, decode, encode, main, sender_stream_indices
 
 
 class LosslessTransportTests(unittest.TestCase):
+    def test_receive_launcher_arguments_parse_before_ros_startup(self):
+        # Exercise the launcher's actual CLI without connecting to a live sensor.
+        class RosStartupReached(Exception):
+            pass
+
+        for mode, extra in [('receive', []), ('send', ['--lidar-imu-only'])]:
+            arguments = ['hotspot_sensor_transport.py', mode, '--host',
+                         '192.168.1.104', '--socket-timeout', '60'] + extra
+            with self.subTest(mode=mode), patch.object(sys, 'argv', arguments), patch(
+                    'hotspot_sensor_transport.rclpy.init', side_effect=RosStartupReached):
+                with self.assertRaises(RosStartupReached):
+                    main()
+
+    def test_lidar_imu_transport_preserves_wire_ids_without_images(self):
+        selected = sender_stream_indices(lidar_imu_only=True)
+        self.assertEqual(selected, (0, 1, 9))
+        self.assertEqual([STREAMS[i][0] for i in selected],
+                         ['/livox/lidar', '/livox/imu', '/tf_static'])
+        self.assertEqual(sender_stream_indices(lidar_only=True), (0, 9))
+        self.assertEqual(sender_stream_indices(), tuple(range(len(STREAMS))))
+        with self.assertRaises(ValueError):
+            sender_stream_indices(lidar_only=True, lidar_imu_only=True)
+
     def roundtrip(self, index, message):
         before = serialize_message(message)
         snapshot = deserialize_message(before, type(message))

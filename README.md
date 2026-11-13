@@ -2,6 +2,11 @@
 
 目标目录：`/home/jyfight/Project/rtabmap_slam`。
 
+主机和机器狗都配备无线网卡后，可连接同一路由器，通过 Wi-Fi 传输传感器数据。
+当前主机无线接口为 `wlx6c1ff712636d`；配置与完整启动步骤见
+[双端无线连接建图](docs/wifi_direct_connection.md)。该流程使用独立的无线 DDS 环境，
+适用于替换下文旧的“主机 USB 网卡 + 热点转发”链路。
+
 2026-11-06：USB 转发接入后，MITI 已支持近红外、RGB 和深度同时显示，
 相机朝向、三维地图和二维栅格显示已恢复。已修复 RealSense 对齐尺寸跳变引起的 SLAM 断流。
 现在使用原始深度、
@@ -494,6 +499,9 @@ bash scripts/start_miti.sh
 http://localhost:3000/rtabmap.html
 
 ## 通过热点连接与传输
+
+以下为旧的跨网段转发配置记录。主机和机载电脑都直接接入同一 Wi-Fi 局域网时，请使用
+[双端无线连接建图](docs/wifi_direct_connection.md)，不要照搬本节的旧 IP 和有线网卡名。
 
 本节记录本次已配置的热点连接方式：机载电脑连接 Wi-Fi 热点 `yxm`，通过无线链路和路由转发向工作站发送 ROS 2 数据。MID360 通过有线连接机载电脑，RealSense 通过 USB 连接机载电脑；工作站通过 USB 有线网卡接入现有转发链路。
 
