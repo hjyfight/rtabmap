@@ -50,7 +50,7 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
             dynamic_cloud + '\nconst RtabmapDynamicCloud = rtabmapDynamicCloudFactory(n);\n' +
             map_details + '\nconst RtabmapMapDetails = rtabmapMapDetailsFactory(n,x,RtabmapHeightClip,RtabmapSemanticLabels,RtabmapDynamicCloud);\n' +
             grid_map + '\nconst RtabmapGridMap = rtabmapGridMapFactory(n);\n' +
-            graph_feature_maps + '\nconst RtabmapGraphFeatureMaps = rtabmapGraphFeatureMapsFactory(n);\n' +
+            graph_feature_maps + '\nconst RtabmapGraphFeatureMaps = rtabmapGraphFeatureMapsFactory(n,ta.V);\n' +
             camera_heading + '\nconst RtabmapCameraHeading = rtabmapCameraHeadingFactory(' +
             json.dumps(heading_config) + ',w);\nfunction rO(e){')
         source = replace_once(source,
@@ -65,6 +65,8 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
         source = replace_once(source, 'if(9===n.type)return(0,r.jsx)(ta.V,',
             'if(RtabmapSemanticLabels.isSemantic(n))return(0,r.jsx)(RtabmapSemanticLabels.Label,'
             '{marker:n,color:"#".concat(u.getHexString()),opacity:d,labelScale:c});'
+            'if(RtabmapGraphFeatureMaps.isNavigationLabel(n))return(0,r.jsx)(RtabmapGraphFeatureMaps.NavigationLabel,'
+            '{marker:n,color:"#".concat(u.getHexString()),opacity:d});'
             'if(9===n.type)return(0,r.jsx)(ta.V,')
         # Native staleAfter only changes the status badge. Actually remove a
         # stopped live scan, including when the producer/bridge itself has exited.

@@ -38,7 +38,7 @@ def bounds(points):
 
 class GraphFeatures:
     """Cache local updates; complete service snapshots reconcile removed graph nodes."""
-    def __init__(self, voxel_size=0.02, max_points=150000):
+    def __init__(self, voxel_size=0.08, max_points=15000):
         self.voxel_size, self.max_points = voxel_size, max_points
         self.epoch = 0
         self.revision = 0
@@ -169,8 +169,8 @@ class GraphFeatureMapNode(Node):
         param = lambda name, default: self.declare_parameter(name, default).value
         interval = float(param('snapshot_interval', 15.0))
         publish_interval = float(param('publish_interval', 1.0))
-        voxel = float(param('feature_voxel_size', 0.02))
-        maximum = int(param('max_feature_points', 150000))
+        voxel = float(param('feature_voxel_size', 0.08))
+        maximum = int(param('max_feature_points', 15000))
         if not all(math.isfinite(v) and v > 0 for v in (interval, publish_interval)) or not math.isfinite(voxel) or voxel < 0 or maximum < 1:
             raise ValueError('Invalid graph/feature display parameters')
         self.model = GraphFeatures(voxel, maximum)

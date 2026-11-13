@@ -28,6 +28,15 @@ function rtabmapRepairGraphFeatureWidget(widget) {
     title: ['拓扑地图 · 关键帧与回环', '关键帧位姿图'].includes(widget.title)
       ? '导航连通图 · 区域与通道' : widget.title,
     props: rtabmapSetTopologyMode(widget.props, 'navigation')};
+  if (kind === 'features' && widget.rtabmapFeatureDisplayVersion !== 1) {
+    const topic = widget.props?.topics?.['/miti/sparse_features'] || {};
+    widget = {...widget, rtabmapFeatureDisplayVersion: 1, props: {...widget.props, topics: {
+      ...widget.props?.topics,
+      '/miti/sparse_features': {...topic,
+        pointSize: topic.pointSize === undefined || topic.pointSize === 4 ? 2 : topic.pointSize,
+        maxPoints: topic.maxPoints === undefined || topic.maxPoints === 150000 ? 15000 : topic.maxPoints}
+    }}};
+  }
   return widget;
 }
 
@@ -64,7 +73,7 @@ function rtabmapGraphFeatureWidget(kind, id) {
       topics: {
         [topology ? '/miti/topological_map' : '/miti/sparse_features']: topology
           ? {visible: true, type: 'markers'}
-          : {visible: true, type: 'pointcloud', pointSize: 4, maxPoints: 150000,
+          : {visible: true, type: 'pointcloud', pointSize: 2, maxPoints: 15000,
             colorMode: 'colormap', colorField: 'z', maxRate: 2, staleAfter: 30},
         '/robot_pose': {visible: true, type: 'pose', poseType: 'arrow', axisScale: 0.5,
           color: '#ffffff', opacity: 1, staleAfter: 2}
@@ -76,7 +85,7 @@ function rtabmapGraphFeatureWidget(kind, id) {
     widget.title = '导航连通图 · 区域与通道';
     widget.rtabmapNavigationVersion = 1;
     widget.props = rtabmapSetTopologyMode(widget.props, 'navigation');
-  }
+  } else widget.rtabmapFeatureDisplayVersion = 1;
   return widget;
 }
 
@@ -122,9 +131,20 @@ function rtabmapMigrateGraphFeatureLayout(layout) {
   return {...layout, widgets, mosaic};
 }
 
-function rtabmapGraphFeatureMapsFactory(React) {
+function rtabmapGraphFeatureMapsFactory(React, Html) {
   'use strict';
   const h = React.createElement;
+  const isNavigationLabel = marker => marker?.type === 9 && marker.ns === 'navigation/labels';
+  function NavigationLabel({marker, color, opacity}) {
+    // No distanceFactor: orthographic zoom and saved scene scales must never
+    // turn a short region label into text that covers the entire map.
+    return h(Html, {center: true, occlude: false, zIndexRange: [2, 0]},
+      h('span', {'data-navigation-label': marker.id, style: {
+        color, opacity, whiteSpace: 'nowrap', pointerEvents: 'none', display: 'inline-block',
+        font: '12px/1.4 system-ui,sans-serif', background: 'rgba(17,25,35,.82)',
+        borderRadius: '4px', padding: '1px 4px', transform: 'translateY(-14px)'
+      }}, marker.text));
+  }
   const vector = value => Array.isArray(value) && value.length === 3 && value.every(Number.isFinite);
   function parse(message) {
     try {
@@ -245,5 +265,5 @@ function rtabmapGraphFeatureMapsFactory(React) {
           perspective: !topDown, rtabmapTopDown: topDown, phi: topDown ? .01 : 60, thetaOffset: topDown ? -90 : 45}});
       }});
   }
-  return {Controls, View, parse, fitView};
+  return {Controls, View, parse, fitView, NavigationLabel, isNavigationLabel};
 }

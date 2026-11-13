@@ -137,6 +137,7 @@
       "i": "rtabmap-features-scene",
       "type": "urdf-viewer",
       "title": "稀疏特征地图 · 视觉特征点",
+      "rtabmapFeatureDisplayVersion": 1,
       "x": 4,
       "y": 8,
       "w": 4,
@@ -185,8 +186,8 @@
           "/miti/sparse_features": {
             "visible": true,
             "type": "pointcloud",
-            "pointSize": 4,
-            "maxPoints": 150000,
+            "pointSize": 2,
+            "maxPoints": 15000,
             "colorMode": "colormap",
             "colorField": "z",
             "maxRate": 2,

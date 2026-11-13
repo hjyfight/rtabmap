@@ -37,9 +37,10 @@
 地图使用 Reliable + Transient Local + depth 1，刷新或晚打开的窗口可收到快照。
 信息栏只订阅独立状态话题，避免抢先消耗原生绘图器的保留地图消息。
 
-配置在 `config/graph_feature_map.yaml`：默认每秒最多生成一次显示快照，按 2 cm 空间格
-去重重复观察点，最多显示 150000 点。该显示限制不影响 RTAB-Map 中的特征。
+配置在 `config/graph_feature_map.yaml`：默认每秒最多生成一次显示快照，按 8 cm 空间格
+去重重复观察点，最多显示 15000 点，前端点大小为 2 像素。该显示限制不影响 RTAB-Map 中的特征。
 设置 `feature_voxel_size: 0.0` 可关闭去重；`MITI_GRAPH_FEATURES=0` 可禁用显示节点。
+旧布局中的 4 像素/150000 点默认设置会在刷新时迁移，保留用户另行调整的设置及地图视角。
 
 验证命令：
 

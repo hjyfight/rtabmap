@@ -8,7 +8,15 @@ const root = path.resolve(__dirname, '..');
 const vendor = createRequire(path.join(root, '.tools/miti/root/usr/lib/miti/package.json'));
 const React = vendor('react');
 const {renderToStaticMarkup} = vendor('react-dom/server.browser');
-const source = fs.readFileSync(path.join(root, 'config/miti_graph_feature_maps.js'), 'utf8');
+let source = fs.readFileSync(path.join(root, 'config/miti_graph_feature_maps.js'), 'utf8');
+const renderer = process.env.MITI_TEST_RENDERER_BUNDLE
+  ? fs.readFileSync(process.env.MITI_TEST_RENDERER_BUNDLE, 'utf8') : null;
+if (renderer) {
+  const begin = renderer.indexOf('function rtabmapVersionPanelChunk(');
+  const end = renderer.indexOf('const RtabmapGraphFeatureMaps = ', begin);
+  assert.ok(begin >= 0 && end > begin);
+  source = renderer.slice(begin, end);
+}
 const {migrate, widget, factory, kindOf, versionChunk, setMode} = vm.runInNewContext(source +
   '; ({migrate:rtabmapMigrateGraphFeatureLayout,widget:rtabmapGraphFeatureWidget,factory:rtabmapGraphFeatureMapsFactory,kindOf:rtabmapGraphMapKind,versionChunk:rtabmapVersionPanelChunk,setMode:rtabmapSetTopologyMode})',
   {setInterval, clearInterval});
@@ -20,6 +28,66 @@ const camera = {i:'camera',type:'camera-viewer',props:{topic:'/camera/color/imag
 const snapshot = {schema:1,state:'ready',frame_id:'map',epoch:1,updated_at:1794220300,
   topology:{nodes:12,links:14,bounds:{center:[1,2,3],span:[10,8,2]}},
   features:{points:1500,feature_nodes:10,bounds:{center:[1,2,3],span:[10,8,2]}}};
+
+test('navigation labels remain small in orthographic views regardless of marker or scene scale', () => {
+  const calls = [];
+  const labels = factory(React, props => {
+    calls.push(props);
+    return React.createElement('div', null, props.children);
+  });
+  for (const scale of [.01, .22, 6, 100]) {
+    const marker = {type:9, ns:'navigation/labels', id:1, text:'区域 1', scale:{z:scale}};
+    assert.equal(labels.isNavigationLabel(marker), true);
+    const html = renderToStaticMarkup(React.createElement(labels.NavigationLabel,
+      {marker, color:'#fff', opacity:1, labelScale:scale}));
+    assert.match(html, /font:12px/);
+    assert.match(html, /区域 1/);
+  }
+  for (const call of calls) {
+    assert.equal(call.distanceFactor, undefined);
+    assert.equal(call.transform, undefined);
+  }
+  for (const marker of [{type:2,ns:'navigation/labels'}, {type:9,ns:'miti/1/label'},
+    {type:9,ns:'another/label'}]) assert.equal(labels.isNavigationLabel(marker), false);
+});
+
+test('installed marker dispatcher selects fixed-size navigation text and retains native text for other markers',
+  {skip: !renderer}, () => {
+    const Html = props => React.createElement('div', null, props.children);
+    const labels = factory(React, Html);
+    const begin = renderer.indexOf('if(RtabmapSemanticLabels.isSemantic(n))');
+    const end = renderer.indexOf('if(11===n.type)', begin);
+    assert.ok(begin >= 0 && end > begin);
+    const dispatch = vm.runInNewContext('(function(n){const d=1,c=100,u={getHexString:()=>"ffffff"};' +
+      renderer.slice(begin, end) + '})', {r:{jsx:React.createElement}, ta:{V:Html},
+      RtabmapSemanticLabels:{isSemantic:()=>false}, RtabmapGraphFeatureMaps:labels});
+    const marker = {type:9,ns:'navigation/labels',id:1,text:'区域 1',scale:{z:.22}};
+    assert.equal(dispatch(marker).type, labels.NavigationLabel);
+    assert.match(renderToStaticMarkup(dispatch(marker)), /font:12px/);
+    assert.equal(dispatch({...marker,ns:'another/label'}).type, Html);
+  });
+
+test('saved feature panels get smaller legacy defaults once while keeping custom settings and views', () => {
+  const old = widget('features');
+  delete old.rtabmapFeatureDisplayVersion;
+  const topic = old.props.topics['/miti/sparse_features'];
+  topic.pointSize = 4;
+  topic.maxPoints = 150000;
+  const before = {widgets:[{...primary,rtabmapGraphFeatureLayoutVersion:1},old],mosaic:old.i};
+  const after = migrate(before), fixed = after.widgets[1];
+  assert.equal(fixed.props.topics['/miti/sparse_features'].pointSize, 2);
+  assert.equal(fixed.props.topics['/miti/sparse_features'].maxPoints, 15000);
+  assert.equal(fixed.props.view, old.props.view);
+  assert.equal(fixed.props.topics['/robot_pose'], old.props.topics['/robot_pose']);
+  assert.equal(after.mosaic, before.mosaic);
+  assert.equal(topic.pointSize, 4);
+  assert.equal(migrate(after), after);
+  topic.pointSize = 1;
+  topic.maxPoints = 8000;
+  const custom = migrate(before).widgets[1].props.topics['/miti/sparse_features'];
+  assert.equal(custom.pointSize, 1);
+  assert.equal(custom.maxPoints, 8000);
+});
 
 test('updated pages request a distinct renderer URL even with an immutable old chunk cached', () => {
   const oldUrl = 'static/chunks/453.e8d48709a26a0ed3.js';

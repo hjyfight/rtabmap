@@ -85,7 +85,7 @@ class FrontendInstallTests(unittest.TestCase):
             env={**os.environ, 'MITI_TEST_CLIENT_BUNDLE': str(self.app/installer.PAGE_CHUNK)})
         self.assertEqual(result.returncode, 0, result.stdout+'\n'+result.stderr)
 
-    def test_stable_semantic_labels_are_scoped_to_each_scene_and_preserve_native_markers(self):
+    def test_project_text_renderers_preserve_native_markers_and_fixed_navigation_labels(self):
         manifest = self.install()
         renderer = self.app / manifest['assets'][0].split('?', 1)[0].replace('/_next/', '.next/', 1)
         source = renderer.read_text()
@@ -93,8 +93,9 @@ class FrontendInstallTests(unittest.TestCase):
         self.assertIn('if(RtabmapSemanticLabels.isSemantic(n))return(0,r.jsx)(RtabmapSemanticLabels.Label,', source)
         self.assertIn('if(9===n.type)return(0,r.jsx)(ta.V,', source)
         self.assertIn('rtabmapMapDetailsFactory(n,x,RtabmapHeightClip,RtabmapSemanticLabels,RtabmapDynamicCloud)', source)
-        result = subprocess.run([str(self.app/'node/bin/node'),
-            str(ROOT/'tests/test_miti_semantic_labels.js')], capture_output=True, text=True,
+        result = subprocess.run([str(self.app/'node/bin/node'), '--test',
+            str(ROOT/'tests/test_miti_semantic_labels.js'),
+            str(ROOT/'tests/test_miti_graph_feature_maps.js')], capture_output=True, text=True,
             env={**os.environ, 'MITI_TEST_RENDERER_BUNDLE': str(renderer)})
         self.assertEqual(result.returncode, 0, result.stdout+'\n'+result.stderr)
 
