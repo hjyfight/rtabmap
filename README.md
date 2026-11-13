@@ -9,7 +9,8 @@
 
 Orin 已配置 ARM64 ROS 2 Humble、RTAB-Map、MID360 / RealSense 驱动与 EMSANet CUDA
 推理环境。Orin 建图、工作站显示的安装位置、验证记录和启动命令见
-[Orin 部署说明](docs/orin_deployment.md)。当前已通过无硬件测试，实际传感器接入与标定待完成。
+[Orin 部署说明](docs/orin_deployment.md)。已通过无硬件测试及 Go2 真实雷达数据的建图显示验证；
+RealSense 实机接入、完整标定和运动建图质量仍待验收。
 
 2026-11-06：USB 转发接入后，MITI 已支持近红外、RGB 和深度同时显示，
 相机朝向、三维地图和二维栅格显示已恢复。已修复 RealSense 对齐尺寸跳变引起的 SLAM 断流。

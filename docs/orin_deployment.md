@@ -2,7 +2,9 @@
 
 部署日期：2026-11-11。工作站项目为 `/home/jyfight/Project/rtabmap_slam`；
 Orin 项目为 `/home/qiyuan/Project/rtabmap_slam`，SSH 为 `qiyuan@192.168.43.15`。
-环境已通过无硬件测试；直接连接 MID360、RealSense 的实机验证和完整标定待完成。
+环境已通过无硬件测试；随后通过 Go2 采集真实雷达数据，在 Orin 上运行 ICP 与
+RTAB-Map，并在工作站确认三维点云和二维栅格显示。当前低速显示测试的独立启动
+入口和验证范围见 [Go2 → Orin 显示测试](go2_orin_display_test.md)。
 
 ## 设备与分工
 
@@ -177,3 +179,64 @@ Orin 上的原始记录：
 
 工作站将这次 Orin 的验证记录备份到 `logs/orin_deploy/remote/`；工作站侧的网络报告为
 `logs/orin_deploy/host_link.json`。
+
+## 传感器保留在 Go2，通过热点送到 Orin
+
+2026-11-11 已确认三台设备加入热点 `92865`（2.4 GHz、信道 11、WPA2）：
+
+| 设备 | 无线接口 | IPv4 |
+| --- | --- | --- |
+| Go2 机载电脑 | `wlan0` | `192.168.43.16/24` |
+| Orin | `wlP1p1s0` | `192.168.43.15/24` |
+| 工作站 | `wlx6c1ff712636d` | `192.168.43.14/24` |
+
+Go2 的有线管理地址仍为 `192.168.123.18`。MID360 的网线和 RealSense 的 USB
+保留在 Go2，Go2 运行传感器驱动，Orin 接收数据并建图，工作站显示结果。
+DHCP 地址变化后须按实时值更新启动参数。
+
+Go2 到 Orin 的 3 次 ping、工作站到 Go2 的 5 次 ping、Orin 到 Go2 的 5 次 ping
+均无丢包。工作站到 Go2 延迟为 22.7–86.0 ms，Orin 到 Go2 为 34.1–184.9 ms；
+这些短时测试只确认网络互通，未验证持续传感器吞吐或时间同步。
+
+Orin 已确认可加载接收程序所需的 ROS 消息、`rclpy` 和 `numpy`。
+新增接收参数已同步到 Orin，并通过 Bash 语法检查；使用实际无线接口和隔离
+domain 197 初始化 CycloneDDS 也已通过，验证进程已退出。
+`start_hotspot_receive.sh` 的三参数模式使用仓库内无线 DDS 环境，接收 Go2 的 TCP
+压缩数据，并在 Orin 的 domain 0 发布给本机 SLAM 和工作站：
+
+```bash
+# Orin；须先确认 Go2 的压缩发送端已经正确配置。
+cd /home/qiyuan/Project/rtabmap_slam
+bash scripts/start_hotspot_receive.sh 192.168.43.16 wlP1p1s0 192.168.43.14
+```
+
+接收端连接 Go2 的 TCP 7447 端口。点云与深度使用现有无损压缩；彩色图像是否有损
+由发送端的 `HOTSPOT_JPEG_QUALITY` 决定，设为 `0` 可保持无损。
+旧的零参数或一参数模式仍加载家目录的历史热点环境，当前 Orin 流程使用三参数模式。
+
+Go2 的 SSH 公钥安装已完成，工作站可通过 `192.168.123.18` 免密登录。
+原有线启动命令、雷达配置、相机 YAML、`start_hotspot_sensors.sh` 和原传输程序
+保留。新增并部署了独立的 `~/start_go2_orin_sensors.sh` 与
+`~/go2_orin_sensor_transport.py`，Go2 当前使用新增入口运行传感器和发送端。
+雷达输出 PointCloud2，D435i 保持 RGB 424×240×6、深度及两路红外 640×480×6。
+
+首次短时接收确认点云、IMU、RGB、深度、右红外和相机内参进入 Orin，但约 50 秒
+只收到 1 帧点云和 3 帧 RGB，实际吞吐与掉帧尚不满足建图条件。两端无线省电均开启；
+需关闭无线省电后重新采样，不能将这次接通判为持续传输验收通过。
+
+应用户要求，Orin 后续由用户手动操作；先前由助手启动的后台接收进程已停止。
+用户在 Orin 前台执行：
+
+```bash
+sudo iw dev wlP1p1s0 set power_save off
+cd /home/qiyuan/Project/rtabmap_slam
+bash scripts/start_hotspot_receive.sh 192.168.43.16 wlP1p1s0 192.168.43.14
+```
+
+Go2 无线省电由用户在 Go2 终端临时关闭：`sudo iw dev wlan0 set power_save off`。
+这两条无线命令不修改原有线启动配置。
+
+后续按用户要求先验证低速建图显示：独立 domain 74 / 网页端口 3001 已运行真实
+雷达 ICP 和 RTAB-Map，主机收到 10,057 个地图点与 2 个图节点。用户页面与截图
+确认三维点云和二维栅格已显示。原 domain 0 / 端口 3000 有线显示服务保留；
+完整命令见 [Go2 → Orin 显示测试](go2_orin_display_test.md)。
