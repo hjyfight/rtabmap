@@ -109,6 +109,15 @@ class FrontendInstallTests(unittest.TestCase):
         self.assertIn('function rtabmapMigrateDynamicCloudWidget(widget)', page)
         self.assertIn('.map(rtabmapMigrateDynamicCloudWidget)', page)
 
+    def test_fourmodal_renderer_registry_and_saved_layout_migration_are_installed(self):
+        manifest = self.install()
+        renderer = (self.app / manifest['assets'][0].split('?', 1)[0].replace('/_next/', '.next/', 1)).read_text()
+        page = (self.app / manifest['assets'][1].replace('/_next/', '.next/', 1)).read_text()
+        self.assertIn('const RtabmapFourmodalPanel = rtabmapFourmodalFactory(n).Component', renderer)
+        self.assertIn('case"fourmodal-features":return(0,r.jsx)(RtabmapFourmodalPanel,', renderer)
+        self.assertIn('type:"fourmodal-features",label:"四模态特征"', page)
+        self.assertIn('t(rtabmapMigrateFourmodalLayout(rtabmapMigrateGraphFeatureLayout(', page)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,51 +1,183 @@
 {
   "widgets": [
     {
-      "i": "rtabmap-scene", "type": "urdf-viewer", "title": "三维地图 · 墙面 · 机器人位姿",
+      "i": "rtabmap-scene",
+      "type": "urdf-viewer",
+      "title": "三维地图 · 墙面 · 机器人位姿",
       "rtabmapWallsVersion": 1,
       "rtabmapPoseDisplayVersion": 1,
       "rtabmapGridLayoutVersion": 1,
       "rtabmapGraphFeatureLayoutVersion": 1,
       "rtabmapArcCameraLayoutVersion": 1,
-      "x": 0, "y": 0, "w": 4, "h": 8,
+      "rtabmapFourmodalLayoutVersion": 1,
+      "x": 0,
+      "y": 0,
+      "w": 4,
+      "h": 8,
       "props": {
         "version": 2,
-        "frame": {"fixedFrame": "map", "displayFrame": "map", "followMode": "fixed", "syncTimestamps": false},
-        "scene": {"background": "#111923", "renderStats": false, "labelScale": 6,
-                  "heightClip": {"enabled": false, "height": 2.0}},
-        "view": {"distance": 12, "thetaOffset": 45, "phi": 55, "targetOffset": [0, 0, 0]},
-        "transforms": {"visible": false, "tfTopics": ["/tf", "/tf_static"], "staticTfTopics": ["/tf_static"]},
+        "frame": {
+          "fixedFrame": "map",
+          "displayFrame": "map",
+          "followMode": "fixed",
+          "syncTimestamps": false
+        },
+        "scene": {
+          "background": "#111923",
+          "renderStats": false,
+          "labelScale": 6,
+          "heightClip": {
+            "enabled": false,
+            "height": 2.0
+          }
+        },
+        "view": {
+          "distance": 12,
+          "thetaOffset": 45,
+          "phi": 55,
+          "targetOffset": [
+            0,
+            0,
+            0
+          ]
+        },
+        "transforms": {
+          "visible": false,
+          "tfTopics": [
+            "/tf",
+            "/tf_static"
+          ],
+          "staticTfTopics": [
+            "/tf_static"
+          ]
+        },
         "topics": {
-          "/cloud_map": {"visible": true, "type": "pointcloud", "pointSize": 2, "maxPoints": 300000, "colorMode": "colormap", "colorField": "z", "maxRate": 5, "staleAfter": 30},
-          "/livox/lidar": {"visible": false, "type": "pointcloud", "pointSize": 2, "maxPoints": 100000, "maxRate": 10},
-          "/miti/trajectory": {"visible": true, "type": "path", "poseType": "line", "lineWidth": 0.035},
-          "/miti/semantic_markers": {"visible": true, "type": "markers"},
-          "/miti/walls": {"visible": true, "type": "markers"},
-          "/robot_pose": {"visible": true, "type": "pose", "poseType": "axis", "axisScale": 0.65, "opacity": 1, "staleAfter": 2},
-          "/icp_odom": {"visible": true, "type": "odometry", "axisScale": 0.4}
+          "/cloud_map": {
+            "visible": true,
+            "type": "pointcloud",
+            "pointSize": 2,
+            "maxPoints": 300000,
+            "colorMode": "colormap",
+            "colorField": "z",
+            "maxRate": 5,
+            "staleAfter": 30
+          },
+          "/livox/lidar": {
+            "visible": false,
+            "type": "pointcloud",
+            "pointSize": 2,
+            "maxPoints": 100000,
+            "maxRate": 10
+          },
+          "/miti/trajectory": {
+            "visible": true,
+            "type": "path",
+            "poseType": "line",
+            "lineWidth": 0.035
+          },
+          "/miti/semantic_markers": {
+            "visible": true,
+            "type": "markers"
+          },
+          "/miti/walls": {
+            "visible": true,
+            "type": "markers"
+          },
+          "/robot_pose": {
+            "visible": true,
+            "type": "pose",
+            "poseType": "axis",
+            "axisScale": 0.65,
+            "opacity": 1,
+            "staleAfter": 2
+          },
+          "/icp_odom": {
+            "visible": true,
+            "type": "odometry",
+            "axisScale": 0.4
+          }
         },
         "layers": []
       }
     },
     {
-      "i": "rtabmap-grid-scene", "type": "urdf-viewer", "title": "二维栅格地图",
+      "i": "rtabmap-grid-scene",
+      "type": "urdf-viewer",
+      "title": "二维栅格地图",
       "rtabmapGridProjectionVersion": 1,
-      "x": 4, "y": 0, "w": 4, "h": 8,
+      "x": 4,
+      "y": 0,
+      "w": 4,
+      "h": 8,
       "props": {
         "version": 2,
-        "frame": {"fixedFrame": "map", "displayFrame": "map", "followMode": "fixed", "syncTimestamps": false},
-        "scene": {"background": "#808080", "renderStats": false, "labelScale": 1, "rtabmapGrid": true,
-                  "heightClip": {"enabled": false, "height": 2}},
-        "view": {"perspective": false, "distance": 24, "thetaOffset": -90, "phi": 0.01,
-                 "targetOffset": [0, 0, 0], "rtabmapTopDown": true},
-        "transforms": {"visible": false, "tfTopics": ["/tf", "/tf_static"], "staticTfTopics": ["/tf_static"]},
+        "frame": {
+          "fixedFrame": "map",
+          "displayFrame": "map",
+          "followMode": "fixed",
+          "syncTimestamps": false
+        },
+        "scene": {
+          "background": "#808080",
+          "renderStats": false,
+          "labelScale": 1,
+          "rtabmapGrid": true,
+          "heightClip": {
+            "enabled": false,
+            "height": 2
+          }
+        },
+        "view": {
+          "perspective": false,
+          "distance": 24,
+          "thetaOffset": -90,
+          "phi": 0.01,
+          "targetOffset": [
+            0,
+            0,
+            0
+          ],
+          "rtabmapTopDown": true
+        },
+        "transforms": {
+          "visible": false,
+          "tfTopics": [
+            "/tf",
+            "/tf_static"
+          ],
+          "staticTfTopics": [
+            "/tf_static"
+          ]
+        },
         "topics": {
-          "/miti/grid_map": {"visible": true, "type": "map", "mapColorMode": "custom", "minColor": "#ffffff",
-                   "maxColor": "#000000", "unknownColor": "#808080", "invalidColor": "#ff00ff",
-                   "opacity": 1, "drawBehind": true, "frameLocked": false},
-          "/robot_pose": {"visible": true, "type": "pose", "poseType": "arrow", "axisScale": 0.5,
-                          "color": "#20c997", "opacity": 1, "staleAfter": 2},
-          "/miti/trajectory": {"visible": true, "type": "path", "poseType": "line", "lineWidth": 0.035, "color": "#ed9b21"}
+          "/miti/grid_map": {
+            "visible": true,
+            "type": "map",
+            "mapColorMode": "custom",
+            "minColor": "#ffffff",
+            "maxColor": "#000000",
+            "unknownColor": "#808080",
+            "invalidColor": "#ff00ff",
+            "opacity": 1,
+            "drawBehind": true,
+            "frameLocked": false
+          },
+          "/robot_pose": {
+            "visible": true,
+            "type": "pose",
+            "poseType": "arrow",
+            "axisScale": 0.5,
+            "color": "#20c997",
+            "opacity": 1,
+            "staleAfter": 2
+          },
+          "/miti/trajectory": {
+            "visible": true,
+            "type": "path",
+            "poseType": "line",
+            "lineWidth": 0.035,
+            "color": "#ed9b21"
+          }
         },
         "layers": []
       }
@@ -207,55 +339,164 @@
       }
     },
     {
-      "i": "rtabmap-color", "type": "camera-viewer", "title": "RealSense · 彩色画面",
-      "x": 8, "y": 0, "w": 4, "h": 4,
-      "props": {"topic": "/camera/color/image_raw", "maxFps": 15}
-    },
-    {
-      "i": "rtabmap-depth", "type": "camera-viewer", "title": "RealSense · 对齐深度",
-      "rtabmapAlignedDepthVersion": 1,
-      "rtabmapInfraredLayoutVersion": 1,
-      "x": 8, "y": 4, "w": 4, "h": 4,
-      "props": {"topic": "/miti/aligned_depth/image_raw",
-                "maxFps": 10, "colorMode": "colormap", "valueMin": 300, "valueMax": 4000}
-    },
-    {
-      "i": "rtabmap-infrared", "type": "camera-viewer", "title": "RealSense · 右近红外",
-      "rtabmapInfraredSourceVersion": 2,
-      "x": 8, "y": 8, "w": 4, "h": 4,
-      "props": {"topic": "/camera/infra2/image_rect_raw", "maxFps": 10,
-                "colorMode": "gradient", "gradient": ["#000000", "#ffffff"], "valueMin": 0, "valueMax": 255}
-    },
-    {
-      "i": "rtabmap-arc-camera", "type": "camera-viewer", "title": "ARC · 相机画面",
-      "x": 8, "y": 12, "w": 4, "h": 4,
-      "props": {"topic": "/arc_camera/image_raw", "maxFps": 15}
-    },
-    {
-      "i": "rtabmap-log", "type": "log", "title": "回环检测日志",
-      "x": 0, "y": 16, "w": 8, "h": 8,
+      "i": "rtabmap-color",
+      "type": "camera-viewer",
+      "title": "RealSense · 彩色画面",
+      "x": 8,
+      "y": 0,
+      "w": 4,
+      "h": 4,
       "props": {
-        "topic": "/rosout", "minLevel": "INFO",
-        "searchTerms": ["loop_closure_diagnostics"], "fontSize": 14,
-        "showLevel": true, "showTime": true, "showName": true
+        "topic": "/camera/color/image_raw",
+        "maxFps": 15
       }
     },
     {
-      "i": "rtabmap-loop-status", "type": "loop-status", "title": "回环状态",
-      "x": 8, "y": 16, "w": 4, "h": 8,
-      "props": {"topic": "/miti/loop_status"}
+      "i": "rtabmap-depth",
+      "type": "camera-viewer",
+      "title": "辅助深度 · 不参与四路融合",
+      "rtabmapAlignedDepthVersion": 1,
+      "rtabmapInfraredLayoutVersion": 1,
+      "x": 8,
+      "y": 4,
+      "w": 4,
+      "h": 4,
+      "props": {
+        "topic": "/miti/aligned_depth/image_raw",
+        "maxFps": 10,
+        "colorMode": "colormap",
+        "valueMin": 300,
+        "valueMax": 4000
+      }
+    },
+    {
+      "i": "rtabmap-infrared",
+      "type": "camera-viewer",
+      "title": "RealSense · 右近红外",
+      "rtabmapInfraredSourceVersion": 2,
+      "x": 8,
+      "y": 8,
+      "w": 4,
+      "h": 4,
+      "props": {
+        "topic": "/camera/infra2/image_rect_raw",
+        "maxFps": 10,
+        "colorMode": "gradient",
+        "gradient": [
+          "#000000",
+          "#ffffff"
+        ],
+        "valueMin": 0,
+        "valueMax": 255
+      }
+    },
+    {
+      "i": "rtabmap-fourmodal",
+      "type": "fourmodal-features",
+      "title": "四模态 · 输入 → 特征 → 融合",
+      "x": 0,
+      "y": 16,
+      "w": 8,
+      "h": 10,
+      "props": {
+        "topic": "/miti/fourmodal_features"
+      }
+    },
+    {
+      "i": "rtabmap-audio-spectrum",
+      "type": "camera-viewer",
+      "title": "声学 · log-Mel 声谱",
+      "x": 8,
+      "y": 16,
+      "w": 4,
+      "h": 10,
+      "props": {
+        "topic": "/miti/audio_spectrum/image_raw",
+        "maxFps": 2
+      }
+    },
+    {
+      "i": "rtabmap-log",
+      "type": "log",
+      "title": "回环检测日志",
+      "x": 0,
+      "y": 26,
+      "w": 8,
+      "h": 8,
+      "props": {
+        "topic": "/rosout",
+        "minLevel": "INFO",
+        "searchTerms": [
+          "loop_closure_diagnostics"
+        ],
+        "fontSize": 14,
+        "showLevel": true,
+        "showTime": true,
+        "showName": true
+      }
+    },
+    {
+      "i": "rtabmap-loop-status",
+      "type": "loop-status",
+      "title": "回环状态",
+      "x": 8,
+      "y": 26,
+      "w": 4,
+      "h": 8,
+      "props": {
+        "topic": "/miti/loop_status"
+      }
     }
   ],
   "mosaic": {
-    "direction": "column", "splitPercentage": 60,
+    "direction": "column",
+    "splitPercentage": 60,
     "first": {
-      "direction": "row", "first": {"direction": "column", "splitPercentage": 50,
-                "first": {"direction": "row", "first": "rtabmap-scene", "second": "rtabmap-grid-scene", "splitPercentage": 50},
-                "second": {"direction": "row", "first": "rtabmap-topology-scene", "second": "rtabmap-features-scene", "splitPercentage": 50}}, "splitPercentage": 68,
-      "second": {"direction": "column", "first": "rtabmap-color", "splitPercentage": 25,
-                 "second": {"direction": "column", "first": "rtabmap-depth", "splitPercentage": 33.33,
-                            "second": {"direction": "column", "first": "rtabmap-infrared", "second": "rtabmap-arc-camera", "splitPercentage": 50}}}
+      "direction": "row",
+      "first": {
+        "direction": "column",
+        "splitPercentage": 50,
+        "first": {
+          "direction": "row",
+          "first": "rtabmap-scene",
+          "second": "rtabmap-grid-scene",
+          "splitPercentage": 50
+        },
+        "second": {
+          "direction": "row",
+          "first": "rtabmap-topology-scene",
+          "second": "rtabmap-features-scene",
+          "splitPercentage": 50
+        }
+      },
+      "splitPercentage": 68,
+      "second": {
+        "direction": "column",
+        "first": "rtabmap-color",
+        "splitPercentage": 25,
+        "second": {
+          "direction": "column",
+          "first": "rtabmap-depth",
+          "splitPercentage": 33.33,
+          "second": "rtabmap-infrared"
+        }
+      }
     },
-    "second": {"direction": "row", "first": "rtabmap-log", "second": "rtabmap-loop-status", "splitPercentage": 65}
+    "second": {
+      "direction": "column",
+      "splitPercentage": 65,
+      "first": {
+        "direction": "row",
+        "first": "rtabmap-fourmodal",
+        "second": "rtabmap-audio-spectrum",
+        "splitPercentage": 70
+      },
+      "second": {
+        "direction": "row",
+        "first": "rtabmap-log",
+        "second": "rtabmap-loop-status",
+        "splitPercentage": 65
+      }
+    }
   }
 }

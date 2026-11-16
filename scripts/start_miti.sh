@@ -46,6 +46,14 @@ exec 9>"$MITI_PROJECT/logs/miti/domain-$ROS_DOMAIN_ID.lock"
 flock -n 9 || { printf '本 ROS 域已有项目展示服务。\n' >&2; exit 1; }
 cp "$MITI_PROJECT/config/miti_live.html" "$MITI_APP/public/rtabmap.html"
 cp "$MITI_PROJECT/config/miti_live_layout.json" "$MITI_APP/public/rtabmap-layout.json"
+cp "$MITI_PROJECT/config/miti_fusion_layout.json" "$MITI_APP/public/rtabmap-fusion-layout.json"
+if [[ -x "$MITI_PROJECT/.venv-fourmodal/bin/python3" ]]; then
+  MITI_FOURMODAL_ARGS=()
+  [[ -z ${MITI_FOURMODAL_RESULT:-} ]] || MITI_FOURMODAL_ARGS+=(--result "$MITI_FOURMODAL_RESULT")
+  PYTHONNOUSERSITE=1 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 \
+    "$MITI_PROJECT/.venv-fourmodal/bin/python3" "$MITI_PROJECT/scripts/export_fourmodal_miti.py" \
+    "${MITI_FOURMODAL_ARGS[@]}" || printf '四模态离线展示导出失败；实时 MITI 仍可使用。\n' >&2
+fi
 printf 'ROS_DOMAIN_ID=%s，DDS=%s，网卡=%s\n' "$ROS_DOMAIN_ID" "$RMW_IMPLEMENTATION" "${MITI_INTERFACE:-自动/现有 DDS 配置}"
 printf '在下方 MITI 地址后加 /rtabmap.html，进入项目展示布局。\n'
 # The adapter and bridge must stay in the same domain. Change ROS settings in the shell,

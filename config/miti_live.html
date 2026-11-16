@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>RTAB-Map · 实时建图展示</title>
+<title>MITI · 四模态融合与传感器展示</title>
 <style>
   *{box-sizing:border-box}body{margin:0;background:#101821;color:#eaf1f7;font:16px/1.7 system-ui,sans-serif;min-height:100vh;display:grid;place-items:center;padding:28px}
   main{max-width:820px;width:100%}.eyebrow{letter-spacing:.16em;color:#55d7c3;font-size:12px}h1{font-size:clamp(30px,5vw,48px);line-height:1.2;margin:18px 0}p{color:#aabac8}
@@ -12,37 +12,35 @@
 </style>
 <main>
   <div class="eyebrow">RTAB-MAP × MITI</div>
-  <h1>实时建图，一屏呈现。</h1>
-  <p>同时查看三维点云、二维栅格、导航连通图、稀疏视觉特征和相机画面，下方查看回环日志与检测状态。</p>
+  <h1>从传感器，到融合特征。</h1>
+  <p>可见光、近红外、LiDAR 与声学的实时融合流程：输入 → 冻结编码器 → 每路特征 → 拼接与加权输出。深度作为辅助预览；查看特征无需启动建图。</p>
   <div class="panels">
-    <div class="card"><b>三维地图</b><small>墙面 · 位姿 · 标签 · 隐藏顶部</small></div>
-    <div class="card"><b>二维栅格</b><small>地面识别 · 高度筛选 · 俯视地图</small></div>
-    <div class="card"><b>导航连通图</b><small>空闲区域 · 通道 · 候选门口</small></div>
-    <div class="card"><b>稀疏特征地图</b><small>三维视觉特征 · 优化后的位置</small></div>
-    <div class="card"><b>彩色画面</b><small>RealSense 实时图像</small></div>
-    <div class="card"><b>对齐深度</b><small>空间距离与有效范围</small></div>
-    <div class="card"><b>近红外画面</b><small>右路红外 · 实时灰度图</small></div>
-    <div class="card"><b>ARC 相机</b><small>独立设备 · 实时彩色图像</small></div>
-    <div class="card"><b>回环监控</b><small>实时状态面板 · 详细日志</small></div>
+    <div class="card"><b>① 四路输入</b><small>RGB 图像 · 近红外图像 · XYZ 点云 · PCM 音频</small></div>
+    <div class="card"><b>② 预处理与编码</b><small>图像裁剪 · 点云采样 · log-Mel 声谱 → 冻结模型</small></div>
+    <div class="card"><b>③ 每路特征 h</b><small>4 × 1024 维 · 查看编码器实际输出与范数</small></div>
+    <div class="card"><b>④ 归一化特征 z</b><small>z = h / ‖h‖₂ · 各路向量缩放到单位长度</small></div>
+    <div class="card"><b>⑤ 拼接输出 J</b><small>4096 维 · 按 RGB / NIR / LiDAR / Audio 保留四段</small></div>
+    <div class="card"><b>⑥ 加权输出 f</b><small>1024 维 · 加权求和后归一化 · 逐维查看贡献</small></div>
   </div>
-  <button id="refresh">更新显示并保留当前布局</button>
-  <p><button id="apply">应用完整项目布局</button><a href="/">直接进入 →</a></p>
-  <p class="note">更新显示会把拓扑窗口接入导航连通图，并保留关键帧位姿图切换、地图视角和其他设置。首次使用请选择“应用完整项目布局”。操作前会在当前浏览器中备份已有配置。</p>
+  <button id="fusion">打开融合专用布局</button>
+  <p><button id="refresh">更新显示并保留当前布局</button></p>
+  <details><summary>其他展示布局</summary><p><button id="apply">应用完整项目布局</button><a href="/">直接进入 →</a></p></details>
+  <p class="note">融合专用布局放大流程面板，下方展示四路输入和辅助深度。点击特征阶段可检查数值，“冻结当前帧”便于逐维核对。更新显示保留已有视角和设置，并移除 ARC 窗口。切换布局前会在当前浏览器中备份已有配置。</p>
   <div class="status" id="status" role="status"></div>
 </main>
 <script>
 let entering = false;
-async function enter(applyLayout) {
+async function enter(applyLayout, fusion = false) {
   if (entering) return;
   entering = true;
-  const buttons = ['apply', 'refresh'].map(id => document.getElementById(id));
+  const buttons = ['apply', 'refresh', 'fusion'].map(id => document.getElementById(id));
   const status = document.getElementById('status');
   buttons.forEach(button => { button.disabled = true; });
-  status.textContent = '正在更新地图控件…';
+  status.textContent = '正在加载融合与传感器控件…';
   try {
     let layout;
     if (applyLayout) {
-      const response = await fetch('/rtabmap-layout.json', {cache: 'no-store'});
+      const response = await fetch(fusion ? '/rtabmap-fusion-layout.json' : '/rtabmap-layout.json', {cache: 'no-store'});
       if (!response.ok) throw new Error('无法读取项目布局');
       layout = await response.json();
     }
@@ -76,7 +74,10 @@ async function enter(applyLayout) {
   }
 }
 document.getElementById('apply').addEventListener('click', () => enter(true));
+document.getElementById('fusion').addEventListener('click', () => enter(true, true));
 document.getElementById('refresh').addEventListener('click', () => enter(false));
-if (new URLSearchParams(location.search).get('refresh') === '1') enter(false);
+const query = new URLSearchParams(location.search);
+if (query.get('view') === 'fusion') enter(true, true);
+else if (query.get('refresh') === '1') enter(false);
 </script>
 </html>

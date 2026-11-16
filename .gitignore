@@ -8,6 +8,9 @@
 /.venv-semantic/
 /.venv-yoloe/
 /.venv-emsanet/
+/.venv-fourmodal/
+/.tools/unibind/
+/.cache/fourmodal/
 /.cache/yoloe-pip/
 /.cache/emsanet-pip/
 /.tools/emsanet/

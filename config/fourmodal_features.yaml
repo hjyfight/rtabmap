@@ -1,0 +1,24 @@
+fourmodal_features:
+  ros__parameters:
+    device: cpu
+    cpu_threads: 2
+    point_count: 2048
+    infrared_kind: nir
+    rgb_topic: /camera/color/image_raw
+    infrared_topic: /camera/infra2/image_rect_raw
+    lidar_topic: /livox/lidar
+    audio_topic: /multimodal/audio
+    output_topic: /multimodal/features
+    status_topic: /multimodal/status
+    visualization_topic: /miti/fourmodal_features
+    visualization_status_topic: /miti/fourmodal_status
+    spectrum_topic: /miti/audio_spectrum/image_raw
+    calibration_version: unverified
+    clock_offsets_s: [0.0, 0.0, 0.0, 0.0]
+    sync_tolerance_s: 0.05
+    min_anchor_period_s: 1.0
+    max_input_age_s: 3.0
+    allow_partial: false
+    buffer_size: 16
+    weights: [1.0, 1.0, 1.0, 1.0]
+    save_directory: ''

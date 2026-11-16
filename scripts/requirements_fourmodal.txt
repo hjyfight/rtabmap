@@ -1,0 +1,11 @@
+timm==0.4.12
+einops==0.8.0
+iopath==0.1.10
+ftfy==6.3.1
+wcwidth==0.2.13
+regex==2024.11.6
+termcolor==2.5.0
+portalocker==2.10.1
+soundfile==0.12.1
+cffi==1.17.1
+pycparser==2.22
