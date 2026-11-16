@@ -13,6 +13,9 @@ class YoloDetector:
             raise FileNotFoundError(f'Segmentation weights not found: {path}. Run scripts/{installer}.')
         import torch
         torch.set_num_threads(threads)
+        if str(device).startswith('cuda'):
+            torch.backends.cuda.matmul.allow_tf32 = False
+            torch.backends.cudnn.allow_tf32 = False
         if backend == 'yoloe_pf':
             from ultralytics import YOLOE
             self.model = YOLOE(str(path))
@@ -38,10 +41,11 @@ class YoloDetector:
         masks = result.masks.data.cpu().numpy()
         classes = result.boxes.cls.cpu().numpy().astype(int)
         scores = result.boxes.conf.cpu().numpy()
+        boxes = result.boxes.xyxy.cpu().numpy()
         labels = [str(result.names[int(cls)]) for cls in classes]
         if self.backend == 'yoloe_pf':
             from .labels import canonical_label
             labels = [canonical_label(label) for label in labels]
-        return [dict(label=label, confidence=float(score),
+        return [dict(label=label, class_id=int(class_id), bbox_xyxy=box.astype(float).tolist(), confidence=float(score),
                      mask=np.asarray(mask > 0.5, dtype=np.uint8))
-                for mask, label, score in zip(masks, labels, scores)]
+                for mask, label, score, class_id, box in zip(masks, labels, scores, classes, boxes)]

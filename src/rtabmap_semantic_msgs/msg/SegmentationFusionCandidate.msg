@@ -1,0 +1,9 @@
+std_msgs/Header header
+string session_id
+uint64 sequence
+string model_sha256
+string vocabulary_version
+string provider_id
+string calibration_version
+string score_calibration_version
+rtabmap_semantic_msgs/SegmentationRefinement[] refinements

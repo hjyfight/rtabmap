@@ -9,9 +9,11 @@
 /.venv-yoloe/
 /.venv-emsanet/
 /.venv-fourmodal/
+/.venv-segmentation-gpu/
 /.tools/unibind/
 /.cache/fourmodal/
 /.cache/yoloe-pip/
+/.cache/segmentation-gpu-pip/
 /.cache/emsanet-pip/
 /.tools/emsanet/
 /.tools/miti/

@@ -1,0 +1,7 @@
+yolo_segmentation:
+  ros__parameters:
+    model_path: models/yoloe-11s-seg-pf.pt
+    detector_backend: yoloe_pf
+    confidence: 0.45
+    max_input_age_s: 8.0
+    max_inference_hz: 1.0

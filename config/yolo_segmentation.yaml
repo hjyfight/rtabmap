@@ -1,0 +1,21 @@
+yolo_segmentation:
+  ros__parameters:
+    model_path: models/yolov8n-seg.pt
+    detector_backend: yolov8
+    device: cpu
+    cpu_threads: 2
+    image_size: 640
+    confidence: 0.5
+    rgb_topic: /camera/color/image_raw
+    max_inference_hz: 2.0
+    max_input_age_s: 3.0
+    rgb_clock_offset_s: 0.0
+    clock_offset_uncertainty_s: 0.0
+    clock_offset_method: none
+    fusion_mode: shadow
+    fusion_evaluation_report: ''
+    fusion_timeout_s: 3.0
+    fusion_sync_tolerance_s: 0.05
+    fusion_min_score: 0.8
+    approved_fusion_providers: ['']
+    cache_frames: 4

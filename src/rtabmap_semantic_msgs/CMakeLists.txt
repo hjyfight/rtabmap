@@ -7,6 +7,10 @@ find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Keyframe.msg" "msg/Observation.msg" "msg/SemanticObject.msg" "msg/SemanticMap.msg"
+  "msg/SegmentationInstance.msg" "msg/SegmentationFrame.msg"
+  "msg/SegmentationFusionRequest.msg" "msg/SegmentationRefinement.msg"
+  "msg/SegmentationFusionCandidate.msg"
+  "msg/SegmentationImageRequest.msg"
   DEPENDENCIES std_msgs sensor_msgs geometry_msgs)
 ament_export_dependencies(rosidl_default_runtime)
 ament_package()

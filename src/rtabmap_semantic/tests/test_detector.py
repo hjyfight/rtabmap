@@ -32,7 +32,7 @@ class DetectorTests(unittest.TestCase):
         calls = []
         mask = np.array([[1., 0., 0.], [1., 1., 0.]], dtype=np.float32)
         result = SimpleNamespace(masks=SimpleNamespace(data=ArrayResult([mask])),
-            boxes=SimpleNamespace(cls=ArrayResult([123]), conf=ArrayResult([0.8])),
+            boxes=SimpleNamespace(cls=ArrayResult([123]), conf=ArrayResult([0.8]), xyxy=ArrayResult([[0, 0, 2, 2]])),
             names={123: 'fire extinguisher'})
         model = SimpleNamespace(task='segment', model=SimpleNamespace(model=[SimpleNamespace(lrpc=object())]),
             predict=lambda image, **kwargs: calls.append(kwargs) or [result])

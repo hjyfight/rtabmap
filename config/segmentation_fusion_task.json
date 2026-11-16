@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "name": "indoor_robot_18",
+  "classes": [
+    {"name": "person", "aliases": ["man", "woman", "boy", "girl", "rescuer"]},
+    {"name": "robot", "aliases": ["robot dog"]},
+    {"name": "floor", "aliases": ["ground", "carpet"]},
+    {"name": "chair", "aliases": ["office chair", "computer chair", "swivel chair"]},
+    {"name": "table", "aliases": ["desk", "office desk", "computer desk"]},
+    {"name": "television", "aliases": ["tv", "monitor", "computer monitor", "computer screen"]},
+    {"name": "bottle", "aliases": ["water bottle"]},
+    {"name": "cup", "aliases": ["paper cup", "mug"]},
+    {"name": "helmet", "aliases": ["safety helmet"]},
+    {"name": "bag", "aliases": ["backpack", "handbag"]},
+    {"name": "door", "aliases": []},
+    {"name": "wall", "aliases": []},
+    {"name": "cabinet", "aliases": ["file cabinet", "storage cabinet"]},
+    {"name": "computer", "aliases": ["laptop", "laptop computer"]},
+    {"name": "keyboard", "aliases": ["computer keyboard"]},
+    {"name": "mouse", "aliases": ["computer mouse"]},
+    {"name": "cable", "aliases": ["wire", "power cord", "electric wire"]},
+    {"name": "box", "aliases": ["cardboard box", "storage box"]}
+  ],
+  "templates": ["a photo of a {}.", "a close-up photo of a {}."],
+  "unknown_pixel": 65535,
+  "ignore_pixel": 65534
+}

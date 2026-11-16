@@ -1,0 +1,22 @@
+segmentation_fusion:
+  ros__parameters:
+    task_path: config/segmentation_fusion_task.json
+    device: cpu
+    cpu_threads: 2
+    rgb_info_topic: /camera/color/camera_info
+    nir_topic: /camera/infra2/image_rect_raw
+    nir_info_topic: /camera/infra2/camera_info
+    depth_topic: /camera/depth_registered/image_rect
+    sync_tolerance_s: 0.05
+    min_period_s: 5.0
+    max_objects: 4
+    min_coverage: 0.35
+    buffer_size: 64
+    capture_max_frames: 60
+    capture_period_s: 5.0
+nir_segmentation:
+  ros__parameters:
+    model_path: models/yoloe-11s-seg-pf.pt
+    confidence: 0.45
+    image_size: 640
+    cpu_threads: 2

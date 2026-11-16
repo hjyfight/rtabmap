@@ -51,7 +51,8 @@ def load_upstream(source):
 
 
 class FrozenEncoder:
-    def __init__(self, source, checkpoint, device='cpu', infrared_kind='nir', threads=2, point_count=2048):
+    def __init__(self, source, checkpoint, device='cpu', infrared_kind='nir', threads=2, point_count=2048,
+                 retain_text=False):
         import torch
         from torch import nn
         source, checkpoint = Path(source).resolve(), Path(checkpoint).resolve()
@@ -77,6 +78,9 @@ class FrozenEncoder:
         self.device = torch.device(device)
         if self.device.type == 'cuda' and not torch.cuda.is_available():
             raise RuntimeError('CUDA is unavailable; use --device cpu')
+        if self.device.type == 'cuda':
+            torch.backends.cuda.matmul.allow_tf32 = False
+            torch.backends.cudnn.allow_tf32 = False
         imagebind_huge, point_encoder_class = load_upstream(source)
 
         class Backbone(nn.Module):
@@ -97,6 +101,8 @@ class FrozenEncoder:
         del state
         # Drop unused text/depth/IMU weights after validating the entire checkpoint.
         keep = {'vision', 'audio'} | ({'thermal'} if infrared_kind == 'thermal' else set())
+        if retain_text:
+            keep.add('text')
         for group in ('modality_preprocessors', 'modality_trunks', 'modality_heads', 'modality_postprocessors'):
             modules = getattr(model.bind, group)
             for name in list(modules.keys()):
@@ -106,6 +112,8 @@ class FrozenEncoder:
         self.model = model.eval().to(self.device)
         self.infrared_kind = infrared_kind
         self.point_count = point_count
+        self.source = source
+        self.retain_text = retain_text
         self.provenance = dict(backend='unibind_zero_shot_pointbind_i2pmae',
                                source_revision=REVISION, checkpoint_sha256=manifest['sha256'],
                                parameters_trainable=sum(p.numel() for p in model.parameters() if p.requires_grad),
@@ -115,6 +123,36 @@ class FrozenEncoder:
                                nir_domain_validated=False,
                                lidar_scene_accuracy_validated=False,
                                inference_device=str(self.device))
+
+    def encode_text(self, texts, batch_size=8):
+        """Frozen pretrained text branch for explicitly configured task prototypes."""
+        import torch
+        from imagebind.multimodal_preprocessors import SimpleTokenizer
+        if not self.retain_text:
+            raise ValueError('Construct encoder with retain_text=True for task prototypes')
+        if not texts or any(not isinstance(t, str) or not t.strip() for t in texts):
+            raise ValueError('Text prototypes require nonempty descriptions')
+        tokenizer = SimpleTokenizer(str(self.source / 'bpe/bpe_simple_vocab_16e6.txt.gz'))
+        outputs = []
+        with torch.inference_mode():
+            for start in range(0, len(texts), batch_size):
+                tokens = torch.stack([tokenizer(t) for t in texts[start:start+batch_size]]).to(self.device)
+                outputs.append(self.model.bind({'text': tokens})['text'].float().cpu().numpy())
+        return np.concatenate(outputs)
+
+    def encode_image_crops(self, images, infrared_flags, batch_size=4):
+        import torch
+        from .preprocessing import image_tensor
+        if len(images) != len(infrared_flags) or not images:
+            raise ValueError('Image crops and modality flags must be nonempty and paired')
+        outputs = []
+        with torch.inference_mode():
+            for start in range(0, len(images), batch_size):
+                tensors = [image_tensor(img, infrared=flag) for img, flag in
+                           zip(images[start:start+batch_size], infrared_flags[start:start+batch_size])]
+                outputs.append(self.model.bind({'vision': torch.stack(tensors).to(self.device)})[
+                    'vision'].float().cpu().numpy())
+        return np.concatenate(outputs)
 
     def encode(self, samples, anchor):
         import torch

@@ -10,7 +10,8 @@
       "h": 18,
       "props": {
         "topic": "/miti/fourmodal_features"
-      }
+      },
+      "rtabmapSegmentationLayoutVersion": 1
     },
     {
       "i": "rtabmap-color",
@@ -74,7 +75,7 @@
           "labelScale": 6,
           "heightClip": {
             "enabled": false,
-            "height": 2.0
+            "height": 2
           }
         },
         "view": {
@@ -137,11 +138,28 @@
         "valueMin": 300,
         "valueMax": 4000
       }
+    },
+    {
+      "i": "rtabmap-segmentation",
+      "type": "yolo-segmentation",
+      "title": "目标分割 · YOLO",
+      "x": 6,
+      "y": 24,
+      "w": 6,
+      "h": 10,
+      "props": {
+        "topic": "/miti/segmentation/view"
+      }
     }
   ],
   "mosaic": {
     "direction": "column",
-    "first": "rtabmap-fourmodal",
+    "first": {
+      "direction": "row",
+      "first": "rtabmap-fourmodal",
+      "second": "rtabmap-segmentation",
+      "splitPercentage": 50
+    },
     "second": {
       "direction": "row",
       "first": "rtabmap-color",

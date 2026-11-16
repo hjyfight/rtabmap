@@ -1,0 +1,8 @@
+# Full float32 model inference; retain the same classes, masks and fusion thresholds.
+segmentation_fusion:
+  ros__parameters:
+    device: cuda:0
+    min_period_s: 1.0
+nir_segmentation:
+  ros__parameters:
+    device: cuda:0

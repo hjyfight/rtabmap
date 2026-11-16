@@ -116,7 +116,8 @@ class FrontendInstallTests(unittest.TestCase):
         self.assertIn('const RtabmapFourmodalPanel = rtabmapFourmodalFactory(n).Component', renderer)
         self.assertIn('case"fourmodal-features":return(0,r.jsx)(RtabmapFourmodalPanel,', renderer)
         self.assertIn('type:"fourmodal-features",label:"四模态特征"', page)
-        self.assertIn('t(rtabmapHideAuxiliaryMaps(rtabmapMigrateFourmodalLayout(rtabmapMigrateGraphFeatureLayout(', page)
+        self.assertIn('t(rtabmapMigrateSegmentationLayout(rtabmapHideAuxiliaryMaps(rtabmapMigrateFourmodalLayout(rtabmapMigrateGraphFeatureLayout(', page)
+        self.assertIn('case"yolo-segmentation":return(0,r.jsx)(RtabmapSegmentationPanel,', renderer)
 
 
 if __name__ == '__main__':
