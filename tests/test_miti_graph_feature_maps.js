@@ -17,8 +17,8 @@ if (renderer) {
   assert.ok(begin >= 0 && end > begin);
   source = renderer.slice(begin, end);
 }
-const {migrate, widget, factory, kindOf, versionChunk, setMode} = vm.runInNewContext(source +
-  '; ({migrate:rtabmapMigrateGraphFeatureLayout,widget:rtabmapGraphFeatureWidget,factory:rtabmapGraphFeatureMapsFactory,kindOf:rtabmapGraphMapKind,versionChunk:rtabmapVersionPanelChunk,setMode:rtabmapSetTopologyMode})',
+const {migrate, widget, factory, kindOf, versionChunk, setMode, hideAuxiliaryMaps} = vm.runInNewContext(source +
+  '; ({migrate:rtabmapMigrateGraphFeatureLayout,widget:rtabmapGraphFeatureWidget,factory:rtabmapGraphFeatureMapsFactory,kindOf:rtabmapGraphMapKind,versionChunk:rtabmapVersionPanelChunk,setMode:rtabmapSetTopologyMode,hideAuxiliaryMaps:rtabmapHideAuxiliaryMaps})',
   {setInterval, clearInterval});
 const ui = factory(React);
 const leaves = tree => typeof tree === 'string' ? [tree] : tree ? [...leaves(tree.first), ...leaves(tree.second)] : [];
@@ -28,6 +28,47 @@ const camera = {i:'camera',type:'camera-viewer',props:{topic:'/camera/color/imag
 const snapshot = {schema:1,state:'ready',frame_id:'map',epoch:1,updated_at:1794220300,
   topology:{nodes:12,links:14,bounds:{center:[1,2,3],span:[10,8,2]}},
   features:{points:1500,feature_nodes:10,bounds:{center:[1,2,3],span:[10,8,2]}}};
+
+test('hiding auxiliary maps preserves their settings and other panes, and allows later restoration', () => {
+  const topology = widget('topology', 'my-navigation'), features = widget('features');
+  topology.props.view.distance = 31;
+  const before = {widgets: [primary, grid, camera, topology, features], mosaic: {
+    direction: 'row', first: {direction: 'column', first: primary.i, second: {
+      direction: 'row', first: topology.i, second: features.i}}, second: {
+      direction: 'column', first: grid.i, second: camera.i}, splitPercentage: 63}};
+  const original = JSON.stringify(before), after = hideAuxiliaryMaps(before);
+  assert.equal(JSON.stringify(before), original);
+  assert.deepEqual(leaves(after.mosaic), [primary.i, grid.i, camera.i]);
+  assert.equal(after.mosaic.splitPercentage, 63);
+  assert.equal(after.widgets[0].props, primary.props);
+  assert.equal(after.widgets[1], grid); assert.equal(after.widgets[2], camera);
+  assert.deepEqual(Array.from(after.widgets[0].rtabmapHiddenAuxiliaryMaps), [topology, features]);
+  assert.equal(hideAuxiliaryMaps(after), after);
+  const restored = {...after, widgets: [...after.widgets, topology], mosaic: {
+    direction: 'row', first: after.mosaic, second: topology.i}};
+  assert.equal(hideAuxiliaryMaps(restored), restored);
+});
+
+test('auxiliary hiding keeps main-scene overlays, handles dangling leaves and an empty result', () => {
+  const main = {...primary, props: {scene: {rtabmapGraphMap: 'features'}, topics: {'/miti/sparse_features': {visible:true}}}};
+  const layout = {widgets: [main, camera], mosaic: {direction:'row', first:main.i, second:camera.i}};
+  assert.equal(hideAuxiliaryMaps(layout), layout);
+  const dangling = {...layout, mosaic: {direction:'row', first:main.i, second:'rtabmap-topology-scene'}};
+  assert.equal(hideAuxiliaryMaps(dangling).mosaic, main.i);
+  const only = widget('features');
+  const empty = hideAuxiliaryMaps({widgets:[only],mosaic:only.i});
+  assert.equal(empty.mosaic, null); assert.equal(empty.widgets.length, 0);
+  assert.equal(empty.rtabmapHiddenAuxiliaryMaps[0], only);
+  assert.equal(hideAuxiliaryMaps(null), null);
+});
+
+test('default layout hides the two auxiliary maps and preserves their recoverable configuration', () => {
+  const layout = JSON.parse(fs.readFileSync(path.join(root, 'config/miti_live_layout.json')));
+  assert.ok(layout.widgets.every(w => !['topology','features'].includes(w.props?.scene?.rtabmapGraphMap)));
+  assert.equal(layout.widgets.find(w => w.i === primary.i).rtabmapHiddenAuxiliaryMaps.length, 2);
+  assert.deepEqual(new Set(leaves(layout.mosaic)), new Set(layout.widgets.map(w => w.i)));
+  assert.equal(hideAuxiliaryMaps(layout), layout);
+});
 
 test('navigation labels remain small in orthographic views regardless of marker or scene scale', () => {
   const calls = [];
@@ -225,10 +266,11 @@ test('repairs saved map scenes with missing tags even after layout migration', (
     '/miti/sparse_features': {visible: true}}}), null);
 });
 
-test('project layout includes all four maps with separate data topics', () => {
+test('hidden auxiliary map configurations retain separate data topics', () => {
   const layout=JSON.parse(fs.readFileSync(path.join(root,'config/miti_live_layout.json')));
+  const archived=layout.widgets.find(w=>w.i==='rtabmap-scene').rtabmapHiddenAuxiliaryMaps;
   for(const kind of ['topology','features']) {
-    const panel=layout.widgets.find(w=>w.props?.scene?.rtabmapGraphMap===kind);
+    const panel=archived.find(w=>w.props?.scene?.rtabmapGraphMap===kind);
     assert.deepEqual(panel.props,JSON.parse(JSON.stringify(widget(kind).props)));
     assert.equal(panel.props.topics['/cloud_map'],undefined);
     assert.equal(panel.props.topics['/miti/walls'],undefined);

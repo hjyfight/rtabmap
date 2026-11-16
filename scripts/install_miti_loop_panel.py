@@ -130,8 +130,8 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
         'defaultSize:{w:8,h:10},minSize:{minW:3,minH:5}},{type:"topics",')
     source = replace_once(source,
         't({mosaic:r.mosaic,widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})})',
-        't(rtabmapMigrateFourmodalLayout(rtabmapMigrateGraphFeatureLayout(rtabmapMigrateArcCameraLayout(rtabmapMigrateInfraredLayout(rtabmapMigrateGridLayout({mosaic:r.mosaic,widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})'
-        '.map(rtabmapMigrateDepthWidget).map(rtabmapMigrateInfraredTopicWidget).map(rtabmapMigrateWallWidget).map(rtabmapMigrateDynamicCloudWidget)}))))))')
+        't(rtabmapHideAuxiliaryMaps(rtabmapMigrateFourmodalLayout(rtabmapMigrateGraphFeatureLayout(rtabmapMigrateArcCameraLayout(rtabmapMigrateInfraredLayout(rtabmapMigrateGridLayout({...r,mosaic:r.mosaic,widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})'
+        '.map(rtabmapMigrateDepthWidget).map(rtabmapMigrateInfraredTopicWidget).map(rtabmapMigrateWallWidget).map(rtabmapMigrateDynamicCloudWidget)})))))))')
     # The dashboard is client-rendered. Use text instead of the fixed-width logo,
     # with ellipsis on narrow screens and the full system name in its tooltip.
     title_js = json.dumps(title, ensure_ascii=True)

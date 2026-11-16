@@ -131,6 +131,36 @@ function rtabmapMigrateGraphFeatureLayout(layout) {
   return {...layout, widgets, mosaic};
 }
 
+function rtabmapHideAuxiliaryMaps(layout) {
+  if (!layout || !Array.isArray(layout.widgets)) return layout;
+  // Hide dedicated panels, not sparse/navigation overlays in the main scene.
+  const hidden = layout.widgets.filter(widget => {
+    if (widget.i === 'rtabmap-scene' || widget.props?.scene?.rtabmapGrid) return false;
+    return ['rtabmap-topology-scene', 'rtabmap-features-scene'].includes(widget.i) ||
+      (widget.type === 'urdf-viewer' && ['topology', 'features'].includes(widget.props?.scene?.rtabmapGraphMap));
+  });
+  const ids = new Set([...hidden.map(widget => widget.i), 'rtabmap-topology-scene', 'rtabmap-features-scene']);
+  const kept = layout.widgets.filter(widget => !hidden.includes(widget));
+  const anchor = kept.find(widget => widget.i === 'rtabmap-scene') ||
+    kept.find(widget => widget.type === 'fourmodal-features') || kept[0];
+  // A deliberate restoration after this one-time change remains visible.
+  if (anchor?.rtabmapAuxiliaryMapVisibilityVersion === 1) return layout;
+  const prune = tree => {
+    if (typeof tree === 'string') return ids.has(tree) ? null : tree;
+    if (!tree) return tree;
+    const first = prune(tree.first), second = prune(tree.second);
+    if (!first) return second;
+    if (!second) return first;
+    return first === tree.first && second === tree.second ? tree : {...tree, first, second};
+  };
+  const mosaic = prune(layout.mosaic);
+  if (!hidden.length && mosaic === layout.mosaic) return layout;
+  const archived = [...(anchor?.rtabmapHiddenAuxiliaryMaps || []), ...hidden];
+  const widgets = kept.map(widget => widget === anchor ? {...widget,
+    rtabmapAuxiliaryMapVisibilityVersion: 1, rtabmapHiddenAuxiliaryMaps: archived} : widget);
+  return {...layout, widgets, mosaic, ...(!anchor ? {rtabmapHiddenAuxiliaryMaps: archived} : {})};
+}
+
 function rtabmapGraphFeatureMapsFactory(React, Html) {
   'use strict';
   const h = React.createElement;

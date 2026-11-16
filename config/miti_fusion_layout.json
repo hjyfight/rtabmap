@@ -3,7 +3,7 @@
     {
       "i": "rtabmap-fourmodal",
       "type": "fourmodal-features",
-      "title": "四模态 · 输入 → 特征 → 融合",
+      "title": "四模态 · 特征融合",
       "x": 0,
       "y": 0,
       "w": 12,

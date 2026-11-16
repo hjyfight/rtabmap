@@ -25,6 +25,17 @@ function snapshot(overrides = {}) {
     model: 'frozen-test', model_sha256: 'test', calibration_version: 'unverified', ...overrides};
 }
 const parse = data => panel.parseSnapshot({data: JSON.stringify(data)});
+function expandElements(element) {
+  if (!element || typeof element !== 'object') return element;
+  if (Array.isArray(element)) return element.map(expandElements);
+  if (typeof element.type === 'function') return expandElements(element.type(element.props));
+  return {...element, props: {...element.props, children: React.Children.toArray(element.props.children).map(expandElements)}};
+}
+function findElements(element, predicate) {
+  if (!element || typeof element !== 'object') return [];
+  if (Array.isArray(element)) return element.flatMap(e => findElements(e, predicate));
+  return [...(predicate(element) ? [element] : []), ...findElements(element.props?.children, predicate)];
+}
 function flowSnapshot() {
   const v = snapshot(); v.flow_version = 1;
   for (let i = 0; i < 4; i++) {
@@ -68,6 +79,25 @@ test('each stage inspects the actual corresponding array and the full 4096-dimen
     '640','10000 点','2048','48000 Hz','/input/rgb','维度 1025 = 1.000000','四路贡献求和',
     '深度图是辅助预览','max="4095"']) assert.ok(html.includes(label),label);
 });
+test('compact panel collapses technical details and retains stage, source and freeze controls', () => {
+  const selected = [], actions = [];
+  const tree = expandElements(panel.View({view: {data: flowSnapshot(), mode:'live', title:'测试', detail:''},
+    onSelected: value => selected.push(value), onLive: () => actions.push('live'),
+    onDemo: () => actions.push('saved'), onHold: () => actions.push('held')}));
+  const folds = findElements(tree, e => e.type === 'details');
+  assert.equal(folds.length, 3); assert.ok(folds.every(e => !e.props.open));
+  const sources = findElements(tree, e => e.type === 'button' && e.props.className === 'rtab-four-input');
+  assert.equal(sources.length, 4);
+  sources[2].props.onClick();
+  findElements(tree, e => e.type === 'select')[0].props.onChange({target:{value:'raw2'}});
+  for (const label of ['实时输入','读取离线结果','冻结当前帧']) {
+    findElements(tree, e => e.type === 'button' && e.props['aria-label'] === label)[0].props.onClick();
+  }
+  assert.deepEqual(selected, ['norm2','raw2']); assert.deepEqual(actions, ['live','saved','held']);
+  const waiting = renderToStaticMarkup(React.createElement(panel.View, {
+    view:{mode:'waiting',title:'等待输入',detail:'等待连接'}}));
+  assert.match(waiting, /等待特征数据/); assert.doesNotMatch(waiting, /旧记录|<path/);
+});
 test('accepts complete vectors and rejects malformed, missing and nonfinite dimensions', () => {
   assert.equal(parse(snapshot()).modalities.length, 4);
   for (const change of [v => v.modalities[0].features.pop(), v => v.fused_features[0] = Infinity,
@@ -106,6 +136,17 @@ test('live status requires fresh features and fresh input heartbeat; stopped sou
   const working = copy(heartbeat); working.snapshot.state = 'inferencing';
   assert.equal(panel.deriveView(sample, working, 1000, true).mode, 'working');
   assert.equal(panel.deriveView(sample, heartbeat, 1000, false).mode, 'waiting');
+});
+test('before first features, heartbeat identifies the missing input instead of showing all sources as waiting', () => {
+  const heartbeat = {snapshot:{state:'waiting_inputs',max_input_age_s:3,
+    input_ages_s:{rgb:.1,infrared:.1,lidar:.1,audio:null}},receivedAt:0};
+  const view = panel.deriveView(null, heartbeat, 1000, true);
+  assert.equal(view.mode, 'waiting'); assert.equal(view.detail, '等待输入：音频');
+  const tree = expandElements(panel.View({view}));
+  const labels = findElements(tree, e => e.props?.className === 'rtab-four-card-state');
+  assert.deepEqual(labels.map(e => e.props.children.join('')), ['在线','在线','在线','未收到']);
+  const absent = panel.deriveView(null, null, 1000, true);
+  assert.equal(absent.detail, '未收到特征节点状态');
 });
 test('MITI subscription removes its precise listener and ignores later deliveries', () => {
   let listener, removed, samples = 0, errors = 0;

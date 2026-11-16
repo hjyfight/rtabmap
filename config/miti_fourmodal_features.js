@@ -1,6 +1,6 @@
 /* Native MITI feature panel and one-time layout addition. Uses MITI's React instance. */
 function rtabmapFourmodalWidget(id = 'rtabmap-fourmodal') {
-  return {i: id, type: 'fourmodal-features', title: '四模态 · 输入 → 特征 → 融合',
+  return {i: id, type: 'fourmodal-features', title: '四模态 · 特征融合',
     x: 0, y: 24, w: 8, h: 10, props: {topic: '/miti/fourmodal_features'}};
 }
 
@@ -11,6 +11,10 @@ function rtabmapAudioSpectrumWidget(id = 'rtabmap-audio-spectrum') {
 
 function rtabmapMigrateFourmodalLayout(layout) {
   if (!layout || !Array.isArray(layout.widgets)) return layout;
+  const renamed = layout.widgets.map(widget => widget.type === 'fourmodal-features' &&
+    ['四模态 · 统一特征', '四模态统一特征', '四模态 · 输入 → 特征 → 融合'].includes(widget.title)
+    ? {...widget, title: '四模态 · 特征融合'} : widget);
+  if (renamed.some((widget, i) => widget !== layout.widgets[i])) layout = {...layout, widgets: renamed};
   const leaves = tree => typeof tree === 'string' ? [tree] :
     tree ? [...leaves(tree.first), ...leaves(tree.second)] : [];
   const anchor = layout.widgets.find(w => w.i === 'rtabmap-scene' && w.type === 'urdf-viewer' &&
@@ -97,8 +101,11 @@ function rtabmapFourmodalFactory(React) {
     if (fresh && allInputs) return {data, mode: data.complete ? 'live' : 'working', title: data.complete ?
       '四模态特征已更新' : '部分模态特征已更新', detail: data.alignment === 'estimated_clock_offsets' ?
         '使用时钟偏移估计匹配；未验证硬件同步精度' : '按采集时间匹配；硬件同步与几何标定仍需实测', heartbeat};
+    const missing = heartbeat ? order.filter(name => !finite(heartbeat.input_ages_s[name]) ||
+      heartbeat.input_ages_s[name] > heartbeat.max_input_age_s).map(name =>
+        ({rgb: 'RGB', infrared: '近红外', lidar: 'LiDAR', audio: '音频'})[name]) : [];
     return {data, mode: data ? 'stale' : 'waiting', title: data ? '保留最近特征 · 等待输入' : '等待四模态输入',
-      detail: heartbeat ? '检查缺失、过期或采集时间不匹配的输入' : '启动四模态特征节点后自动更新', heartbeat};
+      detail: heartbeat ? missing.length ? '等待输入：' + missing.join('、') : '等待时间对齐与特征输出' : '未收到特征节点状态', heartbeat};
   }
   function subscribe(client, topic, parser, onData, onError, clock = () => performance.now()) {
     let disposed = false;
@@ -149,38 +156,63 @@ function rtabmapFourmodalFactory(React) {
       {values: data.fused_features, label: '融合输出 f · 1024 维', color: colors[4], valid: data.fused_valid};
   }
   const css = `
-    .rtab-four{height:100%;overflow:auto;min-width:0;padding:14px 16px;color:#dfebf4;background:#111c28;font:12px/1.5 system-ui,sans-serif;container-type:inline-size}
-    .rtab-four *{box-sizing:border-box}.rtab-four header,.rtab-four-controls{display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap}
-    .rtab-four h2{margin:0;font-size:17px;font-weight:600}.rtab-four h3{margin:0 0 8px;font-size:13px}.rtab-four p{margin:5px 0 10px;color:#98aec1}
-    .rtab-four button{border:1px solid #3b5267;border-radius:5px;background:#213246;color:#dcebf5;padding:5px 9px;cursor:pointer;font:inherit}
-    .rtab-four button[aria-pressed=true]{border-color:#60d8bd;background:#203c43}.rtab-four button:disabled{opacity:.5;cursor:default}
-    .rtab-four-live{color:#60d8bd}.rtab-four-working{color:#6bb8fa}.rtab-four-saved,.rtab-four-waiting,.rtab-four-held{color:#f3bc6b}.rtab-four-stale{color:#ed928d}
-    .rtab-four-flow{overflow-x:auto;margin:10px 0}.rtab-four-flow-head,.rtab-four-lane{display:grid;grid-template-columns:1.1fr 1.5fr 1fr 1fr;gap:8px;min-width:660px}
-    .rtab-four-flow-head{color:#97afc3;font-size:11px;padding:4px 0}.rtab-four-lane{margin:7px 0}.rtab-four-cell{min-width:0;padding:8px 10px;background:#192939;border-radius:6px}
-    .rtab-four-cell b{display:block}.rtab-four small{display:block;color:#94aabe;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
-    .rtab-four-topic{font:10px/1.4 ui-monospace,monospace;margin-top:4px}.rtab-four button.rtab-four-cell{text-align:left;width:100%}
-    .rtab-four svg{display:block;width:100%;height:34px;background:#132231;border-radius:3px;margin:4px 0}.rtab-four-output-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    .rtab-four-output{background:#192939;padding:10px;border:1px solid #30485b;border-radius:6px}.rtab-four-segments{display:flex;gap:3px;margin:8px 0}.rtab-four-segments span{flex:1;text-align:center;font-size:10px;border-top:4px solid;padding-top:3px}
-    .rtab-four-meta{display:flex;gap:14px;flex-wrap:wrap;color:#b6cbdc;font-size:11px;margin-bottom:6px}
-    .rtab-four-inspector{margin:12px 0;padding:12px;background:#162536;border-radius:6px}.rtab-four-inspector svg{height:86px}
-    .rtab-four-overview{padding:8px 10px;border:1px solid #30485b;border-radius:6px;background:#162536;color:#c6d9e7}
-    .rtab-four-contribution{display:flex;align-items:center;gap:8px}.rtab-four-contribution svg{flex:1;min-width:90px;height:16px;margin:0}.rtab-four-contribution span{min-width:72px}
-    .rtab-four-inspector input[type=range]{flex:1;min-width:120px;accent-color:#60d8bd}.rtab-four input[type=number]{width:75px}
-    .rtab-four select,.rtab-four input[type=number]{background:#203448;color:#dcebf5;border:1px solid #496074;border-radius:3px;font:inherit;padding:4px}
-    .rtab-four table{width:100%;border-collapse:separate;border-spacing:3px;text-align:right;font-variant-numeric:tabular-nums;font-size:11px}
-    .rtab-four th{font-weight:400;color:#a2b8ca}.rtab-four td{border-radius:4px;padding:4px 6px;background:#1b2c3d}
-    .rtab-four-note{border-top:1px solid #2a3d50;margin-top:12px;padding-top:9px;font-size:11px;color:#98aec1}
-    .rtab-four details{margin-top:10px}.rtab-four summary{cursor:pointer;color:#b4c8d8}.rtab-four img{width:100%;max-height:130px;object-fit:contain;background:#101a28}
-    @container(max-width:600px){.rtab-four-output-grid{grid-template-columns:1fr}.rtab-four{padding:10px}.rtab-four-flow-head,.rtab-four-lane{min-width:640px}}
+    .rtab-four{height:100%;min-width:0;overflow:auto;padding:16px;color:#e5edf5;background:#0e1824;font:13px/1.5 system-ui,sans-serif;container-type:inline-size;color-scheme:dark}
+    .rtab-four *{box-sizing:border-box}.rtab-four button,.rtab-four input,.rtab-four select{font:inherit}
+    .rtab-four button{cursor:pointer}.rtab-four button:disabled{cursor:default;opacity:.45}
+    .rtab-four button:focus-visible,.rtab-four summary:focus-visible,.rtab-four input:focus-visible,.rtab-four select:focus-visible{outline:2px solid #71d8c2;outline-offset:3px}
+    .rtab-four button{color:inherit;border:1px solid #304253;border-radius:7px;background:transparent;padding:6px 11px;transition:background .15s,border-color .15s}
+    .rtab-four button:hover:not(:disabled){background:#213244}.rtab-four button[aria-pressed=true]{background:#233f44;border-color:#66cbb8;color:#b3f5df}
+    .rtab-four small{color:#a2b4c6;font-size:11px}.rtab-four p{margin:8px 0;color:#a2b4c6}.rtab-four h3{font-size:13px;font-weight:500;margin:0}
+    .rtab-four-header,.rtab-four-toolbar,.rtab-four-chart-head,.rtab-four-card-head,.rtab-four-card-foot,.rtab-four-inspect-controls{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+    .rtab-four-header{margin-bottom:16px}.rtab-four-status-group{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+    .rtab-four-status{display:inline-flex;align-items:center;gap:7px;font-weight:500}.rtab-four-status:before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor}
+    .rtab-four-live{color:#77dbc0}.rtab-four-working{color:#84b8e8}.rtab-four-saved,.rtab-four-held,.rtab-four-waiting{color:#dbbd84}.rtab-four-stale{color:#f0a39b}
+    .rtab-four-tag{font-size:11px;color:#a2b4c6;border-left:1px solid #344658;padding-left:9px}.rtab-four-toolbar{gap:6px}
+    .rtab-four-modes{display:flex;padding:2px;background:#172536;border-radius:8px;gap:2px}.rtab-four-modes button{padding:4px 10px;border-color:transparent}
+    .rtab-four-modes button[aria-pressed=true]{background:#2b4054;color:#edf4fa;border-color:transparent}
+    .rtab-four-notice{font-size:12px;padding:9px 11px;background:#26303a;border-radius:7px;margin-bottom:13px;color:#d9c39f;overflow-wrap:anywhere}
+    .rtab-four-section-label{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;color:#c4d2df;font-size:12px}
+    .rtab-four-inputs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+    .rtab-four button.rtab-four-input{text-align:left;padding:12px;min-width:0;border:1px solid #2b3d50;border-radius:10px;background:#172536}
+    .rtab-four button.rtab-four-input:hover{background:#1c3043;border-color:#476073}.rtab-four button.rtab-four-input[aria-pressed=true]{border-color:var(--modality-color);background:#1a3040;color:#e5edf5}
+    .rtab-four-card-head{gap:4px;flex-wrap:nowrap}.rtab-four-name{font-size:14px;font-weight:600;display:flex;align-items:center;gap:7px}.rtab-four-name:before{content:'';width:6px;height:6px;background:var(--modality-color);border-radius:50%;flex:none}
+    .rtab-four-card-state{color:#9eb1c4;font-size:11px;white-space:nowrap}.rtab-four-card-state[data-state=missing],.rtab-four-card-state[data-state=stale]{color:#e2ab95}
+    .rtab-four-input-size{font-size:11px;color:#a2b4c6;margin-top:5px;overflow-wrap:anywhere;min-height:17px}
+    .rtab-four svg.rtab-four-spark{display:block;width:100%;height:34px;margin:10px 0;background:transparent;overflow:hidden}
+    .rtab-four-card-foot{font-size:11px;color:#a2b4c6;gap:4px}.rtab-four-card-foot b{font-weight:500;color:#d8e5ef;font-variant-numeric:tabular-nums}
+    .rtab-four-empty-spark{height:34px;display:flex;align-items:center;margin:10px 0;color:#8198af;font-size:11px}
+    .rtab-four-flow-link{display:flex;align-items:center;justify-content:center;gap:12px;margin:12px 0;color:#93aabf;font-size:11px}
+    .rtab-four-flow-link:before,.rtab-four-flow-link:after{content:'';height:1px;flex:1;background:#2a3c4d}
+    .rtab-four-chart{background:#132231;border:1px solid #2b3d50;border-radius:10px;padding:14px}
+    .rtab-four-chart-head{gap:8px}.rtab-four-chart-title{display:flex;align-items:center;gap:8px}.rtab-four-chart-title b{font-weight:500}
+    .rtab-four-chart-head select{max-width:100%;background:#182b3e;color:#c4d7e8;border:1px solid #354b5f;border-radius:6px;padding:5px 7px;font-size:12px}
+    .rtab-four-output-tabs{display:flex;gap:5px;flex-wrap:wrap}.rtab-four-output-tabs button{font-size:12px;padding:5px 10px}
+    .rtab-four-chart svg.rtab-four-spark{height:100px;margin:15px 0 4px}.rtab-four-chart .rtab-four-empty-spark{height:100px;justify-content:center;margin:15px 0 4px;font-size:13px}
+    .rtab-four-axis{display:flex;justify-content:space-between;gap:8px;font-size:11px;color:#829aaf;font-variant-numeric:tabular-nums}
+    .rtab-four-folds{margin-top:12px}.rtab-four details{border-bottom:1px solid #293a4c}.rtab-four details:last-child{border-bottom:0}
+    .rtab-four summary{cursor:pointer;padding:11px 0;font-size:12px;color:#afc3d5}.rtab-four details[open]>summary{color:#e1edf6}.rtab-four summary::marker{color:#6f899f}
+    .rtab-four-detail-body{padding:0 0 14px;min-width:0}.rtab-four-inspect-controls{margin:3px 0 12px;font-variant-numeric:tabular-nums}.rtab-four-inspect-controls label{display:flex;gap:7px;align-items:center}
+    .rtab-four input[type=range]{accent-color:#77dbc0;flex:1;min-width:95px}.rtab-four input[type=number]{width:74px;background:#182b3e;color:#e1edf6;border:1px solid #40586d;border-radius:5px;padding:4px}
+    .rtab-four-table-wrap{overflow-x:auto}.rtab-four table{width:100%;border-collapse:collapse;font-size:11px;font-variant-numeric:tabular-nums;text-align:right}
+    .rtab-four th{color:#a2b4c6;font-weight:400}.rtab-four th,.rtab-four td{padding:6px;border-bottom:1px solid #25394b;white-space:nowrap}.rtab-four th:first-child{text-align:left}
+    .rtab-four-contribution{display:flex;align-items:center;gap:8px}.rtab-four-contribution svg{width:74px;height:14px;flex:1;min-width:40px}.rtab-four-contribution span{min-width:64px}
+    .rtab-four-formula{font:11px/1.6 ui-monospace,monospace;color:#b6cadd;margin-top:9px;overflow-wrap:anywhere}
+    .rtab-four-source-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.rtab-four-source{min-width:0}.rtab-four-source b{font-weight:500}.rtab-four-source small{display:block;overflow-wrap:anywhere;margin-top:3px}
+    .rtab-four-note{font-size:11px;border-top:1px solid #2a3d50;padding-top:10px;margin-top:12px;color:#9db1c3}.rtab-four-note div{margin:3px 0}
+    .rtab-four-matrix{max-width:430px}.rtab-four-matrix td{border:3px solid #0e1824;border-radius:6px;padding:9px}.rtab-four-spectrum{width:100%;max-height:130px;object-fit:contain;background:#101a28;margin-top:10px}
+    .rtab-four-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+    @container(max-width:600px){.rtab-four-inputs{grid-template-columns:repeat(2,minmax(0,1fr))}.rtab-four-source-grid{grid-template-columns:1fr}.rtab-four-tag{display:none}.rtab-four-chart-head{align-items:flex-start}.rtab-four-chart-title{width:100%;justify-content:space-between}}
+    @container(max-width:330px){.rtab-four-header{align-items:flex-start}.rtab-four-toolbar{width:100%;justify-content:space-between}.rtab-four-inputs{gap:7px}.rtab-four button.rtab-four-input{padding:9px}.rtab-four-name{font-size:13px}.rtab-four-card-head{flex-wrap:wrap}.rtab-four-chart{padding:10px}.rtab-four-inspect-controls{gap:7px}.rtab-four-contribution svg{display:none}}
+    @media(prefers-reduced-motion:reduce){.rtab-four button{transition:none}}
   `;
-  function Spark({values, color, label, index, sharedMaximum, emptyLabel = '等待此阶段特征'}) {
-    if (!values) return h('small', null, emptyLabel);
+  function Spark({values, color, label, index, sharedMaximum, emptyLabel = '等待输入'}) {
+    if (!values) return h('div', {className: 'rtab-four-empty-spark'}, emptyLabel);
     const maximum = sharedMaximum || Math.max(0.001, ...values.map(Math.abs));
     const end = values.length - 1;
-    return h('svg', {viewBox: '0 0 ' + end + ' 50', preserveAspectRatio: 'none', role: 'img', 'aria-label': label},
-      h('line', {x1: 0, y1: 25, x2: end, y2: 25, stroke: '#344c62', strokeWidth: 0.5}),
-      h('path', {d: pathFor(values, maximum), stroke: color, strokeWidth: 0.8, fill: 'none'}),
-      index !== undefined ? h('line', {x1: index, x2: index, y1: 0, y2: 50, stroke: '#ffffff', strokeWidth: 1}) : null);
+    return h('svg', {className: 'rtab-four-spark', viewBox: '0 0 ' + end + ' 50', preserveAspectRatio: 'none', role: 'img', 'aria-label': label},
+      h('line', {x1: 0, y1: 25, x2: end, y2: 25, stroke: '#30495e', vectorEffect: 'non-scaling-stroke', strokeWidth: 1}),
+      h('path', {d: pathFor(values, maximum), stroke: color, strokeWidth: 1, vectorEffect: 'non-scaling-stroke', fill: 'none'}),
+      index !== undefined ? h('line', {x1: index, x2: index, y1: 0, y2: 50, stroke: '#d9eaf6', vectorEffect: 'non-scaling-stroke', strokeWidth: 1}) : null);
   }
   function View({view, onLive, onDemo, onHold, loading = false, selected = 'fused', index = 0, onSelected, onIndex}) {
     const data = view.data, flow = data?.flow_version === 1;
@@ -191,112 +223,127 @@ function rtabmapFourmodalFactory(React) {
     const normMaximum = data ? Math.max(0.001, ...data.modalities.flatMap(row => row.features.map(Math.abs))) : 1;
     const contributionMaximum = data ? Math.max(1e-12, ...data.modalities.map(row => Math.abs(row.weight * row.features[j]))) : 1;
     const option = (value, label) => h('option', {key: value, value}, label);
-    return h('section', {className: 'rtab-four', 'aria-label': '四模态统一特征'},
+    const saved = view.mode === 'saved', held = view.mode === 'held';
+    const status = {live: '实时更新', working: '提取中', saved: '离线结果', held: '已冻结', stale: '历史结果', waiting: '等待输入'}[view.mode] || view.title;
+    const unpaired = saved && data?.alignment === 'unpaired_smoke_test';
+    const notice = view.mode === 'stale' ? view.title + ' · ' + view.detail :
+      unpaired ? '未配对样本 · 仅供流程查看' : saved ? '已保存结果 · 非实时输入' :
+      !data ? view.detail : null;
+    const sourceState = (row, name) => {
+      if (saved || held) return row?.valid ? {label: saved ? '离线' : '冻结', state: 'saved'} : {label: '缺失', state: 'missing'};
+      const age = view.heartbeat?.input_ages_s[name];
+      if (age === null) return {label: '未收到', state: 'missing'};
+      if (!finite(age)) return {label: data ? '待确认' : '等待', state: 'waiting'};
+      return age > view.heartbeat.max_input_age_s ? {label: '过期', state: 'stale'} : {label: '在线', state: 'live'};
+    };
+    const compactInput = (row, i) => {
+      if (!row?.valid) return data ? '本次缺失' : '—';
+      const p = row.preprocessing || {};
+      if (i < 2) return Array.isArray(p.input_shape) ? p.input_shape.slice(0, 2).reverse().join(' × ') : '尺寸未记录';
+      if (i === 2) return finite(p.input_count) ? p.input_count.toLocaleString('en-US') + ' 点' : 'XYZ 点云';
+      return finite(p.sample_rate_in) ? fmt(p.sample_rate_in / 1000, 0) + ' kHz · ' + fmt(row.duration, 1) + ' s' : 'PCM 音频';
+    };
+    return h('section', {className: 'rtab-four', 'aria-label': '四模态特征融合'},
       h('style', null, css),
-      h('header', null, h('h2', {className: 'rtab-four-' + view.mode, role: 'status'}, view.title),
-        h('div', {className: 'rtab-four-controls'},
-          h('button', {onClick: onLive, 'aria-pressed': !['saved', 'held'].includes(view.mode)}, '实时输入'),
-          h('button', {onClick: onHold, disabled: !data || view.mode === 'saved', 'aria-pressed': view.mode === 'held'}, view.mode === 'held' ? '继续显示' : '冻结当前帧'),
-          h('button', {onClick: onDemo, disabled: loading, 'aria-pressed': view.mode === 'saved'}, loading ? '读取中…' : '离线结果'))),
-      h('p', null, view.detail),
-      h('div', {className: 'rtab-four-meta'},
-        h('span', null, '四路全局特征 · 冻结预训练模型 · 无需训练'),
-        data ? h('span', null, '第 ' + data.sequence + ' 帧 · ' + data.inference_s.toFixed(2) + ' s / 次 · ' + data.device) : null),
-      h('div', {className: 'rtab-four-overview'},
-        '四路输入 → 各自编码为 1024 维 → L2 归一化 → 拼接 J（4096 维） / 加权归一化 f（1024 维）',
-        h('small', null, '点击 h、z 或输出按钮，检查同一帧的特征。默认四路各占 25%；实际权重以当前结果为准。')),
-      h('div', {className: 'rtab-four-flow'},
-        h('div', {className: 'rtab-four-flow-head'}, ...['① 传感器输入 →', '② 预处理与编码器 →', '③ 编码器输出 h →', '④ L2 归一化特征 z'].map(text => h('span', {key: text}, text))),
-        ...order.map((name, i) => {
-          const row = data?.modalities[i], age = view.heartbeat?.input_ages_s[name];
-          const inputState = view.mode === 'saved' ? '离线样本' : view.mode === 'held' ? '冻结样本' : view.heartbeat ?
-            age === null ? '未收到输入' : age > view.heartbeat.max_input_age_s ? '输入已过期' : '输入已收到' : '输入状态待确认';
-          const pre = preprocessingInfo(row, i);
-          return h('div', {className: 'rtab-four-lane', key: name},
-            h('div', {className: 'rtab-four-cell', style: {borderLeft: '3px solid ' + colors[i]}},
-              h('b', {style: {color: colors[i]}}, i === 1 && data?.nir_experimental === false ? '红外 IR' : names[i]),
-              h('small', null, row ? inputInfo(row, i) : '等待输入'),
-              h('small', null, inputState + ' · ' + (row?.valid ? '参与本次编码' : '本次缺失')),
-              h('small', null, '时间差 ' + (view.mode === 'saved' && data.alignment === 'unpaired_smoke_test' ? '不适用' : finite(row?.gap_s) ? (row.gap_s * 1000).toFixed(0) + ' ms' : '—')),
-              h('small', {className: 'rtab-four-topic'}, row?.topic || row?.source_id || '来源待记录')),
-            h('div', {className: 'rtab-four-cell'}, h('b', null, pre[1]), h('small', null, pre[0])),
-            h('button', {className: 'rtab-four-cell', onClick: () => choose('raw' + i), 'aria-pressed': selected === 'raw' + i},
-              h('b', null, 'h · 1024 维'),
-              h(Spark, {values: flow ? row.encoder_features : null, color: colors[i], label: shortNames[i] + ' 编码器输出',
-                emptyLabel: data ? '旧记录未保存此阶段' : '等待此阶段特征'}),
-              h('small', null, '范数 ' + fmt(row?.encoder_norm))),
-            h('button', {className: 'rtab-four-cell', onClick: () => choose('norm' + i), 'aria-pressed': selected === 'norm' + i},
-              h('b', null, 'z = h / ‖h‖₂'),
-              h(Spark, {values: row?.features, color: colors[i], label: shortNames[i] + ' 归一化特征', sharedMaximum: normMaximum}),
-              h('small', null, '1024 维 · 范数 ' + fmt(row?.normalized_norm))));
-        })),
-      data ? h(React.Fragment, null,
-        h('h3', null, '⑤ 两种融合输出 · 使用同一组归一化特征 z'),
-        h('div', {className: 'rtab-four-output-grid'},
-          h('div', {className: 'rtab-four-output'},
-            h('b', null, '拼接 J = [zRGB, zNIR, zLiDAR, zAudio]'),
-            h('div', {className: 'rtab-four-segments'}, ...shortNames.map((name, i) =>
-              h('span', {key: name, style: {color: colors[i], borderColor: colors[i]}}, name + ' · ' + (i * 1024) + '–' + (i * 1024 + 1023)))),
-            h('small', null, '4096 维 · 保留四路独立槽位；缺失槽位填 0'),
-            h('button', {onClick: () => choose('joint'), 'aria-pressed': selected === 'joint'}, '查看拼接输出')),
-          h('div', {className: 'rtab-four-output'},
-            h('b', null, '加权 m = Σ wᵢzᵢ → f = m / ‖m‖₂'),
-            h('p', null, data.modalities.map((row, i) => shortNames[i] + ' ' + fmt(row.weight * 100, 1) + '%').join(' · ')),
-            h('small', null, '1024 维 → 1024 维 · ‖m‖₂ ' + fmt(data.weighted_mean_norm) + ' → ‖f‖₂ ' + fmt(data.fused_norm)),
-            h('button', {onClick: () => choose('mean'), 'aria-pressed': selected === 'mean'}, '查看加权中间值'), ' ',
-            h('button', {onClick: () => choose('fused'), 'aria-pressed': selected === 'fused'}, '查看融合输出'),
-            h('small', null, data.fused_valid ? '加权向量有效' : '加权向量无效：零向量或无有效模态'))),
-        h('div', {className: 'rtab-four-inspector'},
-          h('h3', null, '逐维检查 · ' + inspected.label),
-          h('div', {className: 'rtab-four-controls'},
+      h('header', {className: 'rtab-four-header'},
+        h('div', {className: 'rtab-four-status-group'},
+          h('span', {className: 'rtab-four-status rtab-four-' + view.mode, role: 'status', 'aria-label': view.title}, status),
+          data ? h('span', {className: 'rtab-four-tag'}, '#' + data.sequence + ' · ' + fmt(data.inference_s, 1) + ' s') : null,
+          data?.alignment === 'estimated_clock_offsets' ? h('span', {className: 'rtab-four-tag'}, '估计时钟') : null),
+        h('div', {className: 'rtab-four-toolbar'},
+          h('div', {className: 'rtab-four-modes', role: 'group', 'aria-label': '数据来源'},
+            h('button', {onClick: onLive, 'aria-pressed': !saved, 'aria-label': '实时输入'}, '实时'),
+            h('button', {onClick: onDemo, disabled: loading, 'aria-pressed': saved, 'aria-label': '读取离线结果'}, loading ? '读取中' : '离线')),
+          h('button', {onClick: onHold, disabled: !data || saved, 'aria-pressed': held, 'aria-label': held ? '继续显示' : '冻结当前帧'}, held ? '继续' : '冻结'))),
+      notice ? h('div', {className: 'rtab-four-notice'}, notice) : null,
+      h('div', {className: 'rtab-four-section-label'}, h('span', null, '输入特征'),
+        h('small', null, data ? data.modalities.filter(row => row.valid).length + ' / 4 参与' : '4 路输入')),
+      h('div', {className: 'rtab-four-inputs'}, ...order.map((name, i) => {
+        const row = data?.modalities[i], state = sourceState(row, name);
+        return h('button', {key: name, className: 'rtab-four-input', style: {'--modality-color': colors[i]},
+          onClick: () => choose('norm' + i), 'aria-pressed': selected === 'norm' + i || selected === 'raw' + i,
+          'aria-label': names[i] + ' · 查看归一化特征'},
+          h('div', {className: 'rtab-four-card-head'},
+            h('span', {className: 'rtab-four-name'}, i === 1 && row?.preprocessing?.encoder === 'thermal' ? 'IR' : shortNames[i]),
+            h('span', {className: 'rtab-four-card-state', 'data-state': state.state}, state.label)),
+          h('div', {className: 'rtab-four-input-size'}, compactInput(row, i)),
+          h(Spark, {values: row?.valid ? row.features : null, color: colors[i], label: shortNames[i] + ' 归一化特征', sharedMaximum: normMaximum,
+            emptyLabel: data && !row.valid ? '本次缺失' : '等待输入'}),
+          h('div', {className: 'rtab-four-card-foot'}, h('span', null, '1024 维'), h('b', null, row ? fmt(row.weight * 100, 0) + '%' : '—')));
+      })),
+      h('div', {className: 'rtab-four-flow-link'}, '编码 → 归一化 → 融合'),
+      h('div', {className: 'rtab-four-chart'},
+        h('div', {className: 'rtab-four-chart-head'},
+          h('div', {className: 'rtab-four-chart-title'}, h('b', null, '特征视图'),
             h('select', {value: selected, onChange: e => choose(e.target.value), 'aria-label': '选择特征阶段'},
-              ...shortNames.flatMap((name, i) => [option('raw' + i, name + ' 编码器 h'), option('norm' + i, name + ' 归一化 z')]),
-              option('mean', '加权中间向量 m'), option('joint', '拼接输出 J'), option('fused', '融合输出 f')),
-            h('input', {type: 'range', min: 0, max: limit - 1, value: cursor, onChange: e => onIndex?.(Number(e.target.value)), 'aria-label': '特征维度索引'}),
-            h('input', {type: 'number', min: 0, max: limit - 1, value: cursor, onChange: e => onIndex?.(Math.max(0, Math.min(limit - 1, Number(e.target.value)))), 'aria-label': '输入维度索引'}),
-            h('b', null, '维度 ' + cursor + ' = ' + fmt(inspected.values?.[cursor], 6))),
-          h(Spark, {values: inspected.values, color: inspected.color, label: inspected.label, index: cursor}),
-          h('small', null, '横轴：全部维度 0–' + (limit - 1) + '；纵轴：当前向量幅值 ±' +
-            fmt(inspected.values ? Math.max(0.001, ...inspected.values.map(Math.abs)) : null) +
-            (inspected.valid === false ? ' · 本向量含缺失槽位或当前无效' : '')),
-          h('h3', {style: {marginTop: 12}}, '同一维度 j = ' + j + ' 的融合计算'),
-          h('table', {'aria-label': '每路特征与加权贡献'},
-            h('thead', null, h('tr', null, ...['模态', 'h[j]', 'z[j]', '权重 w', 'w × z[j]'].map(text => h('th', {key: text}, text)))),
-            h('tbody', null, ...data.modalities.map((row, i) => h('tr', {key: row.name},
-              h('th', {style: {color: colors[i]}}, shortNames[i]),
-              h('td', null, fmt(flow ? row.encoder_features[j] : null, 6)),
-              h('td', null, fmt(row.features[j], 6)),
-              h('td', null, fmt(row.weight, 3)),
-              h('td', null, h('div', {className: 'rtab-four-contribution'},
-                h('svg', {viewBox: '0 0 100 16', role: 'img', 'aria-label': shortNames[i] + ' 加权贡献 ' + fmt(row.weight * row.features[j], 6)},
-                  h('line', {x1: 50, x2: 50, y1: 0, y2: 16, stroke: '#8fa6bb'}),
-                  h('rect', {x: row.features[j] < 0 ? 50 - 48 * Math.abs(row.weight * row.features[j]) / contributionMaximum : 50,
-                    y: 3, width: 48 * Math.abs(row.weight * row.features[j]) / contributionMaximum,
-                    height: 10, rx: 2, fill: colors[i]})),
-                h('span', null, fmt(row.weight * row.features[j], 6)))))))),
-          h('small', null, '贡献条使用同一尺度；中心为 0，向左为负、向右为正。'),
-          h('p', null, '四路贡献求和 m[' + j + '] = ' + fmt(data.weighted_mean_features?.[j], 6) +
-            '；除以 ‖m‖₂ = ' + fmt(data.weighted_mean_norm, 6) +
-            ' → f[' + j + '] = ' + fmt(data.fused_features[j], 6)),
-          !flow ? h('small', null, '旧结果只包含归一化和融合特征；编码器原值、拼接值及加权中间值未记录。') : null,
-          h('small', null, '曲线表示全局嵌入向量；单个维度没有固定的物体、位置或距离含义。')),
-        h('details', null, h('summary', null, '跨模态余弦相似度 · −1 到 +1'),
-          h('table', {'aria-label': '四模态余弦相似度'},
-            h('thead', null, h('tr', null, h('th'), ...shortNames.map(name => h('th', {key: name}, name)))),
-            h('tbody', null, ...data.cosine_similarities.map((row, i) => h('tr', {key: i},
-              h('th', null, shortNames[i]), ...row.map((value, k) => h('td', {key: k}, fmt(value, 3))))))),
-          h('p', null, '相似度是向量关系，不是识别准确率或可靠性分数。')),
-        view.mode === 'saved' && data.spectrum_url ? h('details', null,
-          h('summary', null, '离线音频声谱'), h('img', {src: '/rtabmap-fourmodal-audio.png', alt: '离线样本 log-Mel 声谱'})) : null,
-        h('div', {className: 'rtab-four-note'},
-          h('div', null, '深度图是辅助预览，不参与这四路融合。此流程不更新地图。'),
-          h('div', null, '下方传感器预览持续更新；冻结当前帧只固定特征，不冻结相机和点云画面。'),
-          data.nir_experimental ? h('div', null, '近红外复用视觉编码器，NIR 分布适配效果尚未验证。') : null,
-          h('div', null, '编码器输出包含预训练投影与缩放；本面板未提取 Transformer 内部 token / 注意力。'),
-          h('div', null, '当前未做图像与点云的几何配准或物体关联；加权系数为配置值，非学习的注意力。'),
-          data.alignment === 'estimated_clock_offsets' ? h('div', null, '按估计时钟偏移匹配；硬件同步精度尚未验证。') : null,
-          data.modalities[3].stamp_quality === 'host_read_end_estimate' ? h('div', null, '音频来自工作站麦克风，时间为主机读取估计。') : null,
-          h('div', {title: data.model_sha256}, data.model + ' · 标定记录 ' + data.calibration_version))) : null);
+              option('fused', '融合 f'), option('joint', '拼接 J'), option('mean', '加权中间值 m'),
+              ...shortNames.flatMap((name, i) => [option('raw' + i, name + ' 编码器 h'), option('norm' + i, name + ' 归一化 z')]))),
+          h('div', {className: 'rtab-four-output-tabs', role: 'group', 'aria-label': '融合输出'},
+            h('button', {onClick: () => choose('fused'), 'aria-pressed': selected === 'fused'}, '融合 · 1024'),
+            h('button', {onClick: () => choose('joint'), 'aria-pressed': selected === 'joint'}, '拼接 · 4096'))),
+        h(Spark, {values: inspected.values, color: inspected.color, label: inspected.label, index: cursor,
+          emptyLabel: data ? '此阶段未记录' : '等待特征数据'}),
+        h('div', {className: 'rtab-four-axis'}, h('span', null, '0'),
+          h('span', null, '维度 · 幅值 ±' + fmt(inspected.values ? Math.max(0.001, ...inspected.values.map(Math.abs)) : null, 3)),
+          h('span', null, limit - 1)),
+        inspected.valid === false ? h('small', null, selected === 'joint' ? '含缺失模态的零槽位' : '本次向量无效') : null),
+      data ? h('div', {className: 'rtab-four-folds'},
+        h('details', null, h('summary', null, '逐维检查'),
+          h('div', {className: 'rtab-four-detail-body'},
+            h('div', {className: 'rtab-four-inspect-controls'},
+              h('label', null, '维度', h('input', {type: 'number', min: 0, max: limit - 1, value: cursor,
+                onChange: e => onIndex?.(Math.max(0, Math.min(limit - 1, Number(e.target.value)))), 'aria-label': '输入维度索引'})),
+              h('input', {type: 'range', min: 0, max: limit - 1, value: cursor, onChange: e => onIndex?.(Number(e.target.value)), 'aria-label': '特征维度索引'}),
+              h('b', null, fmt(inspected.values?.[cursor], 6)),
+              h('span', {className: 'rtab-four-sr'}, '维度 ' + cursor + ' = ' + fmt(inspected.values?.[cursor], 6))),
+            h('h3', null, '同一维度 j = ' + j + ' 的贡献'),
+            h('div', {className: 'rtab-four-table-wrap'}, h('table', {'aria-label': '每路特征与加权贡献'},
+              h('thead', null, h('tr', null, ...['模态', 'h[j]', 'z[j]', '权重', 'w × z[j]'].map(text => h('th', {key: text}, text)))),
+              h('tbody', null, ...data.modalities.map((row, i) => h('tr', {key: row.name},
+                h('th', null, shortNames[i]), h('td', null, fmt(flow ? row.encoder_features[j] : null, 6)),
+                h('td', null, fmt(row.features[j], 6)), h('td', null, fmt(row.weight, 3)),
+                h('td', null, h('div', {className: 'rtab-four-contribution'},
+                  h('svg', {viewBox: '0 0 100 14', role: 'img', 'aria-label': shortNames[i] + ' 加权贡献 ' + fmt(row.weight * row.features[j], 6)},
+                    h('line', {x1: 50, x2: 50, y1: 0, y2: 14, stroke: '#718a9d'}),
+                    h('rect', {x: row.features[j] < 0 ? 50 - 48 * Math.abs(row.weight * row.features[j]) / contributionMaximum : 50,
+                      y: 3, width: 48 * Math.abs(row.weight * row.features[j]) / contributionMaximum, height: 8, rx: 2, fill: colors[i]})),
+                  h('span', null, fmt(row.weight * row.features[j], 6))))))))),
+            h('div', {className: 'rtab-four-formula'}, '四路贡献求和 m[' + j + '] = ' + fmt(data.weighted_mean_features?.[j], 6) +
+              '；‖m‖₂ = ' + fmt(data.weighted_mean_norm, 6) + ' → f[' + j + '] = ' + fmt(data.fused_features[j], 6)),
+            h('small', null, '贡献条同尺度，左负右正。单维数值没有固定的物体或距离含义。'),
+            !flow ? h('p', null, '旧结果只包含归一化和融合特征；其余阶段未记录。') : null)),
+        h('details', null, h('summary', null, '输入与模型'),
+          h('div', {className: 'rtab-four-detail-body'},
+            h('div', {className: 'rtab-four-source-grid'}, ...data.modalities.map((row, i) => {
+              const pre = preprocessingInfo(row, i);
+              return h('div', {className: 'rtab-four-source', key: row.name},
+                h('b', null, names[i]), h('small', null, '传感器输入 · ' + inputInfo(row, i)),
+                h('small', null, '预处理与编码器 · ' + pre.join(' · ')),
+                h('small', null, '时间差 ' + (unpaired ? '不适用' : finite(row.gap_s) ? fmt(row.gap_s * 1000, 2) + ' ms' : '—')),
+                h('small', null, row.topic || row.source_id || '来源未记录'),
+                h('small', null, '编码器输出 ‖h‖₂ ' + fmt(row.encoder_norm) + ' → L2 归一化特征 ‖z‖₂ ' + fmt(row.normalized_norm)));
+            })),
+            h('div', {className: 'rtab-four-formula'}, 'zᵢ = hᵢ / ‖hᵢ‖₂ · 拼接输出 J = [zRGB, zNIR, zLiDAR, zAudio]'),
+            h('div', {className: 'rtab-four-formula'}, 'm = Σ wᵢzᵢ · f = m / ‖m‖₂ · ‖f‖₂ = ' + fmt(data.fused_norm)),
+            h('div', {className: 'rtab-four-note'},
+              h('div', null, '全局特征 · 冻结预训练模型 · ' + data.device),
+              h('div', null, '深度图是辅助预览，不参与这四路融合。此流程不更新地图。'),
+              h('div', null, '冻结仅固定特征，下方传感器预览持续更新。'),
+              h('div', null, '未做图像与点云的几何配准；权重为配置值。'),
+              data.nir_experimental ? h('div', null, '近红外复用视觉编码器，适配效果待验证。') : null,
+              data.alignment === 'estimated_clock_offsets' ? h('div', null, '按估计时钟匹配，硬件同步精度未验证。') : null,
+              data.modalities[3].stamp_quality === 'host_read_end_estimate' ? h('div', null, '音频采集时间为主机读取估计。') : null,
+              h('div', null, data.model + ' · ' + data.calibration_version)))),
+        h('details', null, h('summary', null, '模态相似度'),
+          h('div', {className: 'rtab-four-detail-body'},
+            h('table', {className: 'rtab-four-matrix', 'aria-label': '四模态余弦相似度'},
+              h('thead', null, h('tr', null, h('th'), ...shortNames.map(name => h('th', {key: name}, name)))),
+              h('tbody', null, ...data.cosine_similarities.map((row, i) => h('tr', {key: i},
+                h('th', null, shortNames[i]), ...row.map((value, k) => h('td', {key: k, style: finite(value) ?
+                  {background: 'rgba(' + (value < 0 ? '196,137,113,' : '76,167,154,') + (0.08 + 0.3 * Math.abs(value)) + ')'} : {}}, fmt(value, 3))))))),
+            h('p', null, '余弦相似度 −1 到 +1；不是识别准确率。'))),
+        saved && data.spectrum_url ? h('details', null, h('summary', null, '离线音频声谱'),
+          h('img', {className: 'rtab-four-spectrum', src: '/rtabmap-fourmodal-audio.png', alt: '离线样本 log-Mel 声谱'})) : null) : null);
   }
   function Component({client, topic = '/miti/fourmodal_features'}) {
     const [sample, setSample] = React.useState(null), [status, setStatus] = React.useState(null);
