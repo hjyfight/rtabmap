@@ -11,6 +11,7 @@ cp config/miti_live_layout.json "$MITI_APP/public/rtabmap-layout.json"
 cp config/miti_fusion_layout.json "$MITI_APP/public/rtabmap-fusion-layout.json"
 cp config/miti_object_fusion_layout.json "$MITI_APP/public/rtabmap-object-fusion-layout.json"
 export MITI_STATE_DIR="$FOURMODAL_PROJECT/.tools/miti/state/fourmodal-frontend"
-export MITI_HOST=127.0.0.1 BRIDGE_PORT=${BRIDGE_PORT:-8765}
-printf '融合专用展示：http://localhost:3002/rtabmap.html?view=fusion，复用现有 ROS 桥接。\n'
-exec "$MITI_APP/node/bin/node" "$MITI_APP/scripts/start-miti.mjs" --port 3002 "$@"
+export MITI_HOST=127.0.0.1 BRIDGE_PORT=${BRIDGE_PORT:-8768}
+export BRIDGE_TOPIC_WHITELIST="['^/perception/audio/(events|status)$','^/perception/fusion/(targets|status|timing)$','^/perception/segmentation/.*$','^/(semantic|miti)/.*$','^/camera/.*(image_raw|image_rect|image_rect_raw|camera_info)(/compressed)?$','^/livox/(lidar|imu)$','^/(tf|tf_static|cloud_map|map|mapGraph|icp_odom|robot_pose|info)$']"
+printf '融合专用展示：http://localhost:3002/，包含地图与 YAMNet 声音；使用桥接端口 %s。\n' "$BRIDGE_PORT"
+exec "$MITI_APP/node/bin/node" "$MITI_APP/scripts/start-miti.mjs" --bridge --port 3002 "$@"

@@ -53,6 +53,12 @@ MITI 三维地图新增墙面开关与机器人位姿读数，标准位姿输出
 [本轮逐项检查表](docs/fusion_table5_completion_20261118.csv)。实测安装标定未完成时，
 点云和声源不会被记为已参与目标融合。
 
+新增独立 YAMNet 声音事件分类：复用 `/multimodal/audio`，输出 521 类模型分数和
+人声、脚步、犬吠、车辆、警报、撞击及破碎声的巡逻记录。主机运行
+`bash scripts/start_yamnet_audio.sh` 和 `bash scripts/start_yamnet_miti.sh`，打开
+<http://localhost:3004/rtabmap.html?view=audio>。安装、录音检查和参数见
+[YAMNet 声音识别](docs/yamnet_audio.md)。
+
 ## YOLO 语义地图标签
 
 处理周期测量工具会记录语义链路的排队、网络推理、三维投影、融合和发布耗时，并单独

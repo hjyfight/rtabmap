@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "revision": "yamnet-3002-20261118-1",
+  "port": 3002,
+  "bridgePort": 8768,
+  "defaultLayout": "miti_fusion_layout.json",
+  "mapLayout": "miti_live_layout.json",
+  "mapWidgetId": "rtabmap-scene"
+}
