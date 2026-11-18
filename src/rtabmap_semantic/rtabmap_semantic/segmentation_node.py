@@ -169,7 +169,8 @@ class SegmentationNode(Node):
             backend=self.config['detector_backend'],
             revision=record['revision'], stamp=dict(sec=message.header.stamp.sec, nanosec=message.header.stamp.nanosec),
             width=record['width'], height=record['height'], result_source=record['result_source'],
-            inference_s=record['inference_seconds'], published_at=time.time(), images=images, instances=rows)
+            inference_s=record['inference_seconds'], published_at=time.time(),
+            source_age_s=max(0., self.source_age(record['stamp_ns'])), images=images, instances=rows)
         # Atomic display snapshot keeps JPEGs, instance labels and selected revision together.
         self.view_pub.publish(String(data=json.dumps(view, ensure_ascii=False, allow_nan=False)))
         self.latest = record

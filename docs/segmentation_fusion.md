@@ -22,20 +22,34 @@ bash scripts/start_depth_preview.sh
 bash scripts/start_segmentation_fusion.sh
 ```
 
-工作站的 RTX 3090 可使用独立 CUDA 环境。首次安装后，以 GPU 入口启动融合和独立近红外分割：
+工作站的 RTX 3090 可使用独立 CUDA 环境。首次安装后，分别以 GPU 入口启动独立 RGB 分割、融合和独立近红外分割：
 
 ```bash
 bash scripts/install_segmentation_gpu.sh
+bash scripts/start_yoloe_segmentation_live.sh --gpu
+# 另一个终端；两条入口各有文件锁，已有服务时先停止对应的旧入口。
 bash scripts/start_segmentation_fusion.sh --gpu
 ```
 
-GPU 入口叠加 [segmentation_fusion_gpu.yaml](../config/segmentation_fusion_gpu.yaml)，两路使用 `cuda:0`，最小计算间隔为 1 秒。模型使用 float32，关闭 TF32；目标数量、裁剪、词表和类别门限保持原配置。CPU 入口仍为 `bash scripts/start_segmentation_fusion.sh`。CUDA 依赖安装在 `.venv-segmentation-gpu`，复用已有普通依赖。模型运行设备纳入评估流水线指纹；当前正式输出仍保留未评估的 RGB 基线。
+RGB 的 GPU 入口在 YOLOE 配置之后叠加 [yoloe_segmentation_gpu.yaml](../config/yoloe_segmentation_gpu.yaml)，使用 `cuda:0`，最高 6 帧/秒，丢弃过期输入和等待中的旧帧。融合的 GPU 入口叠加 [segmentation_fusion_gpu.yaml](../config/segmentation_fusion_gpu.yaml)，融合和独立近红外均使用 `cuda:0`，最小计算间隔为 0.25 秒，实际速度受计算和同步输入限制。模型使用 float32，关闭 TF32；目标数量、裁剪、词表和类别门限保持原配置。CPU 入口不带 `--gpu`。CUDA 依赖安装在 `.venv-segmentation-gpu`，复用已有普通依赖。模型运行设备纳入评估流水线指纹；当前正式输出仍保留未评估的 RGB 基线。
 
-配置见 [segmentation_fusion.yaml](../config/segmentation_fusion.yaml)。输入为 RGB 分割请求、近红外原图、注册深度、两路 CameraInfo 和 TF。采集时间差超过 50 ms、深度未注册或标定不匹配时等待有效输入，正式 RGB 输出继续发布。节点保留一帧计算和一帧最新等待请求，单工作线程限制资源；每次启动默认最多采集 60 帧，不会无限写盘。
+配置见 [segmentation_fusion.yaml](../config/segmentation_fusion.yaml)。输入为 RGB 分割请求、近红外原图、注册深度、两路 CameraInfo 和 TF。采集时间差超过 50 ms、深度未注册或标定不匹配时等待有效输入，正式 RGB 输出继续发布。融合保留一帧计算及有上限的 RGB 请求缓存（默认 64 帧，等待超过 5 秒丢弃），每次选择最新的完整同步配对，丢弃已被它替代的旧请求。较新的 RGB 请求不会覆盖等待晚到注册深度的配对帧；恢复输入后仍验证实际采集时间。单工作线程限制资源；每次启动默认最多采集 60 帧，不会无限写盘。
 
 原始深度在线不等于注册深度在线。注册节点退出后，右侧深度预览和融合都会等待；早先保存的“已采集 60 组”仍会保留。达到采集上限仅停止写入新样本，实时融合继续运行。独立深度预览入口检查既有深度/RGB-D 发布端，避免与建图配准重复发布。
 
-在 MITI 打开 <http://localhost:3002/rtabmap.html?refresh=1>，点击目标分割面板的“融合对比”，查看同一采集帧的 RGB 单模态、独立近红外单模态和融合预览。CPU 模式融合约 16～25 秒/帧；当前工作站已切换 GPU 模式，连续 12 次推送的中位更新间隔为 1.14 秒，融合计算中位耗时为 0.32 秒，独立近红外推理为 0.03 秒，见 [fusion_gpu_live.json](../logs/segmentation_validation/fusion_gpu_live.json)。面板显示帧号、各路目标数量、耗时、有效覆盖、采集数量及断流状态。主叠加页独立实时更新，帧号不同的图片不能直接比较目标数量。Ctrl+C 停止融合入口会一起停止其近红外子进程。
+在 MITI 打开 <http://localhost:3002/rtabmap.html?refresh=1>，点击目标分割面板的“融合对比”，查看同一采集帧的 RGB 单模态、独立近红外单模态和融合预览。面板分别显示计算耗时与画面帧龄；帧龄使用启动时测得的机器人时钟偏差估算，保留图片时继续增长，计算耗时不代表整个链路的延迟。主叠加页独立更新，帧号不同的图片不能直接比较目标数量。Ctrl+C 停止融合入口会一起停止其近红外子进程。
+
+2026-11-17 实机延迟排查发现独立 RGB 仍在 CPU 上，每帧推理中位耗时 3.77 秒，融合还需等待其输出。切换 RGB GPU 并修复晚到深度配对后，30 秒测量中 RGB 中位更新间隔为 0.19 秒，融合为 0.64 秒；从同帧 RGB 到达工作站至融合结果的中位等待从 4.60 秒降至 1.64 秒。剩余等待包括注册深度晚到、近红外请求往返与融合计算。实际 Foxglove WebSocket 推送中位延迟约 5 毫秒。详见 [优化前](../logs/segmentation_validation/latency_before.json)、[优化后](../logs/segmentation_validation/latency_paired_after.json) 和 [网页桥接](../logs/segmentation_validation/latency_bridge.json)。传输和 React 解析已核验，未进行浏览器屏幕响应测量。
+
+可重复运行以下只读检查；第一个使用工作站本地单调时钟匹配 RGB 到达与结果到达，第二个核对实际网页桥接：
+
+```bash
+source scripts/ros2_wired_env.sh
+source install/segmentation/local_setup.bash
+export ROS_LOG_DIR="$PWD/logs/segmentation_validation/ros"
+.venv-semantic/bin/python3 scripts/check_segmentation_latency.py --seconds 30
+.tools/miti/root/usr/lib/miti/node/bin/node scripts/check_segmentation_bridge_latency.js 8765 30
+```
 
 三路预览保留 YOLO 的完整原生词表，并逐实例显示中文名称，文字使用深色底衬，字号随面板宽度调整。RGB 使用对应采集帧的全部原始实例，不按 18 类任务表、区域面积或同类连通区域过滤标签；融合仅修改实际通过候选门限的实例类别，保留其他 RGB 实例。标签优先落在实例可见区域，完全重叠时使用原始掩膜内的位置。近红外使用独立 YOLO 实例和标定投影，只展示投影后仍有像素的目标。`image_labels` 中的 `class_id` 为 YOLO 原生 ID，应使用明确的 `label` 显示，不能直接索引任务表 `class_names`；`image_instance_counts` 为三路图各自标签数。
 

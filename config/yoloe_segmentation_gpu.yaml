@@ -1,0 +1,6 @@
+# Independent RGB preview only; semantic mapping has its own entrypoint.
+yolo_segmentation:
+  ros__parameters:
+    device: cuda:0
+    max_inference_hz: 6.0
+    max_input_age_s: 3.0

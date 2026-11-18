@@ -2,7 +2,7 @@
 segmentation_fusion:
   ros__parameters:
     device: cuda:0
-    min_period_s: 1.0
+    min_period_s: 0.25
 nir_segmentation:
   ros__parameters:
     device: cuda:0

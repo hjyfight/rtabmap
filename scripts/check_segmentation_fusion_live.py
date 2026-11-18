@@ -115,9 +115,24 @@ def main():
         node.create_subscription(String,'/miti/segmentation/fusion_status',lambda m:statuses.append(json.loads(m.data)),2)]
     try:
         deadline=time.monotonic()+args.seconds
-        while time.monotonic()<deadline and (not views or not statuses):rclpy.spin_once(node,timeout_sec=.1)
+        view=status=None
+        while time.monotonic()<deadline:
+            rclpy.spin_once(node,timeout_sec=.1)
+            if not views or not statuses:continue
+            status=statuses[-1]
+            if not args.verify_native_preview:
+                view=views[-1];break
+            # Captures are intentionally less frequent than preview updates.
+            # Wait for a preview whose own frame was captured; do not compare
+            # the latest live frame with an unrelated saved sample.
+            captured=set()
+            for path in Path(status['capture_directory']).glob('samples/*/metadata.json'):
+                metadata=json.loads(path.read_text())
+                captured.add((metadata['session_id'],metadata['sequence']))
+            view=next((v for v in reversed(views) if (v['session_id'],v['sequence']) in captured),None)
+            if view is not None:break
         if not views or not statuses:raise ValueError('No live fusion view/heartbeat received')
-        view=views[-1];status=statuses[-1]
+        if view is None:raise ValueError('No captured live preview frame received within the check interval')
         assert view['modalities']==['rgb','nir'] and view['accuracy_status'] in ('unlabeled','validated_fusion','validated_baseline')
         for key in ('rgb','nir','fused'):
             pixels=cv2.imdecode(np.frombuffer(base64.b64decode(view['images'][key]),np.uint8),cv2.IMREAD_COLOR)

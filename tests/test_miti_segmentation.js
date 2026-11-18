@@ -88,3 +88,20 @@ test('native instance labels outside the task vocabulary stay visible and are co
   delete data.image_labels.rgb[0].label;
   assert.equal(panel.parseFusion({data:JSON.stringify(data)}),null);
 });
+test('displayed frame age advances while retaining the same images and computation time',()=>{
+  const rgb={...snapshot(),source_age_s:.2};
+  const fusion={schema:1,experimental:true,accuracy_status:'unlabeled',session_id:'test',sequence:1,
+    width:640,height:480,inference_s:.35,source_age_s:.8,coverage:.93,objects:[],class_names:['人'],
+    images:{rgb:'YWJj',nir:'YWJj',fused:'YWJj'}};
+  assert.ok(panel.parseSnapshot({data:JSON.stringify(rgb)}));
+  assert.ok(panel.parseFusion({data:JSON.stringify(fusion)}));
+  const html=renderToStaticMarkup(React.createElement(panel.View,{
+    sample:{snapshot:rgb,receivedAt:1000},now:2000}));
+  assert.match(html,/画面帧龄 1.2 s/);assert.match(html,/400 ms/);
+  const compare=renderToStaticMarkup(React.createElement(panel.FusionComparison,{
+    sample:{snapshot:fusion,receivedAt:1000},now:2000}));
+  assert.match(compare,/画面帧龄 1.8 s/);assert.match(compare,/融合计算 0.35 s/);
+  rgb.source_age_s=-1;fusion.source_age_s='fast';
+  assert.equal(panel.parseSnapshot({data:JSON.stringify(rgb)}),null);
+  assert.equal(panel.parseFusion({data:JSON.stringify(fusion)}),null);
+});

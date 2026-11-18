@@ -21,7 +21,7 @@ from rtabmap_semantic.segmentation_node import SegmentationNode
 from rtabmap_semantic.nir_segmentation_node import NirSegmentationNode
 from rtabmap_semantic.segmentation_fusion_node import FusionNode
 from rtabmap_semantic.object_fusion import TaskVocabulary,ObjectFusionEngine
-from rtabmap_semantic_msgs.msg import SegmentationFrame,SegmentationFusionCandidate
+from rtabmap_semantic_msgs.msg import SegmentationFrame,SegmentationFusionCandidate,SegmentationFusionRequest
 from test_segmentation_fusion import FakeEncoder,camera
 
 
@@ -91,6 +91,7 @@ def main():
             assert view['image_labels']['rgb'][0]['class_id']==0
             assert view['image_labels']['nir'][0]['class_id']==1
             assert view['image_labels']['fused'][0]['class_id']==1
+            assert 0<=view['source_age_s']<5
             sample=next((fusion.capture_root/'samples').iterdir())
             metadata=json.loads((sample/'metadata.json').read_text())
             with np.load(sample/'arrays.npz',allow_pickle=False) as arrays:
@@ -113,6 +114,34 @@ def main():
             else:raise AssertionError('Stopped depth stream was treated as a timestamp mismatch')
             fusion.receive_input('depth',depth_image)
             assert len(fusion.buffers['depth'])==1,'Old depth cache must clear after a stream resumes'
+            # Fast RGB must not starve fusion by replacing the only request
+            # before that request's registered depth has arrived.
+            fusion.pending_requests.clear()
+            requests=[]
+            for index in range(3):
+                stamp_ns=base.header.stamp.sec*1_000_000_000+base.header.stamp.nanosec+index*200_000_000
+                paired=deepcopy(base);paired.sequence=10+index
+                paired.header.stamp.sec,paired.header.stamp.nanosec=divmod(stamp_ns,1_000_000_000)
+                image=deepcopy(rgb_image);image.header=deepcopy(paired.header)
+                requests.append(SegmentationFusionRequest(baseline=paired,rgb=image,
+                    class_ids=list(rgb.labels),class_names=list(rgb.labels.values()),deadline_seconds=3.))
+                fusion.receive(requests[-1])
+            fusion.receive(requests[-1])
+            assert len(fusion.pending_requests)==3,'Duplicate requests must not grow the cache'
+            def sensors_for(request):
+                for kind,source in [('nir',nir_image),('depth',depth_image)]:
+                    image=deepcopy(source);image.header=deepcopy(request.baseline.header)
+                    fusion.buffers[kind].clear();fusion.receive_input(kind,image)
+            sensors_for(requests[1])
+            matched=fusion.newest_bundle()
+            assert matched['request'].baseline.sequence==11,'Use the newest complete sensor pair'
+            assert [r.baseline.sequence for r,_ in fusion.pending_requests]==[12]
+            assert fusion.newest_bundle() is None,'Never reuse an older sensor image for a fresh RGB frame'
+            sensors_for(requests[2])
+            assert fusion.newest_bundle()['request'].baseline.sequence==12
+            assert not fusion.pending_requests
+            fusion.pending_requests.append((requests[2],time.monotonic()-6))
+            assert fusion.newest_bundle() is None and not fusion.pending_requests
             # Guarded inference retains the reference despite a newer input. This
             # fixture report tests scheduling only; it cannot enable production.
             rgb.config['fusion_mode']='guarded';rgb.config['max_inference_hz']=30.
@@ -125,6 +154,7 @@ def main():
                 raw_capture_and_instance_masks=True,no_pseudo_ground_truth=True,
                 unsynchronized_input_rejected=True,guarded_retains_reference_frame=True)
             report['stopped_depth_reported_and_old_cache_cleared']=True
+            report['delayed_depth_selects_newest_complete_pair']=True
             target=ROOT/'logs/segmentation_validation/fusion_ros_contract.json'
             target.write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report))
         finally:

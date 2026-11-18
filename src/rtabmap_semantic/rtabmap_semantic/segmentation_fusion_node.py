@@ -53,7 +53,8 @@ class FusionNode(Node):
         self.buffers={k:deque(maxlen=c['buffer_size']) for k in ('nir','depth')}
         self.last_inputs={};self.last_request=None;self.last_result_at=None
         self.infos={};self.transforms={}
-        self.pending=self.waiting=self.future=None
+        self.pending_requests=deque(maxlen=c['buffer_size'])
+        self.waiting=self.future=None
         self.last_start=self.last_capture=-float('inf')
         self.seen=deque(maxlen=128)
         self.state='loading_model';self.reason='';self.completed=0;self.captured=0
@@ -93,7 +94,31 @@ class FusionNode(Node):
     def receive(self,message):
         self.last_request=time.monotonic()
         key=(message.baseline.session_id,message.baseline.sequence)
-        if key not in self.seen:self.pending=(message,time.monotonic())
+        if key in self.seen or any((r.baseline.session_id,r.baseline.sequence)==key
+                for r,_ in self.pending_requests):return
+        if self.pending_requests and self.pending_requests[-1][0].baseline.session_id!=key[0]:
+            self.pending_requests.clear()
+        self.pending_requests.append((message,self.last_request))
+
+    def newest_bundle(self):
+        """Select the newest complete pair even when registered depth arrives late."""
+        now=time.monotonic()
+        while self.pending_requests and now-self.pending_requests[0][1]>5:
+            self.pending_requests.popleft()
+        newest_error=None
+        for index in range(len(self.pending_requests)-1,-1,-1):
+            request,_=self.pending_requests[index]
+            try:bundle=self.bundle(request)
+            except ValueError as error:
+                if newest_error is None:newest_error=str(error)
+                continue
+            # Discard the selected frame and everything it supersedes. Retain
+            # newer requests whose same-frame sensors have not arrived yet.
+            for _ in range(index+1):self.pending_requests.popleft()
+            return bundle
+        self.reason=newest_error or '等待新的 RGB 融合请求'
+        self.state='waiting_inputs'
+        return None
 
     def receive_input(self,kind,message):
         now=time.monotonic()
@@ -175,12 +200,10 @@ class FusionNode(Node):
                 self.last_error=str(error);self.state='error';self.get_logger().error(str(error))
         if self.waiting and time.monotonic()-self.waiting[1]>20:
             self.waiting=None;self.reason='独立近红外分割响应超时'
-        if self.future or self.waiting or not self.pending or time.monotonic()-self.last_start<self.config['min_period_s']:return
-        request,received=self.pending
-        if time.monotonic()-received>5:self.pending=None;self.reason='融合请求已过期';return
-        try:bundle=self.bundle(request)
-        except ValueError as error:self.reason=str(error);self.state='waiting_inputs';return
-        self.pending=None;self.last_start=time.monotonic()
+        if self.future or self.waiting or not self.pending_requests or time.monotonic()-self.last_start<self.config['min_period_s']:return
+        bundle=self.newest_bundle()
+        if bundle is None:return
+        request=bundle['request'];self.last_start=time.monotonic()
         self.seen.append((request.baseline.session_id,request.baseline.sequence))
         self.waiting=(bundle,time.monotonic());self.state='waiting_nir';self.reason='独立近红外分割'
         self.nir_request_pub.publish(SegmentationImageRequest(session_id=request.baseline.session_id,
@@ -220,8 +243,11 @@ class FusionNode(Node):
             if not ok:raise RuntimeError('Fusion preview encoding failed')
             images[name]=base64.b64encode(encoded).decode()
         accuracy='validated_fusion' if approved and enabled else 'validated_baseline' if approved else 'unlabeled'
+        rgb_parameters=json.loads(base.provenance_json)
+        source_age=time.time()-seconds(base.header)-rgb_parameters.get('rgb_clock_offset_s',0.)
         view=dict(schema=1,experimental=True,accuracy_status=accuracy,session_id=base.session_id,sequence=base.sequence,
             stamp=dict(sec=base.header.stamp.sec,nanosec=base.header.stamp.nanosec),published_at=time.time(),
+            source_age_s=max(0.,source_age),
             width=base.width,height=base.height,inference_s=result['inference_s'],coverage=result['coverage'],
             timings_s=result['timings_s'],runtime_device=result['runtime_device'],
             objects=result['objects'],class_names=[chinese_label(n) for n in self.task.names],images=images,

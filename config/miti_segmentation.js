@@ -32,6 +32,7 @@ function rtabmapSegmentationFactory(React) {
           v.sequence < 1 || ![0,1].includes(v.revision) || !['rgb_yolo','fusion'].includes(v.result_source) ||
           !Number.isInteger(v.width) || !Number.isInteger(v.height) || v.width < 1 || v.height < 1 ||
           v.width > 8192 || v.height > 8192 || !finite(v.inference_s) || v.inference_s < 0 ||
+          (v.source_age_s !== undefined && (!finite(v.source_age_s) || v.source_age_s < 0)) ||
           !Number.isInteger(v.stamp?.sec) || !Number.isInteger(v.stamp?.nanosec) ||
           !['raw','overlay','classes'].every(k => typeof v.images?.[k] === 'string' &&
             v.images[k].length > 0 && /^[A-Za-z0-9+/=]+$/.test(v.images[k])) ||
@@ -58,6 +59,7 @@ function rtabmapSegmentationFactory(React) {
         !['unlabeled','validated_fusion','validated_baseline'].includes(v.accuracy_status)||
         !Number.isInteger(v.width)||!Number.isInteger(v.height)||v.width<1||v.height<1||v.width>8192||v.height>8192||
         !finite(v.inference_s)||v.inference_s<0||!finite(v.coverage)||v.coverage<0||v.coverage>1||
+        (v.source_age_s!==undefined && (!finite(v.source_age_s)||v.source_age_s<0))||
         !Array.isArray(v.objects)||v.objects.length>16||!Array.isArray(v.class_names)||v.class_names.length>512||
         !v.class_names.every(n=>typeof n==='string'&&n.length<160)||
         !v.objects.every(r=>Number.isInteger(r.instance_id)&&r.instance_id>0&&Number.isInteger(r.task_id))||
@@ -115,7 +117,8 @@ function rtabmapSegmentationFactory(React) {
           ['rgb','RGB 单模态'],['nir','近红外单模态 · 投影到 RGB'],['fused','UniBind 融合预览']
         ].map(([key,label])=>h(FusionPicture,{key,data,kind:key,title:label}))),
       data ? h('div',{className:'rtab-seg-foot'},
-        h('span',null,`${data.objects.length} 个目标参与 · ${data.inference_s.toFixed(1)} s`),
+        h('span',null,`${data.objects.length} 个目标参与 · 融合计算 ${data.inference_s.toFixed(2)} s`),
+        finite(data.source_age_s) ? h('span',null,`画面帧龄 ${(data.source_age_s+Math.max(0,now-(sample.receivedAt??now))/1000).toFixed(1)} s`) : null,
         h('span',null,`几何有效区域 ${Math.round(data.coverage*100)}%`),
         h('span',null,stale?'最近结果 · 输入或节点未更新':heartbeat.state==='inferencing'?'正在计算下一帧':'异步融合结果')) : null,
       data && heartbeat && ['error','waiting_inputs','input_stale'].includes(heartbeat.state) ?
@@ -194,6 +197,7 @@ function rtabmapSegmentationFactory(React) {
           }) : null) : h('div',{className:'rtab-seg-empty'},'等待相机与分割结果')),
       h('div',{className:'rtab-seg-foot'},
         h('span',null,data ? `采集帧 #${data.sequence} · ${data.instances.length} 个目标 · ${Math.round(data.inference_s*1000)} ms` : '—'),
+        finite(data?.source_age_s) ? h('span',null,`画面帧龄 ${(data.source_age_s+Math.max(0,(now??0)-(sample.receivedAt??now??0))/1000).toFixed(1)} s`) : null,
         h('span',null,data?.result_source === 'fusion' ? '融合复核' : data?.backend === 'yoloe_pf' ? 'RGB · YOLOE' : 'RGB · YOLOv8'),
         mode === 'classes' ? h('span',null,'未覆盖区域为未知') : null),
       state.detail ? h('p',{className:'rtab-seg-error'},state.detail) : null,
