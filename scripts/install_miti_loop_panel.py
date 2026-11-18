@@ -41,13 +41,14 @@ def replace_once(source, old, new):
     return source.replace(old, new, 1)
 
 
-def extend_bundle(path, source, panel, height_clip, title, camera_heading, heading_config, depth_display, map_details, grid_map, infrared_display, arc_camera_display, graph_feature_maps, retained_grid, semantic_labels, dynamic_cloud, panel_revision='', fourmodal_features='', segmentation='', object_multimodal=''):
+def extend_bundle(path, source, panel, height_clip, title, camera_heading, heading_config, depth_display, map_details, grid_map, infrared_display, arc_camera_display, graph_feature_maps, retained_grid, semantic_labels, dynamic_cloud, panel_revision='', fourmodal_features='', segmentation='', object_multimodal='', audio_events='', workspace_sync='', workspace_settings=None):
     if path.endswith('453.e8d48709a26a0ed3.js'):
         source = replace_once(source, 'function rO(e){',
             panel + '\nconst RtabmapLoopStatusPanel = rtabmapLoopStatusFactory(n).Component;\n' +
             fourmodal_features + '\nconst RtabmapFourmodalPanel = rtabmapFourmodalFactory(n).Component;\n' +
             segmentation + '\nconst RtabmapSegmentationPanel = rtabmapSegmentationFactory(n).Component;\n' +
             object_multimodal + '\nconst RtabmapObjectMultimodalPanel = rtabmapObjectMultimodalFactory(n).Component;\n' +
+            audio_events + '\nconst RtabmapAudioEventsPanel = rtabmapAudioEventsFactory(n).Component;\n' +
             height_clip + '\nconst RtabmapHeightClip = rtabmapHeightClipFactory(n);\n' +
             semantic_labels + '\nconst RtabmapSemanticLabels = rtabmapSemanticLabelsFactory(n,ta.V);\n' +
             dynamic_cloud + '\nconst RtabmapDynamicCloud = rtabmapDynamicCloudFactory(n);\n' +
@@ -89,6 +90,7 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
             '{client:a,topic:t.props&&t.props.topic});case"fourmodal-features":return(0,r.jsx)(RtabmapFourmodalPanel,'
             '{client:a,topic:t.props&&t.props.topic});case"yolo-segmentation":return(0,r.jsx)(RtabmapSegmentationPanel,'
             '{client:a,topic:t.props&&t.props.topic});case"object-multimodal":return(0,r.jsx)(RtabmapObjectMultimodalPanel,'
+            '{client:a,topic:t.props&&t.props.topic});case"audio-events":return(0,r.jsx)(RtabmapAudioEventsPanel,'
             '{client:a,topic:t.props&&t.props.topic});case"topics":')
         source = replace_once(source, 'function te(e){let{points:t,style:a}=e,',
             'function te(e){const rtabmapClip=n.useContext(RtabmapHeightClip.Context);let{points:t,style:a}=e,')
@@ -128,17 +130,23 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
     source = replace_once(source, '(e.subscriptionTopics.delete(n.subscriptionId),r.binding=void 0)',
         '(e.subscriptionTopics.delete(n.subscriptionId),rtabmapClearGridMessage(r),r.binding=void 0)')
     source = replace_once(source, 'let k=[{type:"topics",',
-        depth_display + '\n' + map_details + '\n' + grid_map + '\n' + infrared_display + '\n' + arc_camera_display + '\n' + graph_feature_maps + '\n' + dynamic_cloud + '\n' + fourmodal_features + '\n' + segmentation + '\n' + object_multimodal +
+        depth_display + '\n' + map_details + '\n' + grid_map + '\n' + infrared_display + '\n' + arc_camera_display + '\n' + graph_feature_maps + '\n' + dynamic_cloud + '\n' + fourmodal_features + '\n' + segmentation + '\n' + object_multimodal + '\n' + audio_events +
         '\nrtabmapVersionPanelChunk(r,' + json.dumps(panel_revision) + ');\n'
         'let k=[{type:"loop-status",label:"回环状态",icon:"↻",'
         'defaultSize:{w:4,h:8},minSize:{minW:2,minH:4}},{type:"fourmodal-features",label:"四模态特征",icon:"◈",'
         'defaultSize:{w:8,h:10},minSize:{minW:3,minH:5}},{type:"yolo-segmentation",label:"目标分割",icon:"◉",'
         'defaultSize:{w:6,h:10},minSize:{minW:3,minH:5}},{type:"object-multimodal",label:"单目标四模态融合",icon:"◈",'
-        'defaultSize:{w:7,h:10},minSize:{minW:3,minH:5}},{type:"topics",')
+        'defaultSize:{w:7,h:10},minSize:{minW:3,minH:5}},{type:"audio-events",label:"声音事件",icon:"♪",'
+        'defaultSize:{w:8,h:10},minSize:{minW:3,minH:5}},{type:"topics",')
+    source = replace_once(source, 'function G(){var e,t;',
+        workspace_sync + '\nconst RtabmapWorkspaceSettings = ' + json.dumps(workspace_settings, ensure_ascii=True) + ';\n'
+        'function G(){var e,t;if(typeof window!=="undefined")try{'
+        'rtabmapSyncWorkspaceStorage(window.localStorage,window.location,RtabmapWorkspaceSettings);'
+        '}catch(error){console.warn("Project workspace synchronization failed",error);}')
     source = replace_once(source,
         't({mosaic:r.mosaic,widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})})',
-        't(rtabmapMigrateSegmentationLayout(rtabmapHideAuxiliaryMaps(rtabmapMigrateFourmodalLayout(rtabmapMigrateGraphFeatureLayout(rtabmapMigrateArcCameraLayout(rtabmapMigrateInfraredLayout(rtabmapMigrateGridLayout({...r,mosaic:r.mosaic,widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})'
-        '.map(rtabmapMigrateDepthWidget).map(rtabmapMigrateInfraredTopicWidget).map(rtabmapMigrateWallWidget).map(rtabmapMigrateDynamicCloudWidget)}))))))))')
+        't(rtabmapMigrateAudioEventsLayout(rtabmapMigrateSegmentationLayout(rtabmapHideAuxiliaryMaps(rtabmapMigrateFourmodalLayout(rtabmapMigrateGraphFeatureLayout(rtabmapMigrateArcCameraLayout(rtabmapMigrateInfraredLayout(rtabmapMigrateGridLayout({...r,mosaic:r.mosaic,widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})'
+        '.map(rtabmapMigrateDepthWidget).map(rtabmapMigrateInfraredTopicWidget).map(rtabmapMigrateWallWidget).map(rtabmapMigrateDynamicCloudWidget)})))))))))')
     # The dashboard is client-rendered. Use text instead of the fixed-width logo,
     # with ellipsis on narrow screens and the full system name in its tooltip.
     title_js = json.dumps(title, ensure_ascii=True)
@@ -150,7 +158,7 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
         'fontWeight:700,letterSpacing:"0.04em",whiteSpace:"nowrap",overflow:"hidden",'
         'textOverflow:"ellipsis"},children:' + title_js + '})')
     return replace_once(source, '"button-switch":c.Z,log:d.Z}',
-                        '"button-switch":c.Z,"loop-status":l.Z,"fourmodal-features":l.Z,"yolo-segmentation":l.Z,"object-multimodal":l.Z,log:d.Z}')
+                        '"button-switch":c.Z,"loop-status":l.Z,"fourmodal-features":l.Z,"yolo-segmentation":l.Z,"object-multimodal":l.Z,"audio-events":l.Z,log:d.Z}')
 
 
 def atomic_write(path, data):
@@ -179,6 +187,18 @@ def install(app=APP):
     fourmodal_features = (PROJECT / 'config/miti_fourmodal_features.js').read_text()
     segmentation = (PROJECT / 'config/miti_segmentation.js').read_text()
     object_multimodal = (PROJECT / 'config/miti_object_multimodal.js').read_text()
+    audio_events = (PROJECT / 'config/miti_audio_events.js').read_text()
+    workspace_sync = (PROJECT / 'config/miti_workspace_sync.js').read_text()
+    workspace_settings = json.loads((PROJECT / 'config/miti_workspace_sync.json').read_text())
+    if (workspace_settings.get('schema') != 1 or
+            type(workspace_settings.get('port')) is not int or not 1024 <= workspace_settings['port'] <= 65535 or
+            type(workspace_settings.get('bridgePort')) is not int or not 1024 <= workspace_settings['bridgePort'] <= 65535 or
+            not isinstance(workspace_settings.get('revision'), str) or not workspace_settings['revision']):
+        raise ValueError('Invalid project workspace synchronization settings')
+    workspace_settings['layout'] = json.loads((PROJECT / 'config' / workspace_settings['defaultLayout']).read_text())
+    map_layout = json.loads((PROJECT / 'config' / workspace_settings['mapLayout']).read_text())
+    workspace_settings['mapWidget'] = next(widget for widget in map_layout['widgets']
+                                          if widget['i'] == workspace_settings['mapWidgetId'])
     heading_config = json.loads((PROJECT / 'config/miti_camera_heading.json').read_text())
     if (not isinstance(heading_config, dict) or
             not isinstance(heading_config.get('enabled'), bool) or
@@ -212,7 +232,7 @@ def install(app=APP):
     for name, expected in UPSTREAM.items():
         target, backup, original, current = original_file(name, expected)
         updated = extend_bundle(name, original.decode(), panel, height_clip, title,
-                                camera_heading, heading_config, depth_display, map_details, grid_map, infrared_display, arc_camera_display, graph_feature_maps, retained_grid, semantic_labels, dynamic_cloud, panel_revision, fourmodal_features, segmentation, object_multimodal).encode()
+                                camera_heading, heading_config, depth_display, map_details, grid_map, infrared_display, arc_camera_display, graph_feature_maps, retained_grid, semantic_labels, dynamic_cloud, panel_revision, fourmodal_features, segmentation, object_multimodal, audio_events, workspace_sync, workspace_settings).encode()
         if name.endswith('453.e8d48709a26a0ed3.js'):
             # Next marks this pinned vendor filename immutable. Version its lazy
             # import URL so a fresh page cannot pair with an older cached renderer.
@@ -257,6 +277,8 @@ def install(app=APP):
               ]}
     atomic_write(app / 'public/rtabmap-panel-assets.json',
                  (json.dumps(assets, indent=2) + '\n').encode())
+    atomic_write(app / 'public/rtabmap-audio-layout.json',
+                 (PROJECT / 'config/miti_audio_layout.json').read_bytes())
     print('MITI project frontend extensions: ' + ('installed' if changed else 'up to date'))
 
 

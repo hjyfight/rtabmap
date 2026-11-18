@@ -10,7 +10,7 @@ export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
 export MITI_HOST=127.0.0.1
 export BRIDGE_PORT=${OBJECT_MITI_BRIDGE_PORT:-8767}
 export MITI_STATE_DIR="$OBJECT_MITI_ROOT/.tools/miti/state/object-multimodal-domain-$ROS_DOMAIN_ID"
-export BRIDGE_TOPIC_WHITELIST="['^/perception/fusion/(targets|status|timing)$','^/miti/.*$','^/camera/.*(image_raw|image_rect|image_rect_raw|camera_info)(/compressed)?$','^/livox/lidar$','^/(tf|tf_static)$']"
+export BRIDGE_TOPIC_WHITELIST="['^/perception/fusion/(targets|status|timing)$','^/perception/audio/(events|status)$','^/miti/.*$','^/camera/.*(image_raw|image_rect|image_rect_raw|camera_info)(/compressed)?$','^/livox/lidar$','^/(tf|tf_static)$']"
 export MITI_BRIDGE_HINT="bash $OBJECT_MITI_ROOT/scripts/start_object_multimodal_miti.sh"
 mkdir -p "$MITI_STATE_DIR" logs/miti
 exec 9>"logs/miti/object-multimodal-domain-$ROS_DOMAIN_ID.lock"

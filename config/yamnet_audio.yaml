@@ -1,0 +1,15 @@
+yamnet_audio_events:
+  ros__parameters:
+    model_path: models/yamnet/yamnet.tflite
+    class_map_path: config/yamnet_class_map.csv
+    patrol_config_path: config/yamnet_patrol.json
+    audio_topic: /multimodal/audio
+    output_topic: /perception/audio/events
+    status_topic: /perception/audio/status
+    journal_path: logs/audio/yamnet/events.jsonl
+    cpu_threads: 2
+    top_k: 5
+    analysis_window_s: 2.0
+    min_period_s: 0.48
+    max_input_age_s: 3.0
+    audio_clock_offset_s: 0.0

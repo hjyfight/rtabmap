@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "min_rms_dbfs": -60.0,
+  "reset_gap_s": 3.0,
+  "rules": [
+    {"key": "speech", "label_zh": "听到人声", "threshold": 0.35, "confirm_windows": 2,
+     "classes": ["Speech", "Conversation", "Shout", "Yell", "Screaming"]},
+    {"key": "footsteps", "label_zh": "听到脚步声", "threshold": 0.3, "confirm_windows": 2,
+     "classes": ["Walk, footsteps", "Run"]},
+    {"key": "dog", "label_zh": "听到犬吠／低吼", "threshold": 0.35, "confirm_windows": 2,
+     "classes": ["Bark", "Dog", "Bow-wow", "Growling", "Howl"]},
+    {"key": "vehicle", "label_zh": "听到车辆／发动机声", "threshold": 0.35, "confirm_windows": 2,
+     "classes": ["Vehicle", "Motor vehicle (road)", "Car", "Truck", "Bus", "Motorcycle", "Engine", "Idling", "Engine starting"]},
+    {"key": "alarm", "label_zh": "听到警报声", "threshold": 0.35, "confirm_windows": 2,
+     "classes": ["Alarm", "Siren", "Smoke detector, smoke alarm", "Fire alarm", "Buzzer"]},
+    {"key": "impact", "label_zh": "听到敲击／撞击声", "threshold": 0.4, "confirm_windows": 1,
+     "classes": ["Knock", "Slam", "Bang"]},
+    {"key": "breaking", "label_zh": "听到破碎声", "threshold": 0.4, "confirm_windows": 1,
+     "classes": ["Shatter", "Breaking"]}
+  ]
+}

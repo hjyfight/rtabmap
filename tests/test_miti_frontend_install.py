@@ -117,11 +117,16 @@ class FrontendInstallTests(unittest.TestCase):
         self.assertIn('const RtabmapFourmodalPanel = rtabmapFourmodalFactory(n).Component', renderer)
         self.assertIn('case"fourmodal-features":return(0,r.jsx)(RtabmapFourmodalPanel,', renderer)
         self.assertIn('type:"fourmodal-features",label:"四模态特征"', page)
-        self.assertIn('t(rtabmapMigrateSegmentationLayout(rtabmapHideAuxiliaryMaps(rtabmapMigrateFourmodalLayout(rtabmapMigrateGraphFeatureLayout(', page)
+        self.assertIn('t(rtabmapMigrateAudioEventsLayout(rtabmapMigrateSegmentationLayout(rtabmapHideAuxiliaryMaps(rtabmapMigrateFourmodalLayout(rtabmapMigrateGraphFeatureLayout(', page)
         self.assertIn('case"yolo-segmentation":return(0,r.jsx)(RtabmapSegmentationPanel,', renderer)
         self.assertIn('const RtabmapObjectMultimodalPanel = rtabmapObjectMultimodalFactory(n).Component', renderer)
         self.assertIn('case"object-multimodal":return(0,r.jsx)(RtabmapObjectMultimodalPanel,', renderer)
         self.assertIn('type:"object-multimodal",label:"单目标四模态融合"', page)
+        self.assertIn('const RtabmapAudioEventsPanel = rtabmapAudioEventsFactory(n).Component', renderer)
+        self.assertIn('case"audio-events":return(0,r.jsx)(RtabmapAudioEventsPanel,', renderer)
+        self.assertIn('type:"audio-events",label:"声音事件"', page)
+        self.assertIn('rtabmapSyncWorkspaceStorage(window.localStorage,window.location,RtabmapWorkspaceSettings)', page)
+        self.assertIn('"port": 3002', page)
 
 
 if __name__ == '__main__':
