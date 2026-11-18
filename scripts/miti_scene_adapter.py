@@ -4,6 +4,7 @@ import colorsys
 import json
 import math
 import os
+import sqlite3
 import time
 import zlib
 from copy import deepcopy
@@ -18,6 +19,7 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profi
 from rtabmap_msgs.msg import MapGraph, RGBDImage
 from rtabmap_msgs.srv import GetMap
 from sensor_msgs.msg import CameraInfo, Image
+from std_msgs.msg import String
 from visualization_msgs.msg import Marker, MarkerArray
 from guard_rgbd_input import validate_rgbd
 
@@ -86,6 +88,37 @@ def markers_for(message, poses, header, positions=None):
     return result
 
 
+def stored_object_extents(map_key, map_uuid, poses):
+    """Read geometry for older mappers that do not publish object_geometry yet.
+
+    Only the paired database and current epoch qualify. Read-only access never
+    changes tracks; dimensions are transformed using the display's own graph.
+    """
+    database=FilePath(map_key).expanduser().resolve()
+    for suffix in ('.yoloe.stable.semantic.sqlite','.yoloe.semantic.sqlite',
+                   '.emsanet.semantic.sqlite','.emsanet.concat_fixed.semantic.sqlite',
+                   '.semantic.sqlite'):
+        path=database.with_suffix(suffix)
+        if not path.is_file():continue
+        with sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=.05) as connection:
+            row=connection.execute('SELECT map_key,state FROM epochs ORDER BY updated DESC LIMIT 1').fetchone()
+        if row is None or row[0]!=str(database):continue
+        state=json.loads(row[1])
+        if state.get('map_uuid')!=map_uuid:continue
+        result={}
+        for obj in state.get('objects',[]):
+            dimensions=[]
+            for obs in obj.get('observations',[]):
+                pose=poses.get(obs['node_id'])
+                extent=np.asarray(obs['extent'],dtype=float)
+                if (pose is None or extent.shape!=(3,) or not np.isfinite(extent).all()
+                        or np.any(extent<=0) or np.any(extent>100)):continue
+                dimensions.append(np.abs(pose[:3,:3])@extent)
+            if len(dimensions)>=2:result[obj['object_id']]=np.median(dimensions,axis=0)
+        return result
+    return {}
+
+
 class SemanticMarkers:
     """Complete live snapshot with stable identities and persistent targeted deletions."""
     def __init__(self):
@@ -95,6 +128,7 @@ class SemanticMarkers:
         self.separate_pairs = set()
         self.label_winners = {}
         self.groups = {}
+        self.extents = {}
         self.restored_cache = None
 
     def restore_cache(self, cache):
@@ -102,21 +136,27 @@ class SemanticMarkers:
                 not isinstance(cache.get('session'), list) or len(cache['session']) != 3 or
                 not all(isinstance(v, str) for v in cache['session']) or
                 not isinstance(cache.get('positions'), dict) or
-                not isinstance(cache.get('label_winners', {}), dict)):
+                not isinstance(cache.get('label_winners', {}), dict) or
+                not isinstance(cache.get('extents', {}), dict)):
             raise ValueError('Invalid semantic display cache')
         positions = {int(key): np.asarray(value, dtype=float) for key, value in cache['positions'].items()}
         if any(key <= 0 or value.shape != (3,) or not np.isfinite(value).all() for key, value in positions.items()):
             raise ValueError('Invalid cached semantic position')
         pairs = {tuple(sorted((int(a), int(b)))) for a, b in cache.get('separate_pairs', [])}
         winners = {int(key): int(value) for key, value in cache.get('label_winners', {}).items()}
-        self.restored_cache = (tuple(cache['session']), positions, pairs, winners)
+        extents={int(key):np.asarray(value,dtype=float) for key,value in cache.get('extents',{}).items()}
+        if any(key<=0 or value.shape!=(3,) or not np.isfinite(value).all() or
+               np.any(value<=0) or np.any(value>100) for key,value in extents.items()):
+            raise ValueError('Invalid cached object extent')
+        self.restored_cache = (tuple(cache['session']), positions, pairs, winners, extents)
 
     def cache_snapshot(self):
         if self.session is None:
             return None
         return dict(schema=1, session=list(self.session),
                     positions={str(key): value.tolist() for key, value in self.positions.items()},
-                    separate_pairs=sorted(self.separate_pairs), label_winners=self.label_winners)
+                    separate_pairs=sorted(self.separate_pairs), label_winners=self.label_winners,
+                    extents={str(key):value.tolist() for key,value in self.extents.items()})
 
     def reset(self):
         self.positions.clear()
@@ -124,14 +164,36 @@ class SemanticMarkers:
         self.separate_pairs.clear()
         self.label_winners.clear()
         self.groups.clear()
+        self.extents.clear()
 
-    def unique_objects(self, message, markers):
+    @staticmethod
+    def same_extent(pa, ea, pb, eb, retained=False):
+        """Require overlapping, comparably sized map volumes, not proximity alone."""
+        if ea is None or eb is None:return False
+        ea,eb=np.maximum(ea,.02)+.04,np.maximum(eb,.02)+.04
+        va,vb=float(np.prod(ea)),float(np.prod(eb))
+        # Contained small items (e.g. a laptop on a desk) remain independent.
+        if min(va,vb)/max(va,vb)<.35:return False
+        gate=max(.08,min(.6,min(np.linalg.norm(ea),np.linalg.norm(eb))*.3))
+        distance=np.linalg.norm(pa-pb)
+        if distance>gate*(1.25 if retained else 1.):return False
+        overlap=np.maximum(0,np.minimum(pa+ea/2,pb+eb/2)-np.maximum(pa-ea/2,pb-eb/2))
+        intersection=float(np.prod(overlap))
+        iou=intersection/max(va+vb-intersection,1e-9)
+        # Different viewpoints can expose only part of the same object. Require
+        # a close center and most of the smaller, comparably sized volume.
+        partial=(distance<=(.18 if retained else .15) and
+                 intersection/min(va,vb)>=(.75 if retained else .8))
+        return iou>=(.30 if retained else .35) or partial
+
+    def unique_objects(self, message, markers, extents=None):
         """Resolve old duplicate tracks using map position and independent-instance evidence.
 
         Names alone never identify an object. Two detections seen together in one
         keyframe remain separate even if their map centers are very close.
         """
         objects = {obj.object_id: obj for obj in message.objects}
+        extents={} if extents is None else extents
         anchors = {key: {(obs.node_id, obs.node_stamp) for obs in obj.observations}
                    for key, obj in objects.items()}
         all_ids = sorted(objects)
@@ -146,8 +208,12 @@ class SemanticMarkers:
             for group in groups:
                 if all(objects[key].dynamic == objects[other].dynamic and
                        (min(key, other), max(key, other)) not in self.separate_pairs and
-                       np.linalg.norm(self.positions[key] - self.positions[other]) <=
-                       (0.12 if (min(key, other), max(key, other)) in previous_pairs else 0.08)
+                       (self.same_extent(self.positions[key],extents.get(key),
+                            self.positions[other],extents.get(other),
+                            (min(key,other),max(key,other)) in previous_pairs)
+                        if key in extents and other in extents else
+                        np.linalg.norm(self.positions[key]-self.positions[other]) <=
+                            (0.12 if (min(key,other),max(key,other)) in previous_pairs else 0.08))
                        for other in group):
                     group.append(key)
                     break
@@ -174,17 +240,20 @@ class SemanticMarkers:
         self.label_winners = winners
         return result
 
-    def update(self, message, poses, header):
+    def update(self, message, poses, header, extents=None):
         session = (message.map_key, message.map_uuid, header.frame_id)
         changed_session = session != self.session
         if changed_session:
             self.reset()
             cache, self.restored_cache = self.restored_cache, None
             if cache is not None and cache[0] == session:
-                self.positions, self.separate_pairs, self.label_winners = cache[1:]
+                self.positions, self.separate_pairs, self.label_winners, self.extents = cache[1:]
         self.session = session
+        self.extents.update(extents or {})
+        current_ids={obj.object_id for obj in message.objects}
+        self.extents={key:value for key,value in self.extents.items() if key in current_ids}
         result = markers_for(message, poses, header, self.positions)
-        result.markers = self.unique_objects(message, result.markers)
+        result.markers = self.unique_objects(message, result.markers, self.extents)
         current_keys = {(marker.ns, marker.id) for marker in result.markers}
         # Repeat targeted deletions so a throttled/reconnecting viewer cannot miss a removal.
         removed = [Marker(header=deepcopy(header), ns=ns, id=marker_id, action=Marker.DELETE)
@@ -202,6 +271,9 @@ class MitiSceneAdapter(Node):
         self.poses = {}
         self.graph = None
         self.objects = None
+        self.object_extents = {}
+        self.geometry_session = None
+        self.last_geometry_read = -float('inf')
         self.session = None
         self.markers = SemanticMarkers()
         state_dir = os.environ.get('MITI_STATE_DIR')
@@ -232,6 +304,7 @@ class MitiSceneAdapter(Node):
         try:
             from rtabmap_semantic_msgs.msg import SemanticMap
             self.create_subscription(SemanticMap, '/semantic/objects', self.on_objects, latched)
+            self.create_subscription(String, '/semantic/object_geometry', self.on_object_geometry, latched)
         except ImportError:
             self.get_logger().warning('Semantic messages unavailable; trajectory display is enabled.')
         self.get_logger().info('MITI display adapter ready; waiting for /mapGraph, /semantic/objects and /rgbd_image')
@@ -278,11 +351,35 @@ class MitiSceneAdapter(Node):
         self.session, self.objects = session, message
         self.publish_markers()
 
+    def on_object_geometry(self, message):
+        try:
+            data=json.loads(message.data)
+            if (data.get('schema')!=1 or not isinstance(data.get('objects'),list) or
+                    len(data['objects'])>10000 or not all(isinstance(data.get(k),str)
+                    for k in ('map_key','map_uuid','frame_id'))):
+                raise ValueError('Invalid object geometry metadata')
+            extents={}
+            for row in data['objects']:
+                key=row['object_id'];extent=np.asarray(row['extent'],dtype=float)
+                if (not isinstance(key,int) or isinstance(key,bool) or key<=0 or
+                        extent.shape!=(3,) or not np.isfinite(extent).all() or
+                        np.any(extent<=0) or np.any(extent>100)):
+                    raise ValueError('Invalid object extent')
+                extents[key]=extent
+            self.geometry_session=(data['map_key'],data['map_uuid'],data['frame_id'] or 'map')
+            self.object_extents=extents
+            self.publish_markers()
+        except (ValueError,TypeError,KeyError) as error:
+            self.get_logger().warning('Skipped invalid semantic geometry: '+str(error),throttle_duration_sec=5.)
+
     def clear_scene(self):
         self.poses.clear()
         self.graph = None
         self.cache_epoch += 1
         self.markers.reset()
+        self.object_extents.clear()
+        self.geometry_session=None
+        self.last_geometry_read=-float('inf')
         self.path_pub.publish(Path())
 
     def restore_graph(self, epoch, data):
@@ -340,7 +437,14 @@ class MitiSceneAdapter(Node):
         elif (self.graph.header.frame_id or 'map') != header.frame_id:
             poses = {}
             self.markers.positions.clear()
-        self.marker_pub.publish(self.markers.update(self.objects, poses, header))
+        session=(self.objects.map_key,self.objects.map_uuid,header.frame_id)
+        extents=self.object_extents if self.geometry_session==session else {}
+        if self.geometry_session!=session and time.monotonic()-self.last_geometry_read>=2.:
+            self.last_geometry_read=time.monotonic()
+            try:extents=stored_object_extents(self.objects.map_key,self.objects.map_uuid,poses)
+            except (sqlite3.Error,OSError,ValueError,TypeError,KeyError) as error:
+                self.get_logger().warning('Cannot read legacy display geometry: '+str(error),throttle_duration_sec=5.)
+        self.marker_pub.publish(self.markers.update(self.objects, poses, header, extents))
 
     def save_display_cache(self):
         snapshot = self.markers.cache_snapshot()

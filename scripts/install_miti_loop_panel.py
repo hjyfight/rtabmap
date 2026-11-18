@@ -41,12 +41,13 @@ def replace_once(source, old, new):
     return source.replace(old, new, 1)
 
 
-def extend_bundle(path, source, panel, height_clip, title, camera_heading, heading_config, depth_display, map_details, grid_map, infrared_display, arc_camera_display, graph_feature_maps, retained_grid, semantic_labels, dynamic_cloud, panel_revision='', fourmodal_features='', segmentation=''):
+def extend_bundle(path, source, panel, height_clip, title, camera_heading, heading_config, depth_display, map_details, grid_map, infrared_display, arc_camera_display, graph_feature_maps, retained_grid, semantic_labels, dynamic_cloud, panel_revision='', fourmodal_features='', segmentation='', object_multimodal=''):
     if path.endswith('453.e8d48709a26a0ed3.js'):
         source = replace_once(source, 'function rO(e){',
             panel + '\nconst RtabmapLoopStatusPanel = rtabmapLoopStatusFactory(n).Component;\n' +
             fourmodal_features + '\nconst RtabmapFourmodalPanel = rtabmapFourmodalFactory(n).Component;\n' +
             segmentation + '\nconst RtabmapSegmentationPanel = rtabmapSegmentationFactory(n).Component;\n' +
+            object_multimodal + '\nconst RtabmapObjectMultimodalPanel = rtabmapObjectMultimodalFactory(n).Component;\n' +
             height_clip + '\nconst RtabmapHeightClip = rtabmapHeightClipFactory(n);\n' +
             semantic_labels + '\nconst RtabmapSemanticLabels = rtabmapSemanticLabelsFactory(n,ta.V);\n' +
             dynamic_cloud + '\nconst RtabmapDynamicCloud = rtabmapDynamicCloudFactory(n);\n' +
@@ -65,6 +66,7 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
         source = replace_once(source, 'if(11===n.type)return(0,r.jsx)(ty,{marker:n,opacity:d});',
             'if(11===n.type)return(0,r.jsx)(n.ns.startsWith("rtabmap/walls/")?RtabmapMapDetails.WallMesh:ty,{marker:n,opacity:d});')
         source = replace_once(source, 'if(9===n.type)return(0,r.jsx)(ta.V,',
+            'if(RtabmapSemanticLabels.isAnchor(n))return null;'
             'if(RtabmapSemanticLabels.isSemantic(n))return(0,r.jsx)(RtabmapSemanticLabels.Label,'
             '{marker:n,color:"#".concat(u.getHexString()),opacity:d,labelScale:c});'
             'if(RtabmapGraphFeatureMaps.isNavigationLabel(n))return(0,r.jsx)(RtabmapGraphFeatureMaps.NavigationLabel,'
@@ -86,6 +88,7 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
             'switch(t.type){case"loop-status":return(0,r.jsx)(RtabmapLoopStatusPanel,'
             '{client:a,topic:t.props&&t.props.topic});case"fourmodal-features":return(0,r.jsx)(RtabmapFourmodalPanel,'
             '{client:a,topic:t.props&&t.props.topic});case"yolo-segmentation":return(0,r.jsx)(RtabmapSegmentationPanel,'
+            '{client:a,topic:t.props&&t.props.topic});case"object-multimodal":return(0,r.jsx)(RtabmapObjectMultimodalPanel,'
             '{client:a,topic:t.props&&t.props.topic});case"topics":')
         source = replace_once(source, 'function te(e){let{points:t,style:a}=e,',
             'function te(e){const rtabmapClip=n.useContext(RtabmapHeightClip.Context);let{points:t,style:a}=e,')
@@ -125,12 +128,13 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
     source = replace_once(source, '(e.subscriptionTopics.delete(n.subscriptionId),r.binding=void 0)',
         '(e.subscriptionTopics.delete(n.subscriptionId),rtabmapClearGridMessage(r),r.binding=void 0)')
     source = replace_once(source, 'let k=[{type:"topics",',
-        depth_display + '\n' + map_details + '\n' + grid_map + '\n' + infrared_display + '\n' + arc_camera_display + '\n' + graph_feature_maps + '\n' + dynamic_cloud + '\n' + fourmodal_features + '\n' + segmentation +
+        depth_display + '\n' + map_details + '\n' + grid_map + '\n' + infrared_display + '\n' + arc_camera_display + '\n' + graph_feature_maps + '\n' + dynamic_cloud + '\n' + fourmodal_features + '\n' + segmentation + '\n' + object_multimodal +
         '\nrtabmapVersionPanelChunk(r,' + json.dumps(panel_revision) + ');\n'
         'let k=[{type:"loop-status",label:"回环状态",icon:"↻",'
         'defaultSize:{w:4,h:8},minSize:{minW:2,minH:4}},{type:"fourmodal-features",label:"四模态特征",icon:"◈",'
         'defaultSize:{w:8,h:10},minSize:{minW:3,minH:5}},{type:"yolo-segmentation",label:"目标分割",icon:"◉",'
-        'defaultSize:{w:6,h:10},minSize:{minW:3,minH:5}},{type:"topics",')
+        'defaultSize:{w:6,h:10},minSize:{minW:3,minH:5}},{type:"object-multimodal",label:"单目标四模态融合",icon:"◈",'
+        'defaultSize:{w:7,h:10},minSize:{minW:3,minH:5}},{type:"topics",')
     source = replace_once(source,
         't({mosaic:r.mosaic,widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})})',
         't(rtabmapMigrateSegmentationLayout(rtabmapHideAuxiliaryMaps(rtabmapMigrateFourmodalLayout(rtabmapMigrateGraphFeatureLayout(rtabmapMigrateArcCameraLayout(rtabmapMigrateInfraredLayout(rtabmapMigrateGridLayout({...r,mosaic:r.mosaic,widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})'
@@ -146,7 +150,7 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
         'fontWeight:700,letterSpacing:"0.04em",whiteSpace:"nowrap",overflow:"hidden",'
         'textOverflow:"ellipsis"},children:' + title_js + '})')
     return replace_once(source, '"button-switch":c.Z,log:d.Z}',
-                        '"button-switch":c.Z,"loop-status":l.Z,"fourmodal-features":l.Z,"yolo-segmentation":l.Z,log:d.Z}')
+                        '"button-switch":c.Z,"loop-status":l.Z,"fourmodal-features":l.Z,"yolo-segmentation":l.Z,"object-multimodal":l.Z,log:d.Z}')
 
 
 def atomic_write(path, data):
@@ -174,6 +178,7 @@ def install(app=APP):
     dynamic_cloud = (PROJECT / 'config/miti_dynamic_cloud.js').read_text()
     fourmodal_features = (PROJECT / 'config/miti_fourmodal_features.js').read_text()
     segmentation = (PROJECT / 'config/miti_segmentation.js').read_text()
+    object_multimodal = (PROJECT / 'config/miti_object_multimodal.js').read_text()
     heading_config = json.loads((PROJECT / 'config/miti_camera_heading.json').read_text())
     if (not isinstance(heading_config, dict) or
             not isinstance(heading_config.get('enabled'), bool) or
@@ -207,7 +212,7 @@ def install(app=APP):
     for name, expected in UPSTREAM.items():
         target, backup, original, current = original_file(name, expected)
         updated = extend_bundle(name, original.decode(), panel, height_clip, title,
-                                camera_heading, heading_config, depth_display, map_details, grid_map, infrared_display, arc_camera_display, graph_feature_maps, retained_grid, semantic_labels, dynamic_cloud, panel_revision, fourmodal_features, segmentation).encode()
+                                camera_heading, heading_config, depth_display, map_details, grid_map, infrared_display, arc_camera_display, graph_feature_maps, retained_grid, semantic_labels, dynamic_cloud, panel_revision, fourmodal_features, segmentation, object_multimodal).encode()
         if name.endswith('453.e8d48709a26a0ed3.js'):
             # Next marks this pinned vendor filename immutable. Version its lazy
             # import URL so a fresh page cannot pair with an older cached renderer.

@@ -12,12 +12,17 @@ from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy
 from std_msgs.msg import Int32, String
 from std_srvs.srv import Trigger
 from rtabmap_msgs.msg import MapGraph
+from rtabmap_msgs.srv import GetMap
 from rtabmap_semantic_msgs.msg import Keyframe, Observation, SemanticMap, SemanticObject
 
 from .fusion import SemanticState, SemanticStore
 from .geometry import rigid_matrix, lift_mask
 from .labels import chinese_label, YOLOE_LABEL_POLICY_VERSION
 from .timing import CycleRecorder
+
+
+POSE_STREAM_WAIT_NS = 2_000_000_000
+POSE_REQUEST_TIMEOUT_NS = 3_000_000_000
 
 
 def ros_matrix(pose):
@@ -121,12 +126,18 @@ class SemanticMapper(Node):
         latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
                              durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.publisher = self.create_publisher(SemanticMap, '/semantic/objects', latched)
+        self.geometry_publisher = self.create_publisher(String, '/semantic/object_geometry', latched)
         self.status = self.create_publisher(String, '/semantic/status', 1)
         self.timing_publisher = self.create_publisher(String, '/semantic/timing', 100)
         self.timing = CycleRecorder(lambda row: self.timing_publisher.publish(
             String(data=json.dumps(row, ensure_ascii=False, allow_nan=False))))
         self.pending_received_ns = None
         self.active_received_ns = None
+        self.pose_request = None
+        self.pose_request_key = None
+        self.pose_request_started_ns = None
+        self.skipped_missing_pose = 0
+        self.pose_client = self.create_client(GetMap, '/rtabmap/get_map_data')
         self.ack = self.create_publisher(Int32, '/semantic/processed_node', 10)
         self.create_subscription(Keyframe, '/semantic/keyframes', self.on_frame, 5)
         self.create_subscription(MapGraph, '/semantic/graph', self.on_graph, latched)
@@ -198,6 +209,65 @@ class SemanticMapper(Node):
             worker_end_ns=finished, prediction_count=len(predictions), valid_3d_count=len(detections),
             model_timing=getattr(self.detector, 'last_timing', None))
 
+    def clear_pose_request(self):
+        if self.pose_request is not None and not self.pose_request.done():
+            self.pose_client.remove_pending_request(self.pose_request)
+            self.pose_request.cancel()
+        self.pose_request = self.pose_request_key = self.pose_request_started_ns = None
+
+    def skip_pending_pose(self, reason):
+        frame = self.pending
+        self.clear_pose_request()
+        self.get_logger().warning(f'Node {frame.node_id}: {reason}; skipping this keyframe to release the semantic queue.')
+        self.timing.record(frame, 'dropped', reason=reason, received_ns=self.pending_received_ns)
+        self.skipped_missing_pose += 1
+        # The bridge sends one frame at a time. A frame removed by rehearsal must
+        # be acknowledged even though it cannot be projected or stored.
+        self.ack.publish(Int32(data=frame.node_id))
+        self.pending = self.pending_received_ns = None
+        return False
+
+    def resolve_pending_pose(self):
+        frame = self.pending
+        key = (self.state.map_uuid, self.frame_id, frame.node_id, frame.node_stamp)
+        if self.pose_request is not None and (self.pose_request_key != key or frame.node_id in self.state.poses):
+            self.clear_pose_request()
+        if frame.node_id in self.state.poses:
+            return True
+        now = time.monotonic_ns()
+        if self.pose_request is None:
+            if now - self.pending_received_ns < POSE_STREAM_WAIT_NS:
+                return False
+            if not self.pose_client.service_is_ready():
+                if now - self.pending_received_ns < POSE_STREAM_WAIT_NS + POSE_REQUEST_TIMEOUT_NS:
+                    return False
+                return self.skip_pending_pose('graph_service_unavailable')
+            self.pose_request = self.pose_client.call_async(
+                GetMap.Request(global_map=True, optimized=True, graph_only=True))
+            self.pose_request_key, self.pose_request_started_ns = key, now
+            return False
+        if not self.pose_request.done():
+            if now - self.pose_request_started_ns < POSE_REQUEST_TIMEOUT_NS:
+                return False
+            return self.skip_pending_pose('graph_request_timeout')
+        try:
+            data = self.pose_request.result().data
+            graph = data.graph
+            frame_id = data.header.frame_id or graph.header.frame_id or 'map'
+            if frame_id == self.frame_id:
+                for node_id, pose in zip(graph.poses_id, graph.poses):
+                    if node_id == frame.node_id:
+                        # Recover only this exact optimized anchor; preserve
+                        # newer streaming poses and never substitute a live TF.
+                        matrix = ros_matrix(pose)
+                        self.state.poses[node_id] = matrix
+                        self.latest_graph_poses[node_id] = matrix
+                        self.clear_pose_request()
+                        return True
+        except Exception as error:
+            self.get_logger().warning(f'Cannot restore node {frame.node_id} pose: {error}')
+        return self.skip_pending_pose('missing_graph_pose')
+
     def poll(self):
         if self.future is not None and self.future.done():
             frame = self.active
@@ -239,8 +309,8 @@ class SemanticMapper(Node):
                         objects_in_state=len(self.state.objects))
                     self.active_received_ns = None
         if self.future is None and self.pending is not None:
-            if self.pending.node_id not in self.state.poses:
-                return  # Wait for the exact graph node, never substitute the latest TF.
+            if not self.resolve_pending_pose():
+                return
             self.active, self.pending = self.pending, None
             self.active_received_ns, self.pending_received_ns = self.pending_received_ns, None
             self.active_submitted_ns = time.monotonic_ns()
@@ -256,6 +326,7 @@ class SemanticMapper(Node):
         if self.config['detector_backend'] == 'emsanet':
             from .emsanet_detector import emsanet_chinese_label
             display_label = emsanet_chinese_label
+        geometry = []
         for obj in self.state.visible_objects():
             label = display_label(obj.label) if self.config['label_language'] == 'zh' else obj.label
             item = SemanticObject(object_id=obj.object_id, label=label,
@@ -266,12 +337,25 @@ class SemanticMapper(Node):
                 anchor.position.x, anchor.position.y, anchor.position.z = map(float, observation.position)
                 item.observations.append(anchor)
             message.objects.append(item)
+            extent = self.state.extent(obj)
+            if extent is not None:
+                geometry.append(dict(object_id=obj.object_id, extent=extent.tolist()))
         self.publisher.publish(message)
+        # Optional display metadata avoids changing the persisted objects or the
+        # SemanticMap wire format. Extents use the mapper's optimized graph.
+        self.geometry_publisher.publish(String(data=json.dumps(dict(schema=1,
+            map_key=message.map_key, map_uuid=message.map_uuid, frame_id=self.frame_id,
+            objects=geometry), allow_nan=False)))
         self.status.publish(String(data=json.dumps(dict(processed=self.processed, failed=self.failed,
             detector_backend=self.config['detector_backend'],
             encoder_fusion=(self.config['emsanet_fusion']
                             if self.config['detector_backend'] == 'emsanet' else None),
+            device=self.config['device'],
             active_node=self.active.node_id if self.active else None,
+            pending_node=self.pending.node_id if self.pending else None,
+            pending_wait_seconds=((time.monotonic_ns() - self.pending_received_ns) / 1e9
+                                  if self.pending_received_ns is not None else 0.0),
+            skipped_missing_pose=self.skipped_missing_pose,
             confirmed_objects=len(message.objects), total_objects=len(self.state.objects),
             last_inference_seconds=self.last_inference_seconds, map_uuid=self.state.map_uuid))))
 
@@ -284,6 +368,7 @@ class SemanticMapper(Node):
         return response
 
     def destroy_node(self):
+        self.clear_pose_request()
         self.pool.shutdown(wait=True, cancel_futures=True)
         self.store.save(self.state)
         self.store.close()

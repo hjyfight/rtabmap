@@ -1,0 +1,762 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:rtabmap:object-multimodal-fusion:1",
+  "title": "Single target four-modal fusion result",
+  "description": "Structural schema; standard_interface.validate_result also verifies integrity, weighted arithmetic, identities and use restrictions.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "object_multimodal_fusion/1"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "stamp": {
+      "type": "number",
+      "minimum": 0
+    },
+    "published_at": {
+      "type": "number",
+      "minimum": 0
+    },
+    "frame_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "model": {
+      "type": "object"
+    },
+    "calibration": {
+      "type": "object",
+      "properties": {
+        "synchronization_verified": {
+          "type": "boolean"
+        },
+        "profile_sha256": {
+          "type": "string",
+          "minLength": 1
+        },
+        "calibration_version": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "synchronization_verified",
+        "profile_sha256",
+        "calibration_version"
+      ],
+      "additionalProperties": true
+    },
+    "sources": {
+      "type": "object",
+      "properties": {
+        "rgb": {
+          "$ref": "#/$defs/source"
+        },
+        "infrared": {
+          "$ref": "#/$defs/source"
+        },
+        "lidar": {
+          "$ref": "#/$defs/source"
+        },
+        "audio": {
+          "$ref": "#/$defs/source"
+        }
+      },
+      "required": [
+        "rgb",
+        "infrared",
+        "lidar",
+        "audio"
+      ],
+      "additionalProperties": true
+    },
+    "targets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/target"
+      },
+      "maxItems": 16
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/event"
+      }
+    },
+    "timing": {
+      "$ref": "#/$defs/timing"
+    },
+    "safety": {
+      "$ref": "#/$defs/safety"
+    },
+    "integrity": {
+      "type": "object",
+      "properties": {
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "authentication": {
+          "enum": [
+            "unsigned",
+            "hmac_sha256"
+          ]
+        },
+        "hmac_sha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "sha256",
+        "authentication",
+        "hmac_sha256"
+      ],
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "schema",
+    "sequence",
+    "stamp",
+    "published_at",
+    "frame_id",
+    "model",
+    "calibration",
+    "sources",
+    "targets",
+    "events",
+    "timing",
+    "safety",
+    "integrity"
+  ],
+  "additionalProperties": true,
+  "$defs": {
+    "safety": {
+      "type": "object",
+      "properties": {
+        "require_human_review": {
+          "type": "boolean"
+        },
+        "require_independent_review": {
+          "type": "boolean"
+        },
+        "prohibit_automatic_execution": {
+          "type": "boolean"
+        },
+        "restricted_use": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "require_human_review",
+        "require_independent_review",
+        "prohibit_automatic_execution",
+        "restricted_use"
+      ],
+      "additionalProperties": true
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "modality": {
+          "enum": [
+            "rgb",
+            "infrared",
+            "lidar",
+            "audio"
+          ]
+        },
+        "present": {
+          "type": "boolean"
+        },
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "frame_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stamp": {
+          "type": "number",
+          "minimum": 0
+        },
+        "quality": {
+          "$ref": "#/$defs/quality"
+        }
+      },
+      "required": [
+        "modality",
+        "present",
+        "quality"
+      ],
+      "additionalProperties": true
+    },
+    "features": {
+      "type": "object",
+      "properties": {
+        "encoder": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 1024,
+            "maxItems": 1024
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "independent": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 1024,
+            "maxItems": 1024
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "joint": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 4096,
+          "maxItems": 4096
+        },
+        "fused": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 1024,
+          "maxItems": 1024
+        },
+        "valid_mask": {
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "weights": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "fused_valid": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "encoder",
+        "independent",
+        "joint",
+        "fused",
+        "valid_mask",
+        "weights",
+        "complete",
+        "fused_valid"
+      ],
+      "additionalProperties": true
+    },
+    "quality": {
+      "type": "object",
+      "properties": {
+        "usable": {
+          "type": "boolean"
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "grade": {
+          "enum": [
+            "invalid",
+            "unavailable",
+            "degraded",
+            "nominal"
+          ]
+        }
+      },
+      "required": [
+        "usable",
+        "score",
+        "grade"
+      ],
+      "additionalProperties": true
+    },
+    "association": {
+      "type": "object",
+      "properties": {
+        "target_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "associated": {
+          "type": "boolean"
+        },
+        "used": {
+          "type": "boolean"
+        },
+        "basis": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        }
+      },
+      "required": [
+        "target_id",
+        "associated",
+        "used",
+        "basis",
+        "source"
+      ],
+      "additionalProperties": true
+    },
+    "timing": {
+      "type": "object",
+      "properties": {
+        "processing_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "queue_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "receipt_to_result_s": {
+          "type": "number",
+          "minimum": 0
+        },
+        "output_interval_s": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "task_period_s": {
+          "anyOf": [
+            {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "boundary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "period_verdict": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "processing_s",
+        "queue_s",
+        "receipt_to_result_s",
+        "output_interval_s",
+        "task_period_s",
+        "boundary",
+        "period_verdict"
+      ],
+      "additionalProperties": true
+    },
+    "event": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stamp": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "type",
+        "target_id",
+        "stamp"
+      ],
+      "additionalProperties": true
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "target_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "baseline_label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "instance_id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "position": {
+          "type": "object",
+          "properties": {
+            "frame_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "xyz_m": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "extent_m": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "valid": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "frame_id",
+            "xyz_m",
+            "extent_m",
+            "valid"
+          ],
+          "additionalProperties": true
+        },
+        "motion": {
+          "type": "object",
+          "properties": {
+            "target_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "frame_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "motion_valid": {
+              "type": "boolean"
+            },
+            "velocity_m_s": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "speed_m_s": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "predicted_position_1s": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "target_id",
+            "frame_id",
+            "motion_valid",
+            "velocity_m_s",
+            "speed_m_s",
+            "predicted_position_1s"
+          ],
+          "additionalProperties": true
+        },
+        "modalities": {
+          "type": "object",
+          "properties": {
+            "rgb": {
+              "$ref": "#/$defs/association"
+            },
+            "infrared": {
+              "$ref": "#/$defs/association"
+            },
+            "lidar": {
+              "$ref": "#/$defs/association"
+            },
+            "audio": {
+              "$ref": "#/$defs/association"
+            }
+          },
+          "required": [
+            "rgb",
+            "infrared",
+            "lidar",
+            "audio"
+          ],
+          "additionalProperties": true
+        },
+        "features": {
+          "type": "object",
+          "properties": {
+            "encoder": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 1024,
+                "maxItems": 1024
+              },
+              "minItems": 4,
+              "maxItems": 4
+            },
+            "independent": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 1024,
+                "maxItems": 1024
+              },
+              "minItems": 4,
+              "maxItems": 4
+            },
+            "joint": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 4096,
+              "maxItems": 4096
+            },
+            "fused": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 1024,
+              "maxItems": 1024
+            },
+            "valid_mask": {
+              "type": "array",
+              "items": {
+                "type": "boolean"
+              },
+              "minItems": 4,
+              "maxItems": 4
+            },
+            "weights": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "minItems": 4,
+              "maxItems": 4
+            },
+            "complete": {
+              "type": "boolean"
+            },
+            "fused_valid": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "encoder",
+            "independent",
+            "joint",
+            "fused",
+            "valid_mask",
+            "weights",
+            "complete",
+            "fused_valid"
+          ],
+          "additionalProperties": true
+        },
+        "safety": {
+          "$ref": "#/$defs/safety"
+        },
+        "quality": {
+          "type": "object"
+        },
+        "preprocessing": {
+          "type": "object"
+        },
+        "uncertainty": {
+          "type": "object",
+          "properties": {
+            "accuracy_verified": {
+              "type": "boolean"
+            },
+            "reasons": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "missing_modalities": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "rgb",
+                  "infrared",
+                  "lidar",
+                  "audio"
+                ]
+              }
+            },
+            "conflicts": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "participating_modalities": {
+                    "type": "array",
+                    "items": {
+                      "enum": [
+                        "rgb",
+                        "infrared",
+                        "lidar",
+                        "audio"
+                      ]
+                    }
+                  },
+                  "handling": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "type",
+                  "participating_modalities",
+                  "handling"
+                ],
+                "additionalProperties": true
+              }
+            }
+          },
+          "required": [
+            "accuracy_verified",
+            "reasons",
+            "missing_modalities",
+            "conflicts"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "target_id",
+        "label",
+        "baseline_label",
+        "instance_id",
+        "position",
+        "motion",
+        "modalities",
+        "features",
+        "safety",
+        "quality",
+        "preprocessing",
+        "uncertainty"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

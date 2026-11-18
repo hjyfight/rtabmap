@@ -16,7 +16,7 @@ bash scripts/build_yolo_segmentation.sh
 # 第一终端；已有 RGB 分割服务时跳过，文件锁禁止重复启动。
 bash scripts/start_yoloe_segmentation_live.sh
 # 未运行含深度配准的建图链路时，在另一个终端先启动独立深度预览。
-# 已有 /camera/depth_registered/image_rect 和 /rgbd_image 发布端时复用现有链路。
+# 已有 /camera/depth_registered/image_rect 发布端时复用现有链路。
 bash scripts/start_depth_preview.sh
 # 第二终端；启动独立近红外分割、目标融合和有上限的同步采集。
 bash scripts/start_segmentation_fusion.sh
@@ -35,7 +35,7 @@ RGB 的 GPU 入口在 YOLOE 配置之后叠加 [yoloe_segmentation_gpu.yaml](../
 
 配置见 [segmentation_fusion.yaml](../config/segmentation_fusion.yaml)。输入为 RGB 分割请求、近红外原图、注册深度、两路 CameraInfo 和 TF。采集时间差超过 50 ms、深度未注册或标定不匹配时等待有效输入，正式 RGB 输出继续发布。融合保留一帧计算及有上限的 RGB 请求缓存（默认 64 帧，等待超过 5 秒丢弃），每次选择最新的完整同步配对，丢弃已被它替代的旧请求。较新的 RGB 请求不会覆盖等待晚到注册深度的配对帧；恢复输入后仍验证实际采集时间。单工作线程限制资源；每次启动默认最多采集 60 帧，不会无限写盘。
 
-原始深度在线不等于注册深度在线。注册节点退出后，右侧深度预览和融合都会等待；早先保存的“已采集 60 组”仍会保留。达到采集上限仅停止写入新样本，实时融合继续运行。独立深度预览入口检查既有深度/RGB-D 发布端，避免与建图配准重复发布。
+原始深度在线不等于注册深度在线。注册节点退出后，右侧深度预览和融合都会等待；早先保存的“已采集 60 组”仍会保留。达到采集上限仅停止写入新样本，实时融合继续运行。独立深度预览的同步节点使用 `/depth_preview_rgbd_sync`，发布 `/depth_preview/rgbd_image`；建图保留自己的 `/rgbd_sync` 和经校验的 `/rgbd_image`，只复用同一份注册深度。建图启动入口会检查并复用已有注册深度，避免重复配准发布。融合预测不参与几何或语义建图。
 
 在 MITI 打开 <http://localhost:3002/rtabmap.html?refresh=1>，点击目标分割面板的“融合对比”，查看同一采集帧的 RGB 单模态、独立近红外单模态和融合预览。面板分别显示计算耗时与画面帧龄；帧龄使用启动时测得的机器人时钟偏差估算，保留图片时继续增长，计算耗时不代表整个链路的延迟。主叠加页独立更新，帧号不同的图片不能直接比较目标数量。Ctrl+C 停止融合入口会一起停止其近红外子进程。
 

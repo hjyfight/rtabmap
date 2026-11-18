@@ -16,12 +16,12 @@ def generate_launch_description():
                         ('depth_registered/image_rect', '/camera/depth_registered/image_rect'),
                         ('depth_registered/camera_info', '/camera/depth_registered/camera_info')]),
         Node(
-            package='rtabmap_sync', executable='rgbd_sync', name='rgbd_sync', output='screen',
+            package='rtabmap_sync', executable='rgbd_sync', name='depth_preview_rgbd_sync', output='screen',
             parameters=[{'approx_sync': True, 'approx_sync_max_interval': 0.05,
                          'qos': 2, 'qos_camera_info': 2, 'sync_queue_size': 30,
                          'topic_queue_size': 10, 'use_sim_time': False}],
             remappings=[('rgb/image', '/camera/color/image_raw'),
                         ('rgb/camera_info', '/camera/color/camera_info'),
                         ('depth/image', '/camera/depth_registered/image_rect'),
-                        ('rgbd_image', '/rgbd_image')]),
+                        ('rgbd_image', '/depth_preview/rgbd_image')]),
     ])

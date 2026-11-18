@@ -1,0 +1,28 @@
+# Edit these addresses when pairing this Orin with a different robot/router.
+schema: 1
+network:
+  interface: wlP1p1s0
+  sensor_host: 192.168.1.104
+  sensor_port: 7447
+  display_host: 192.168.1.100
+  ros_domain_id: 74
+  # Optional AudioFrame stream requires matching messages on the sender.
+  audio_transport: false
+  sensor_clock_offset_s: 0.0
+  audio_clock_offset_s: 0.0
+  clock_uncertainty_s: 0.0
+  clock_method: configured_ntp
+perception:
+  device: cuda:0
+  rgb_max_hz: 2.0
+  max_input_age_s: 3.0
+  features_period_s: 1.0
+  fusion_period_s: 1.0
+  max_objects: 4
+  require_all_modalities: true
+mapping:
+  semantic_backend: emsanet
+  # [x, y, z, roll, pitch, yaw], metres/radians, camera_link in livox_frame.
+  # Fill measured mounting extrinsics before semantic RGB-D/LiDAR mapping.
+  camera_to_lidar: null
+  calibration_version: unverified

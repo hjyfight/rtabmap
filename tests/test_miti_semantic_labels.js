@@ -9,8 +9,10 @@ const vendor = createRequire(path.join(root, '.tools/miti/root/usr/lib/miti/pack
 const React = vendor('react');
 const {renderToStaticMarkup} = vendor('react-dom/server.browser');
 let source = fs.readFileSync(path.join(root, 'config/miti_semantic_labels.js'), 'utf8');
+let installedBundle = null;
 if (process.env.MITI_TEST_RENDERER_BUNDLE) {
   const bundle = fs.readFileSync(process.env.MITI_TEST_RENDERER_BUNDLE, 'utf8');
+  installedBundle = bundle;
   const begin = bundle.indexOf('function rtabmapSemanticLabelsFactory(');
   const end = bundle.indexOf('const RtabmapSemanticLabels = ', begin);
   assert.ok(begin >= 0 && end > begin);
@@ -23,8 +25,8 @@ const ui = factory(React, props => {
   return React.createElement('div', null, props.children);
 });
 const marker = (id, text) => ({type: 9, ns: `miti/${id}/label`, text, scale: {z: .16}});
-// Reproduce "television +5 / box +3": every record must keep its own stable
-// representation instead of letting unrelated projected neighbors rename it.
+// Reproduce "television +5 / box +3": named objects stay stable while
+// suppressed predictions leave no placeholder label or background.
 const markers = [marker(5, '电视'), ...[10, 22, 27, 64, 90].map(id => marker(id, '其他物品')),
   marker(4, '盒子'), ...[76, 97, 155].map(id => marker(id, '其他家具'))];
 function render(input = markers, settings = {}, labelScale = 6) {
@@ -43,10 +45,10 @@ test('legacy declutter layouts render TV/box immediately with no aggregate count
   const labels = texts(html);
   assert.equal(labels['miti/5/label'], '电视');
   assert.equal(labels['miti/4/label'], '盒子');
-  assert.equal(Object.keys(labels).length, 10);
+  assert.equal(Object.keys(labels).length, 2);
   assert.doesNotMatch(html, /\+\d|visibility:hidden|aria-hidden="true"/);
-  for (const id of [10, 22, 27, 64, 90, 76, 97, 155]) assert.equal(labels[`miti/${id}/label`], '·');
-  assert.match(html, /预测类别：其他物品 · 对象 #10/);
+  for (const id of [10, 22, 27, 64, 90, 76, 97, 155]) assert.equal(labels[`miti/${id}/label`], undefined);
+  assert.doesNotMatch(html, />·<\/span>/);
   assert.equal(ui.modeOf({}), 'stable');
   assert.equal(ui.modeOf({rtabmapSemanticLabels: 'declutter'}), 'stable');
 });
@@ -66,12 +68,13 @@ test('orbit, zoom, changed projected neighbors and input order do not change per
 test('all and hidden modes are reversible and each scene has an independent setting', () => {
   assert.equal(texts(render(markers, {rtabmapSemanticLabels: 'all'}))['miti/10/label'], '其他物品');
   assert.deepEqual(texts(render(markers, {rtabmapSemanticLabels: 'hidden'})), {});
-  assert.equal(texts(render())['miti/10/label'], '·');
+  assert.equal(texts(render())['miti/10/label'], undefined);
   const scene = mode => React.createElement(ui.Provider, {settings: {rtabmapSemanticLabels: mode}},
     React.createElement(ui.Label, {marker: marker(10, '其他物品'), color: '#fff', opacity: 1, labelScale: 1}));
   const html = renderToStaticMarkup(React.createElement(React.Fragment, null, scene('all'), scene('stable'), scene('hidden')));
-  assert.match(html, />其他物品<\/span>.*>·<\/span>/);
-  assert.equal((html.match(/data-semantic-id=/g) || []).length, 2);
+  assert.match(html, />其他物品<\/span>/);
+  assert.doesNotMatch(html, />·<\/span>/);
+  assert.equal((html.match(/data-semantic-id=/g) || []).length, 1);
 });
 
 test('adding, deleting or updating one record never changes another record, and same-class neighbors remain distinct', () => {
@@ -124,3 +127,46 @@ test('only project semantic text labels use this renderer and prediction text is
   const html = render([marker(5, '<script>电视</script>')]);
   assert.ok(html.includes('&lt;script&gt;电视&lt;/script&gt;'));
 });
+test('object mode removes scene placeholders while preserving distinct physical objects and all-mode details', () => {
+  const input=[marker(300,'室内设计'),marker(301,'院子'),marker(302,'椅子'),marker(303,'椅子')];
+  const stable=texts(render(input));
+  assert.equal(stable['miti/300/label'],undefined);assert.equal(stable['miti/301/label'],undefined);
+  assert.equal(stable['miti/302/label'],'椅子');assert.equal(stable['miti/303/label'],'椅子');
+  assert.doesNotMatch(render(input),/预测类别：室内设计|>·<\/span>/);
+  const all=texts(render(input,{rtabmapSemanticLabels:'all'}));
+  assert.equal(all['miti/300/label'],'室内设计');assert.equal(all['miti/301/label'],'院子');
+});
+test('empty, invisible, symbol-only and unnamed predictions create no label anchors or backgrounds in any mode', () => {
+  const input=[undefined,null,'',' \t\n ','\u200b\u200e\ufeff','·','...','—','-','unknown','无标签']
+    .map((text,index)=>marker(400+index,text));
+  for (const mode of ['stable','all','hidden']) {
+    assert.equal(render(input,{rtabmapSemanticLabels:mode}),'');
+    assert.equal(htmlCalls.length,0);
+  }
+  const valid=texts(render([marker(500,'  徒步靴\u200b '),marker(501,'3D打印机')]));
+  assert.equal(valid['miti/500/label'],'徒步靴');assert.equal(valid['miti/501/label'],'3D打印机');
+});
+test('only the separately published semantic location spheres are suppressed', () => {
+  assert.equal(ui.isAnchor({type:2,ns:'miti/42/point'}),true);
+  for(const m of [marker(42,'椅子'),{type:2,ns:'navigation/nodes'},
+    {type:2,ns:'rtabmap/features'},{type:8,ns:'map/points'}])assert.equal(ui.isAnchor(m),false);
+});
+test('installed native marker renderer removes location geometry and preserves names and other spheres',
+  {skip: !installedBundle}, () => {
+    const begin=installedBundle.indexOf('function tj(e){'),end=installedBundle.indexOf('var tw=',begin);
+    assert.ok(begin>=0 && end>begin);
+    const jsx=(type,props,key)=>React.createElement(type,{...props,key});
+    const native=vm.runInNewContext(installedBundle.slice(begin,end)+';tj',{
+      r:{jsx,jsxs:jsx,Fragment:React.Fragment},x:{DoubleSide:2},
+      tx:()=>({labelScale:1}),tv:()=>({getHexString:()=> 'ffffff'}),es:v=>[v.x,v.y,v.z],
+      ta:{V:props=>React.createElement('div',null,props.children)},
+      RtabmapSemanticLabels:ui,RtabmapGraphFeatureMaps:{isNavigationLabel:()=>false}
+    });
+    const sphere={type:2,ns:'miti/42/point',scale:{x:.08,y:.08,z:.08},color:{r:1,g:1,b:1,a:1},points:[]};
+    assert.equal(native({marker:sphere,opacity:1}),null);
+    assert.ok(native({marker:{...sphere,ns:'navigation/nodes'},opacity:1}));
+    const label={...sphere,type:9,ns:'miti/42/label',text:'椅子'};
+    const html=renderToStaticMarkup(React.createElement(ui.Provider,{settings:{}},
+      React.createElement(native,{marker:label,opacity:1})));
+    assert.match(html,/>椅子<\/span>/);
+  });

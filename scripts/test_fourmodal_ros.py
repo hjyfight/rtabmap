@@ -48,11 +48,13 @@ def set_stamp(header, seconds):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--transport-only', action='store_true')
+    p.add_argument('--device', choices=['cpu', 'cuda:0'], default='cpu')
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--bridge-port', type=int)
     p.add_argument('--http-port', type=int)
     args = p.parse_args()
-    rclpy.init(args=['--ros-args', '-p', 'min_anchor_period_s:=0.0', '-p', 'max_input_age_s:=10.0'])
+    rclpy.init(args=['--ros-args', '-p', 'min_anchor_period_s:=0.0', '-p', 'max_input_age_s:=10.0',
+                    '-p', 'device:=' + args.device])
     node, sender, executor, bridge_client = None, None, None, None
     bridge_directory = tempfile.TemporaryDirectory(prefix='fourmodal_bridge_')
     try:
@@ -181,6 +183,7 @@ def main():
             subprocess.run([str(PROJECT / '.tools/miti/root/usr/lib/miti/node/bin/node'),
                 str(PROJECT / 'tests/render_fourmodal_bridge.js'), str(visual_file)], check=True)
         summary = dict(passed=True, mode='isolated_ros_fixture_transport',
+                       device=args.device,
                        real_pretrained_model=not args.transport_only,
                        stale_audio_rejected=True, duplicate_rgb_rejected=True,
                        feature_dim=1024, joint_dim=4096, result=report,

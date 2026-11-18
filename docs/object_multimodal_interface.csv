@@ -1,0 +1,29 @@
+字段,标准对应内容,类型,单位,范围及说明,验证方式
+"schema, sequence",结果身份,"string, uint",无,object_multimodal_fusion/1; sequence >= 0,版本与整数检查
+"stamp, published_at",采集和结果时间,float64,s,非负有限,采集时间与发布附近墙钟；计时另用 monotonic
+frame_id,公共空间基准,string,无,非空,与位置和运动坐标一致
+model.*,模型和策略来源,object,无,权重 SHA、源版本、设备、策略 SHA,冻结权重核验和来源记录
+calibration.*,时空标定,object,s / m,版本、证据指纹、有效期、匹配差、验证状态,有效证据及同步预算检查
+sources.<modality>.*,四路输入来源,object,s,固定 rgb/infrared/lidar/audio 槽位,格式、frame、采集时间、来源和 hash
+sources.<modality>.quality,质量,object,0..1,"score, usable, grade, reasons, metrics",曝光/纹理/点有效性/RMS/削波等实测信号指标
+sources.<modality>.sensor_health,传感器状态,string,无,unverified / attention_required / unavailable,声明仅为信号与连续性观察，硬件自检未验证
+sources.<modality>.processing_actions,异常处置,string[],无,拒绝/复位/请求检查等,随每路来源和特征传递
+"targets[].target_id, instance_id",目标身份和观测关联,"string, uint",无,会话 UUID + 计数 / 原实例号,唯一 ID、重关联及重复检查
+"targets[].label, baseline_label",目标语义,string,无,融合采用标签及 RGB 基线,冲突保留 RGB，建议另列
+targets[].position.*,目标几何,object,m,公共 xyz/extent，valid，RGB 深度几何,类型、frame、有效性和非负范围
+targets[].motion.*,动态特征,object,"m/s, m",速度、方向、1 s 预测、状态,首次运动未验证；连续状态估计
+targets[].structure.* / events[],结构/状态变化,object / object[],"m, s",新增、位移、范围变化、静态移除/瞬态离开,有效背景射线与连续静止证据；未知状态显式报告
+targets[].modalities.<modality>.*,跨传感器关联,object,无,target_id / associated / used / basis / source / feature_input,ID、来源、掩码和实际编码参与一致
+targets[].modalities.audio.*,声源/事件,object,"s, m",方向、阵列歧义、窗口、候选、目标关联位置,无独立测距或已验证口令；禁止执行
+targets[].features.encoder,原始编码,float32[4][1024],无,有限；缺失零,原始来源与模型记录
+targets[].features.independent,统一尺度特征,float32[4][1024],无,每有效路 L2 归一化,与 encoder 的归一化算术核对
+targets[].features.joint,联合特征,float32[4096],无,RGB/NIR/LiDAR/Audio 固定槽,与 independent 展平逐值一致
+"targets[].features.fused, weights",融合结果和参数,"float32[1024], float32[4]",无,有效权重 >= 0，和为 1,与加权归一化逐值一致；抵消显式无效
+targets[].features.valid_mask / complete / fused_valid,缺失与有效性,"bool[4], bool, bool",无,真布尔；缺失槽与权重零,与关联和实际参与一致
+"targets[].quality, preprocessing",提取过程,object,按各路,目标 ROI 质量、尺度、采样、log-Mel,来源和处理过程保留
+targets[].uncertainty.*,冲突和不确定性,object,无,reasons、缺失路、候选、冲突类型/模态/处理,余弦未校准，accuracy_verified=false
+safety / targets[].safety,复核与限制,object,无,人工/独立复核、restricted_use、禁止自动执行,严格布尔及顶层继承；控制消费拒绝
+integrity.*,完整性和可选认证,object,无,SHA-256 / unsigned 或 HMAC-SHA256,规范 JSON 摘要；没有 key 不宣称认证
+timing.*,核心计算边界,object,s,processing/core/queue/receipt/interval，task_period 可 null,有限非负，边界明确，不代替全链时延
+/perception/fusion/timing / journal.timing,成功准备到发布计时,object,s,monotonic; preparation 到 DDS enqueue,与结果摘要关联；排队和延迟分开统计
+journal.sha256,发布证据完整性,string,无,规范 JSON 摘要,异常/篡改记录拒绝，日志大小轮转

@@ -19,6 +19,7 @@ from rtabmap_features_msgs.msg import AudioFrame, FeatureSet
 from .backbone import FrozenEncoder
 from .bundle import extract_bundle, save_features
 from .fusion import MODALITIES, Sample, match_samples
+from .quality import SourceMonitor
 from .visualization import feature_snapshot, spectrum_rgb
 
 
@@ -73,6 +74,7 @@ class FourModalNode(Node):
         self.last_queued_stamp = -float('inf')
         self.sequence = 0
         self.state = dict(state='waiting_inputs', processed=0, dropped_pending=0, input_errors=0)
+        self.source_monitor = SourceMonitor(self.config['max_input_age_s'])
         self.subscriptions_kept = [
             self.create_subscription(Image, self.config['rgb_topic'],
                                      lambda m: self.receive_image('rgb', m), qos_profile_sensor_data),
@@ -94,6 +96,17 @@ class FourModalNode(Node):
         sample = Sample(payload, stamp, message.header.frame_id,
                         getattr(message, 'source_id', '') or f'{topic}:{message.header.stamp.sec}:{message.header.stamp.nanosec}',
                         duration, dict(attributes or {}, topic=topic), self.config['clock_offsets_s'][MODALITIES.index(name)])
+        record = self.source_monitor.observe(name, payload, stamp, sample.source_id, sample.frame_id,
+            time.time(), sample.alignment_stamp, sample.attributes.get('stamp_quality', 'acquisition_header'),duration_s=sample.duration)
+        sample.attributes['source_record'] = record
+        if not record['quality']['usable']:
+            self.input_error(name, ValueError(','.join(record['continuity'] + record['quality']['reasons'])))
+            if 'clock_regression_or_source_restart' in record['continuity']:
+                with self.lock:
+                    self.buffers[name].clear()
+                if name == 'rgb':
+                    self.last_queued_stamp = -float('inf')
+            return
         with self.lock:
             self.buffers[name].append(sample)
 

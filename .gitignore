@@ -9,9 +9,11 @@
 /.venv-yoloe/
 /.venv-emsanet/
 /.venv-fourmodal/
+/.venv-yamnet/
 /.venv-segmentation-gpu/
 /.tools/unibind/
 /.cache/fourmodal/
+/.cache/yamnet/
 /.cache/yoloe-pip/
 /.cache/segmentation-gpu-pip/
 /.cache/emsanet-pip/
@@ -19,6 +21,8 @@
 /.tools/miti/
 /.tools/depth_registration/
 /.tools/torchvision/
+/.tools/torchaudio/
+/.cache/orin-perception/
 /.tools/livox-sdk2/
 /.tools/livox_ros_driver2/
 /.tools/opencv-ros/

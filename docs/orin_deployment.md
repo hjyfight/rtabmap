@@ -1,5 +1,41 @@
 # Orin 建图与语义识别环境
 
+## 同步工作站最新源码（2026-11-17）
+
+当前 SSH 地址为 `qiyuan@192.168.1.103`，项目目录仍为
+`/home/qiyuan/Project/rtabmap_slam`。Orin 保留已有 EMSANet 和 ARM64 CUDA
+环境；工作站负责 MITI 显示。后文旧部署记录中的地址属于历史网络。
+
+在 **工作站** 项目目录执行：
+
+```bash
+# 先逐文件比较，不改 Orin 文件。
+bash scripts/sync_orin_source.sh
+# 同步当前工作区源码，包含尚未提交的源码修改。
+bash scripts/sync_orin_source.sh --apply
+```
+
+同步范围为 `src/`、`scripts/`、`config/`、`launch/`、`tests/`、`docs/`，
+以及 README、setup.bash 和 .gitignore。文件清单由 Git 生成，包含未提交的
+修改及未忽略的新文件。不同内容的旧文件备份到 Orin 的
+`logs/source_sync_backups/<时间>/`；工作站的清单、SHA-256 和 rsync 日志位于
+`logs/orin_source_sync/<时间>/`。不删除 Orin 独有文件；地图、权重、虚拟环境、
+构建目录和 `.tools/` 不进入传输清单。账号密码不写入脚本。
+
+源码同步后，在 **Orin** 项目目录构建 ARM64 语义节点并检查：
+
+```bash
+bash scripts/build_semantic.sh --headless
+source setup.bash
+source install/semantic/setup.bash
+python3 tests/test_miti_scene_adapter.py
+```
+
+`scripts/start_orin_slam.sh` 继续使用 EMSANet `cuda:0`；同步不自动启动建图。
+MITI 的标签过滤、小球隐藏和三维对象去重由工作站当前的前端及显示适配器执行，
+Orin 新语义节点提供 `/semantic/object_geometry` 三维范围数据。
+不要把工作站的 x86 虚拟环境、安装目录或 MITI 二进制直接复制为 Orin 运行环境。
+
 部署日期：2026-11-11。工作站项目为 `/home/jyfight/Project/rtabmap_slam`；
 Orin 项目为 `/home/qiyuan/Project/rtabmap_slam`，SSH 为 `qiyuan@192.168.43.15`。
 环境已通过无硬件测试；随后通过 Go2 采集真实雷达数据，在 Orin 上运行 ICP 与
@@ -240,3 +276,10 @@ Go2 无线省电由用户在 Go2 终端临时关闭：`sudo iw dev wlan0 set pow
 雷达 ICP 和 RTAB-Map，主机收到 10,057 个地图点与 2 个图节点。用户页面与截图
 确认三维点云和二维栅格已显示。原 domain 0 / 端口 3000 有线显示服务保留；
 完整命令见 [Go2 → Orin 显示测试](go2_orin_display_test.md)。
+
+## 2026-11-17 局域网感知环境更新
+
+UniBind、YOLOE 权重与 Orin CUDA 感知环境已部署，源码、标签显示和融合代码已同步；
+原 EMSANet 建图默认及环境保留。本次只操作 Orin 和工作站，没有连接或更改机器狗。
+接新机器狗时使用可配置的接收与感知入口，配置、启动命令及验证记录见
+[Orin 局域网感知部署](orin_network_perception.md)。

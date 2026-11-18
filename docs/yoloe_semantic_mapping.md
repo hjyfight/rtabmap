@@ -32,6 +32,15 @@ Python 3.10 / cv_bridge。权重从 Ultralytics 官方 v8.4.0 assets 下载，�
 bash scripts/start_semantic_yoloe.sh
 ```
 
+已安装独立 CUDA 环境的工作站可使用 RTX 3090：
+
+```bash
+source /home/jyfight/Project/rtabmap_slam/scripts/ros2_wired_env.sh
+bash /home/jyfight/Project/rtabmap_slam/scripts/start_semantic_yoloe.sh --gpu
+```
+
+GPU 选项使用 `.venv-segmentation-gpu` 和 `cuda:0`，模型仍为 `yoloe-11s-seg-pf.pt`。首次安装运行 `bash scripts/install_segmentation_gpu.sh`。原入口默认继续使用 CPU；`--check-input-only` 可单独使用或与 `--gpu` 一起检查输入。默认开始新一轮地图，原有地图文件保留。独立 RGB＋近红外融合不参与建图，建图与预览只共用注册深度。
+
 原启动命令仍默认使用 YOLOv8；两个入口共用 ROS 域锁，不允许同一域同时启动两套建图。
 新增环境不会自动替换已经运行的 YOLOv8 节点。MITI 继续订阅原来的语义消息话题，
 不需要重新配置面板。相机的对齐深度和外参检查也沿用原流程。

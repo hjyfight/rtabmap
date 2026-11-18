@@ -46,6 +46,13 @@ MITI 三维地图新增墙面开关与机器人位姿读数，标准位姿输出
 不接入地图更新，深度仅作辅助预览。
 运行命令和验证边界见 [四模态统一特征](docs/fourmodal_features.md)。
 
+单目标流程按实例掩膜、深度表面和声源方向关联 RGB、NIR、点云及音频，输出持续目标 ID、
+运动、质量、冲突与复核标记。入口为 <http://localhost:3002/rtabmap.html?view=target>；
+启动和标定说明见 [单目标四模态融合](docs/object_multimodal_fusion.md)，逐项交付与待验条件见
+[融合表 5 软件补齐记录](docs/fusion_table5_completion_20261117.md) 和
+[本轮逐项检查表](docs/fusion_table5_completion_20261118.csv)。实测安装标定未完成时，
+点云和声源不会被记为已参与目标融合。
+
 ## YOLO 语义地图标签
 
 处理周期测量工具会记录语义链路的排队、网络推理、三维投影、融合和发布耗时，并单独
@@ -488,10 +495,11 @@ ros2 topic hz /camera/color/image_raw
 bash /home/jyfight/Project/rtabmap_slam/scripts/start_semantic_slam.sh
 
 ## yoloe 分割模型
-bash /home/jyfight/Project/rtabmap_slam/scripts/start_semantic_yoloe.sh
+bash /home/jyfight/Project/rtabmap_slam/scripts/start_semantic_yoloe.sh --gpu
 
 
-## 红外+深度 语义分割
+
+## 红外+深度 语义分割 分割类比效果不好
 cd /home/jyfight/Project/rtabmap_slam
 bash scripts/start_semantic_emsanet.sh
 

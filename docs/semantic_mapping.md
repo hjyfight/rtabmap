@@ -66,6 +66,14 @@ cd /home/jyfight/Project/rtabmap_slam
 bash scripts/start_semantic_slam.sh
 ```
 
+已运行独立深度预览时，启动入口会复用唯一的 `/camera/depth_registered/image_rect` 发布端。深度预览的同步节点名为 `/depth_preview_rgbd_sync`，结果发布在 `/depth_preview/rgbd_image`；建图使用自己的 `/rgbd_sync`，校验后发布 `/rgbd_image`，两路不会重复发布同一 RGB-D 话题。RGB＋近红外分割融合保持独立，其预测不参与地图更新。旧版深度预览仍占用 `/rgbd_sync` 时，需重载该预览一次以使用新的节点名和话题。
+
+只检查输入而不启动建图：
+
+```bash
+bash scripts/start_semantic_slam.sh --check-input-only
+```
+
 脚本复用 RGB-D 输入检查和现有融合配置，每次默认新建地图。
 启动检查要求至少 3 组尺寸、坐标系与时间戳一致的 RGB-D；运行时继续逐帧校验。
 当前相机偶发在对齐深度话题发布 `640×480` 原始尺寸，校验器会丢弃这些帧并记录错误，

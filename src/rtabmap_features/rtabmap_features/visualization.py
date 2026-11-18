@@ -38,6 +38,7 @@ def feature_snapshot(output, metadata, *, mode, sequence=0, published_at=None):
                          topic=sample.get('attributes', {}).get('topic', ''),
                          preprocessing=metadata.get('preprocessing', {}).get(name, {}),
                          stamp_quality=sample.get('attributes', {}).get('stamp_quality', ''),
+                         quality_and_health=sample.get('attributes', {}).get('source_record', {}),
                          encoder=metadata.get('preprocessing', {}).get(name, {}).get('encoder',
                              'point' if name == 'lidar' else 'audio' if name == 'audio' else ''),
                          encoder_features=encoder_features[i].tolist(),

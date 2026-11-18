@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -eo pipefail
 SEMANTIC_PROJECT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+SEMANTIC_CHECK_ONLY=false
+if [[ ${1:-} == --check-input-only ]]; then
+  SEMANTIC_CHECK_ONLY=true
+  shift
+fi
 source "$SEMANTIC_PROJECT/setup.bash"
 if [[ ! -f "$SEMANTIC_PROJECT/install/semantic/setup.bash" ]]; then
   printf '先运行 bash scripts/build_semantic.sh\n' >&2
@@ -39,11 +44,23 @@ cleanup_registration() {
   rm -f -- "$SEMANTIC_CHECK"
 }
 trap cleanup_registration EXIT
-python3 -c 'import os, signal, sys; signal.signal(signal.SIGINT, signal.SIG_DFL); os.execvp("ros2", ["ros2", "launch"] + sys.argv[1:])' \
-  "$SEMANTIC_PROJECT/launch/realsense_depth_registration.launch.py" 9>&- &
-SEMANTIC_REGISTRATION_PID=$!
+SEMANTIC_DEPTH_MODE=$(python3 "$SEMANTIC_PROJECT/scripts/check_registered_depth.py")
+if [[ $SEMANTIC_DEPTH_MODE == start ]]; then
+  python3 -c 'import os, signal, sys; signal.signal(signal.SIGINT, signal.SIG_DFL); os.execvp("ros2", ["ros2", "launch"] + sys.argv[1:])' \
+    "$SEMANTIC_PROJECT/launch/realsense_depth_registration.launch.py" 9>&- &
+  SEMANTIC_REGISTRATION_PID=$!
+elif [[ $SEMANTIC_DEPTH_MODE == reuse ]]; then
+  printf '复用已有配准深度发布端；不重复启动 depth_registration。\n'
+else
+  printf '无法确认配准深度发布端状态。\n' >&2
+  exit 1
+fi
 python3 "$SEMANTIC_PROJECT/scripts/check_rgbd_input.py" --seconds "${SEMANTIC_INPUT_CHECK_SECONDS:-5}" --output "$SEMANTIC_CHECK"
 python3 "$SEMANTIC_PROJECT/scripts/verify_fusion_input.py" "$SEMANTIC_CHECK" --guarded
+if $SEMANTIC_CHECK_ONLY; then
+  printf '建图输入预检查通过；模型为 %s，后端为 %s。\n' "$SEMANTIC_MODEL_PATH" "$SEMANTIC_BACKEND"
+  exit 0
+fi
 for SEMANTIC_CAM_VAR in CAM_X CAM_Y CAM_Z CAM_ROLL CAM_PITCH CAM_YAW; do
   if [[ -z "${!SEMANTIC_CAM_VAR}" ]]; then
     printf '外参提示：%s 未赋值，沿用融合启动脚本示例值，请核验标定。\n' "$SEMANTIC_CAM_VAR" >&2

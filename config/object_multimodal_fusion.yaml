@@ -1,0 +1,20 @@
+object_multimodal_fusion:
+  ros__parameters:
+    device: cuda:0
+    cpu_threads: 2
+    task_path: config/object_multimodal_task.json
+    calibration_path: config/object_multimodal_calibration.json
+    state_path: logs/object_multimodal/target_state.json
+    output_topic: /perception/fusion/targets
+    status_topic: /perception/fusion/status
+    timing_topic: /perception/fusion/timing
+    journal_path: logs/object_multimodal/results.jsonl
+    sync_tolerance_s: 0.05
+    max_input_age_s: 3.0
+    min_period_s: 1.0
+    lidar_topic: /livox/lidar
+    audio_topic: /multimodal/audio
+    nir_topic: /camera/infra2/image_rect_raw
+    nir_info_topic: /camera/infra2/camera_info
+    rgb_info_topic: /camera/color/camera_info
+    depth_topic: /camera/depth_registered/image_rect

@@ -90,6 +90,7 @@ class FrontendInstallTests(unittest.TestCase):
         renderer = self.app / manifest['assets'][0].split('?', 1)[0].replace('/_next/', '.next/', 1)
         source = renderer.read_text()
         self.assertIn('RtabmapSemanticLabels.Provider,{settings:c,children:', source)
+        self.assertIn('if(RtabmapSemanticLabels.isAnchor(n))return null;', source)
         self.assertIn('if(RtabmapSemanticLabels.isSemantic(n))return(0,r.jsx)(RtabmapSemanticLabels.Label,', source)
         self.assertIn('if(9===n.type)return(0,r.jsx)(ta.V,', source)
         self.assertIn('rtabmapMapDetailsFactory(n,x,RtabmapHeightClip,RtabmapSemanticLabels,RtabmapDynamicCloud)', source)
@@ -118,6 +119,9 @@ class FrontendInstallTests(unittest.TestCase):
         self.assertIn('type:"fourmodal-features",label:"四模态特征"', page)
         self.assertIn('t(rtabmapMigrateSegmentationLayout(rtabmapHideAuxiliaryMaps(rtabmapMigrateFourmodalLayout(rtabmapMigrateGraphFeatureLayout(', page)
         self.assertIn('case"yolo-segmentation":return(0,r.jsx)(RtabmapSegmentationPanel,', renderer)
+        self.assertIn('const RtabmapObjectMultimodalPanel = rtabmapObjectMultimodalFactory(n).Component', renderer)
+        self.assertIn('case"object-multimodal":return(0,r.jsx)(RtabmapObjectMultimodalPanel,', renderer)
+        self.assertIn('type:"object-multimodal",label:"单目标四模态融合"', page)
 
 
 if __name__ == '__main__':

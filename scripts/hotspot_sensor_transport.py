@@ -35,8 +35,16 @@ STREAMS = [
     ('/camera/infra2/camera_info', CameraInfo),
     ('/tf', TFMessage), ('/tf_static', TFMessage),
 ]
+STATIC_STREAM_INDEX = 9
 HEADER = struct.Struct('!BBII')  # stream index, shuffle width, raw size, compressed size
 MAX_FRAME = 16 * 1024 * 1024
+
+
+def enable_audio_stream():
+    """Append optional audio without changing any existing Livox/RealSense IDs."""
+    if len(STREAMS) == 10:
+        from rtabmap_features_msgs.msg import AudioFrame
+        STREAMS.append(('/multimodal/audio', AudioFrame))
 
 
 def sender_stream_indices(lidar_only=False, lidar_imu_only=False):
@@ -172,6 +180,8 @@ def read_exact(connection, size, stop):
 class Transport(Node):
     def __init__(self, args):
         super().__init__('hotspot_sensor_' + args.mode)
+        if getattr(args, 'audio', False):
+            enable_audio_stream()
         self.args = args
         self.stop = threading.Event()
         self.condition = threading.Condition()
@@ -222,7 +232,7 @@ class Transport(Node):
                 for transform in message.transforms:
                     self.static[transform.child_frame_id] = transform
                 message = TFMessage(transforms=list(self.static.values()))
-        if not self.connected and index != len(STREAMS) - 1:
+        if not self.connected and index != STATIC_STREAM_INDEX:
             return
         packet, raw_size = encode(index, message, self.args.jpeg_quality)
         with self.condition:
@@ -234,7 +244,7 @@ class Transport(Node):
                     self.stats['imu_queue_drops'] += 1
                 self.imu.append((index, packet))
             else:
-                if index in self.latest and index != len(STREAMS) - 1:
+                if index in self.latest and index != STATIC_STREAM_INDEX:
                     self.stats['latest_queue_drops'] += 1
                 self.latest[index] = packet
             self.condition.notify()
@@ -246,7 +256,7 @@ class Transport(Node):
             self.connected = True
             if self.static:
                 msg = TFMessage(transforms=list(self.static.values()))
-                self.latest[len(STREAMS) - 1] = encode(len(STREAMS) - 1, msg)[0]
+                self.latest[STATIC_STREAM_INDEX] = encode(STATIC_STREAM_INDEX, msg)[0]
         while not self.stop.is_set():
             with self.condition:
                 if not self.latest and not self.imu:
@@ -279,7 +289,7 @@ class Transport(Node):
 
     def replay_static(self):
         if self.received_static is not None:
-            self.outputs[len(STREAMS) - 1].publish(self.received_static)
+            self.outputs[STATIC_STREAM_INDEX].publish(self.received_static)
 
     def cache_static(self, message):
         # Include the mapping launch's camera mounting transform as well as the
@@ -356,11 +366,18 @@ def main():
                            help='Send lidar, its IMU and static TF, without camera streams')
     parser.add_argument('--socket-timeout', type=float, default=5,
                         help='Established TCP read/write timeout in seconds')
+    parser.add_argument('--audio', action='store_true',
+                        help='Enable optional AudioFrame stream 10; requires matching feature messages')
     args = parser.parse_args()
     if not 0 <= args.jpeg_quality <= 100:
         parser.error('--jpeg-quality must be between 0 and 100')
     if not 0 < args.socket_timeout < float('inf'):
         parser.error('--socket-timeout must be positive and finite')
+    if args.audio:
+        try:
+            enable_audio_stream()
+        except ImportError:
+            parser.error('--audio requires rtabmap_features_msgs on this computer')
     # Humble's default C signal handler invalidates the context before the network
     # thread has stopped. Foxy has no signal_handler_options argument.
     import inspect

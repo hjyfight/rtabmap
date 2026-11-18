@@ -1,0 +1,9 @@
+# Torch, torchvision, NumPy and OpenCV come from the verified JetPack runtime.
+-r requirements_fourmodal.txt
+setuptools==69.5.1
+wheel==0.43.0
+ultralytics==8.4.198
+ultralytics-thop==2.2.4
+polars==2.0.0
+polars-runtime-32==2.0.0
+nvidia-ml-py==13.615.71

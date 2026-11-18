@@ -1,0 +1,27 @@
+﻿表5编号,条款,检查子项,本轮交付,源码或证据,剩余条件或未实现内容,当前判断,整项验收通过
+F1,融合 1：7.2 多源信息特征提取,a 传感器标定,标定配置、刚体/时钟拟合、残差、证据哈希和有效期检查,scripts/fit_object_multimodal_calibration.py;src/rtabmap_features/rtabmap_features/calibration.py,真实安装外参、阵列几何、测量参数及误差报告,软件工具具备，实测未完成,否
+F1,融合 1：7.2 多源信息特征提取,b 多源数据输入,原生图像、相机参数、注册深度、点云、音频和实例输入及来源校验,src/rtabmap_features/rtabmap_features/object_node.py,同一被试平台来源共位和真实全链输入,软件具备，现场待验,否
+F1,融合 1：7.2 多源信息特征提取,c 数据预处理,实例裁剪、畸变投影、目标表面筛选、有限点过滤、归一化、目标时刻PCM和log-Mel,src/rtabmap_features/rtabmap_features/target_association.py;src/rtabmap_features/rtabmap_features/backbone.py,雨雾、眩光、运动畸变、干扰等真实工况；未实现本链LiDAR运动去畸变,限定任务预处理具备，工况待验,否
+F1,融合 1：7.2 多源信息特征提取,d 原始特征输出,每路1024维、来源、目标几何、运动、声源方向与事件候选,src/rtabmap_features/rtabmap_features/object_multimodal.py,真实要素真值；独立声源测距、口令识别未实现,限定任务输出具备，其他要素未完成,否
+F1,融合 1：7.2 多源信息特征提取,e 异常/健康/质量传递,质量评分/等级、信号异常、连续性、健康观察和处理措施随特征输出,src/rtabmap_features/rtabmap_features/quality.py,传感器本体自检及故障实测,软件具备，硬件健康待验,否
+F2,融合 2：7.3 多源信息特征拼接,a 尺度匹配,同目标ROI、公共几何、固定槽位、L2归一化和采集窗口,src/rtabmap_features/rtabmap_features/target_association.py;src/rtabmap_features/rtabmap_features/fusion.py,物理时空配准误差,软件具备，实测待验,否
+F2,融合 2：7.3 多源信息特征拼接,b 特征关联,掩膜/深度表面点、注册NIR、唯一声源方向和共同目标ID,src/rtabmap_features/rtabmap_features/target_association.py;src/rtabmap_features/rtabmap_features/object_multimodal.py,真实安装标定、遮蔽/干扰下正确与错误关联统计,软件具备，关联精度待验,否
+F2,融合 2：7.3 多源信息特征拼接,c 语义对齐,共享文本原型及各模态/融合类别候选,src/rtabmap_features/rtabmap_features/object_multimodal.py,NIR域、场景LiDAR和跨模态语义准确性,软件具备，准确性待验,否
+F2,融合 2：7.3 多源信息特征拼接,d 特征组合,原始、独立、4096维联合、1024维融合向量和同目标来源、质量、限制字段,src/rtabmap_features/rtabmap_features/object_multimodal.py;src/rtabmap_features/rtabmap_features/standard_interface.py,连续真实任务记录；当前单目标结果不自动写入语义地图,软件具备，现场待验,否
+F2,融合 2：7.3 多源信息特征拼接,e 重关联、冲突及不确定性,持久ID、预测位置/外观匹配、遮挡恢复、歧义拒绝、显式冲突和不确定性,src/rtabmap_features/rtabmap_features/target_tracking.py;src/rtabmap_features/rtabmap_features/object_multimodal.py,实机遮挡后3秒内稳定恢复及正确关联,软件具备，恢复性能待验,否
+F3,融合 3：7.4 感知信息融合,a 层级选择,单目标特征级融合及任务输入/输出/适用条件说明,docs/object_multimodal_fusion.md,冻结订购任务和真实适用工况,所选层级软件具备,否
+F3,融合 3：7.4 感知信息融合,b 参数确定,任务先验乘目标区域质量和来源质量，门限、权重算术及策略指纹,src/rtabmap_features/rtabmap_features/object_policy.py;src/rtabmap_features/rtabmap_features/object_multimodal.py,参数对实际任务/环境性能的验证依据,工程策略具备，参数效果待验,否
+F3,融合 3：7.4 感知信息融合,c 融合计算,真实四路编码、联合和融合计算、缺失重归一化、抵消显式标记,src/rtabmap_features/rtabmap_features/object_multimodal.py;src/rtabmap_features/rtabmap_features/fusion.py,真实干扰/失效下的信息互补量化记录,软件具备，现场效果待验,否
+F3,融合 3：7.4 感知信息融合,d 结果生成,目标类别/候选、位置/范围、运动/方向/预测、关联声学事件和状态变化,src/rtabmap_features/rtabmap_features/object_multimodal.py,真实公共安装外参/位姿；绝对门窗状态、口令和独立声源测距未实现,限定单目标结果具备，其他语义未完成,否
+F3,融合 3：7.4 感知信息融合,e 动态与不确定性,新增、位移、范围变化、深度背景证明的静态移除、运动离开/未知消失区分及不确定性,src/rtabmap_features/rtabmap_features/target_tracking.py;src/rtabmap_features/rtabmap_features/target_association.py,真实变化检出率和延迟；绝对门窗开闭/坍塌状态未实现,几何变化软件具备，绝对状态未完成,否
+F4,融合 4：8 同步、周期、融合精度,跨模态时间同步,物理证据、时钟两两不确定度、配对差和有效期联合检查,src/rtabmap_features/rtabmap_features/calibration.py,可信仪器参考下的真实采集同步误差分布,软件具备，同步未验收,否
+F4,融合 4：8 同步、周期、融合精度,同步限值及外部授时,同时检查50ms和最短参与采样周期1/10；未知周期/过期证据不能通过,src/rtabmap_features/rtabmap_features/calibration.py,实际采样周期、授时方法、仪器不确定度及外部协同适用性；1ms外部授时未实测,软件具备，授时待验,否
+F4,融合 4：8 同步、周期、融合精度,处理周期,核心、准备、排队、请求到发布、发布间隔及独立统计；Orin实测记录保留边界,scripts/measure_object_multimodal_cycle.py;src/rtabmap_features/rtabmap_features/result_journal.py,用户尚未规定任务周期；完整任务含检测/传输/显示时需另测,已测量，按用户要求暂不验收,否
+F4,融合 4：8 同步、周期、融合精度,同条件最佳单模态精度,保留精度未验证及使用限制，未把真实权重合成输入当作真值试验,docs/fusion_table5_completion_20261117.md,同条件同真值四模态和最佳单模态对照,用户暂缓,否
+F4,融合 4：8 同步、周期、融合精度,8.6 替代增益,保留替代增益路径及缺证状态,docs/fusion_table5_completion_20261117.md,说明精度原因并提供认可工况/基线/指标/增益对照,用户暂缓,否
+F4,融合 4：8 同步、周期、融合精度,最终结果,分别汇总软件验证、真实模型链路和物理验收；整项无通过声明,docs/fusion_table5_completion_20261117.md,真实同步；待定任务周期；用户暂缓的精度/8.6,整项未验收,否
+F5,融合 5：9 标准化接口,输入字段与协议,原生ROS输入校验、来源/时间/格式和逐字段标准映射,src/rtabmap_features/rtabmap_features/object_node.py;docs/object_multimodal_interface.csv,固定被试版本来源认证部署及全链输入记录,软件具备，现场待验,否
+F5,融合 5：9 标准化接口,原始/联合/融合特征,版本契约、JSON schema、全部槽位、关联/冲突/质量/健康/限制字段和严格跨字段校验,config/object_multimodal_result.schema.json;src/rtabmap_features/rtabmap_features/standard_interface.py,固定物理部署下全链字段记录,软件具备，现场待验,否
+F5,融合 5：9 标准化接口,跨环节一致性与传输,隔离ROS实际节点与发布数据校验；来源、坐标、ID和向量贯通,tests/object_multimodal_ros_check.py;logs/object_multimodal_validation/orin/ros_contract.json,真实链路速率、最大时延、缓存、来源连续性及任务约束,软件链路通过，传输性能待验,否
+F5,融合 5：9 标准化接口,发布及复核/限制标记,ROS发布、独立MITI面板、完整性、可选HMAC helper及复核/限制/禁止执行,config/miti_object_multimodal.js;src/rtabmap_features/rtabmap_features/standard_interface.py,认证密钥部署、真实消费者链路与网页视觉检查,软件具备，现场消费者待验,否
+F5,融合 5：9 标准化接口,异常控制隔离,未验收/冲突结果限制为显示记录分析，消费校验拒绝自动执行,src/rtabmap_features/rtabmap_features/standard_interface.py;logs/object_multimodal_validation/orin/interface_report.json,真实消费者集成和现场隔离验证；本流程无控制路径,消费校验具备，现场待验,否

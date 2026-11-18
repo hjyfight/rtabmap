@@ -9,5 +9,7 @@
   <exec_depend>rclpy</exec_depend><exec_depend>sensor_msgs</exec_depend>
   <exec_depend>sensor_msgs_py</exec_depend><exec_depend>std_msgs</exec_depend>
   <exec_depend>cv_bridge</exec_depend><exec_depend>rtabmap_features_msgs</exec_depend>
+  <exec_depend>tf2_ros</exec_depend><exec_depend>tf2_msgs</exec_depend>
+  <exec_depend>rtabmap_semantic</exec_depend><exec_depend>rtabmap_semantic_msgs</exec_depend>
   <export><build_type>ament_cmake</build_type></export>
 </package>

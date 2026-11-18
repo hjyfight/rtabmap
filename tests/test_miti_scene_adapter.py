@@ -3,6 +3,9 @@ import importlib.util
 from copy import deepcopy
 from pathlib import Path
 import sys
+import sqlite3
+import json
+import tempfile
 from types import MethodType, SimpleNamespace
 import unittest
 
@@ -26,11 +29,12 @@ class SceneAdapterTest(unittest.TestCase):
     def make_scene(self):
         self.frames, self.paths = [], []
         node = SimpleNamespace(poses={}, graph=None, objects=None, session=None,
+            object_extents={}, geometry_session=None, last_geometry_read=-float('inf'),
             markers=adapter.SemanticMarkers(), cache_epoch=0,
             path_pub=SimpleNamespace(publish=self.paths.append),
             marker_pub=SimpleNamespace(publish=self.frames.append),
             get_clock=lambda: SimpleNamespace(now=lambda: SimpleNamespace(to_msg=lambda: Time(sec=123))))
-        for name in ('on_graph', 'on_objects', 'clear_scene', 'publish_markers', 'restore_graph'):
+        for name in ('on_graph', 'on_objects', 'clear_scene', 'publish_markers', 'restore_graph', 'on_object_geometry'):
             setattr(node, name, MethodType(getattr(adapter.MitiSceneAdapter, name), node))
         return node
 
@@ -288,6 +292,60 @@ class SceneAdapterTest(unittest.TestCase):
                       dict(schema=1, session=['map', 'uuid', 'map'], positions={'1': [float('nan'), 0, 0]})):
             with self.subTest(cache=cache), self.assertRaises(ValueError):
                 state.restore_cache(cache)
+
+    def test_geometry_merges_same_object_but_preserves_coobserved_and_contained_items(self):
+        state=adapter.SemanticMarkers();message=self.objects()
+        message.objects[0].label='服务台'
+        other=self.objects(anchor_id=2,object_id=2).objects[0]
+        other.label='办公桌';message.objects.append(other)
+        poses={1:np.eye(4),2:np.eye(4)};poses[2][:3,3]=[.034,-.073,.077]
+        extents={1:np.array([.326,1.114,.669]),2:np.array([.82,1.065,.713])}
+        raw=state.update(message,poses,message.header)
+        self.assertEqual(len([m for m in raw.markers if m.type==9 and m.action==Marker.ADD]),2)
+        grouped=state.update(message,poses,message.header,extents)
+        self.assertEqual(state.groups,{1:[1,2]})
+        self.assertEqual(len([m for m in grouped.markers if m.type==9 and m.action==Marker.ADD]),1)
+        self.assertEqual(len([m for m in grouped.markers if m.action==Marker.DELETE]),2)
+        self.assertEqual(len(message.objects),2,'Display dedup must not mutate original objects')
+        restored=adapter.SemanticMarkers();restored.restore_cache(state.cache_snapshot())
+        restored.update(message,{},message.header)
+        self.assertEqual(restored.groups,{1:[1,2]},'Cached geometry survives a display-only restart')
+        # Two distinct observations in one keyframe cannot be merged by box overlap.
+        together=deepcopy(message);together.objects[1].observations[0].node_id=1
+        separate=adapter.SemanticMarkers();separate.update(together,poses,message.header,extents)
+        self.assertEqual(len(separate.groups),2)
+        # A small item centered on a large item is still a separate object.
+        contained=adapter.SemanticMarkers()
+        contained.update(message,poses,message.header,{1:np.ones(3),2:np.full(3,.1)})
+        self.assertEqual(len(contained.groups),2)
+
+    def test_large_same_surface_records_merge_without_collapsing_a_neighbor_chain(self):
+        state=adapter.SemanticMarkers();message=self.objects()
+        for key,x in [(2,.4),(3,.8)]:
+            other=self.objects(anchor_id=key,object_id=key).objects[0]
+            other.observations[0].position.x+=x;message.objects.append(other)
+        poses={key:np.eye(4) for key in (1,2,3)}
+        extents={key:np.array([2.,2.,.3]) for key in (1,2,3)}
+        state.update(message,poses,message.header,extents)
+        self.assertEqual(state.groups,{1:[1,2],3:[3]})
+        other=deepcopy(message);other.map_uuid='new-map'
+        state.update(other,poses,other.header)
+        self.assertEqual(state.extents,{})
+
+    def test_legacy_geometry_reads_only_the_paired_epoch_with_known_graph_poses(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database=Path(directory)/'map.db';path=database.with_suffix('.semantic.sqlite')
+            state=dict(map_uuid='one',objects=[dict(object_id=7,observations=[
+                dict(node_id=1,extent=[.2,.4,.6]),dict(node_id=2,extent=[.2,.4,.6])])])
+            with sqlite3.connect(path) as connection:
+                connection.execute('CREATE TABLE epochs (map_key TEXT,state TEXT,updated REAL)')
+                connection.execute('INSERT INTO epochs VALUES (?,?,?)',(str(database),json.dumps(state),1.))
+            poses={1:np.eye(4),2:np.eye(4)}
+            poses[2][:3,:3]=[[0,-1,0],[1,0,0],[0,0,1]]
+            result=adapter.stored_object_extents(str(database),'one',poses)
+            np.testing.assert_allclose(result[7],[.3,.3,.6])
+            self.assertEqual(adapter.stored_object_extents(str(database),'other',poses),{})
+            self.assertEqual(adapter.stored_object_extents(str(database),'one',{1:np.eye(4)}),{})
 
 
 if __name__ == '__main__':

@@ -47,6 +47,7 @@ flock -n 9 || { printf '本 ROS 域已有项目展示服务。\n' >&2; exit 1; }
 cp "$MITI_PROJECT/config/miti_live.html" "$MITI_APP/public/rtabmap.html"
 cp "$MITI_PROJECT/config/miti_live_layout.json" "$MITI_APP/public/rtabmap-layout.json"
 cp "$MITI_PROJECT/config/miti_fusion_layout.json" "$MITI_APP/public/rtabmap-fusion-layout.json"
+cp "$MITI_PROJECT/config/miti_object_fusion_layout.json" "$MITI_APP/public/rtabmap-object-fusion-layout.json"
 if [[ -x "$MITI_PROJECT/.venv-fourmodal/bin/python3" ]]; then
   MITI_FOURMODAL_ARGS=()
   [[ -z ${MITI_FOURMODAL_RESULT:-} ]] || MITI_FOURMODAL_ARGS+=(--result "$MITI_FOURMODAL_RESULT")

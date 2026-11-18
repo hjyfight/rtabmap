@@ -89,6 +89,22 @@ class PreflightTests(unittest.TestCase):
     def test_drivers_alone_can_start(self):
         self.assertEqual(preflight.verify(self.sample()), (424, 240))
 
+    def test_separate_depth_preview_is_allowed_but_mapping_sync_still_blocks_start(self):
+        sample=self.sample()
+        sample['nodes']+=['/depth_registration','/depth_preview_rgbd_sync','/segmentation_fusion']
+        sample['topics']['aligned_depth']['publishers']=[{'node':'/depth_registration'}]
+        self.assertEqual(preflight.verify(sample),(424,240))
+        sample['nodes'].append('/rgbd_sync')
+        with self.assertRaisesRegex(ValueError,'/rgbd_sync'):
+            preflight.verify(sample)
+
+    def test_duplicate_registered_depth_is_rejected_with_preview_running(self):
+        sample=self.sample()
+        sample['nodes']+=['/depth_registration','/depth_preview_rgbd_sync']
+        sample['topics']['aligned_depth']['publishers']=[{'node':'/depth_registration'},{'node':'/duplicate_registration'}]
+        with self.assertRaisesRegex(ValueError,'发布端数量为 2'):
+            preflight.verify(sample)
+
     def test_registration_preserves_depth_timestamp_within_sync_tolerance(self):
         sample = self.sample()
         sample['topics']['aligned_depth']['last_samples'] = [

@@ -6,6 +6,7 @@ depend on a model recognizing a synthetic picture. Real YOLO is checked separate
 """
 import json
 import os
+from copy import deepcopy
 from pathlib import Path
 import signal
 import subprocess
@@ -23,6 +24,7 @@ from rclpy.parameter import Parameter
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from geometry_msgs.msg import Pose, Transform
 from rtabmap_msgs.msg import MapData, MapGraph, Node as GraphNode
+from rtabmap_msgs.srv import GetMap
 from rtabmap_semantic_msgs.msg import SemanticMap
 from sensor_msgs.msg import CameraInfo
 from std_msgs.msg import String
@@ -108,6 +110,16 @@ def main():
         timing = []
         timing_subscriptions = [probe.create_subscription(String, topic, lambda m: timing.append(json.loads(m.data)), 100)
                                 for topic in ('/semantic/timing', '/semantic/bridge_timing')]
+        saved_graph = MapData()
+        graph_requests = []
+
+        def get_graph(request, response):
+            assert request.global_map and request.optimized and request.graph_only
+            graph_requests.append(request)
+            response.data = deepcopy(saved_graph)
+            return response
+
+        graph_service = probe.create_service(GetMap, '/rtabmap/get_map_data', get_graph)
         cv = CvBridge()
         if real_emsanet:
             rgb = cv2.imread(str(project/'.tools/emsanet/samples/sample_rgb.png'))
@@ -167,8 +179,17 @@ def main():
                 transform.translation.x = 0.2
                 node.data.local_transform = [transform]
                 data.nodes = [node]
+                saved_graph = deepcopy(data)
+                if node_id == 2:
+                    # A local graph can omit an old anchor while its saved RGB-D
+                    # frame is replayed. Recover the exact pose from GetMap.
+                    data.graph.poses_id.remove(2)
+                    del data.graph.poses[1]
                 maps.publish(data)
                 until(lambda: mapper.processed == node_id)
+                if node_id == 2:
+                    assert graph_requests, 'Missing local pose did not query the full graph'
+                    assert mapper.skipped_missing_pose == 0
                 until(lambda: sum(t.get('event') == 'completed' for t in timing) == node_id)
                 sys.path.insert(0, str(project/'scripts'))
                 from fusion_cycle_report import summarize
@@ -224,6 +245,26 @@ def main():
             until(lambda: mapper.state.map_uuid != original_uuid)
             assert set(mapper.state.nodes) == {1}
             assert not any(o.label == target_label for o in mapper.state.visible_objects())
+            pose_queue_released = False
+            if not (real_yolo or real_emsanet):
+                # Node 2 was removed by rehearsal and is absent even from the
+                # complete graph. The bridge must receive its acknowledgement
+                # so the valid frame behind it can reach inference.
+                missing = deepcopy(data.nodes[0])
+                missing.id, missing.stamp = 2, 102.0
+                following = deepcopy(missing)
+                following.id, following.stamp = 3, 103.0
+                data.nodes = [missing, following]
+                data.graph.poses_id = [1, 3]
+                data.graph.poses = [deepcopy(reset_pose), deepcopy(reset_pose)]
+                saved_graph = deepcopy(data)
+                maps.publish(data)
+                until(lambda: mapper.skipped_missing_pose == 1 and 3 in mapper.state.nodes)
+                assert 2 not in mapper.state.nodes
+                assert mapper.pending is None and mapper.pose_request is None
+                assert any(t.get('reason') == 'missing_graph_pose' and t['node_id'] == 2
+                           for t in timing)
+                pose_queue_released = True
             report = dict(passed=True, frames=frame_count, label=target_label, display_label=display_label,
                           device=mapper.config['device'],
                           confirmation_window=mapper.config['confirmation_window'], real_yolo=real_yolo,
@@ -232,7 +273,8 @@ def main():
                           real_emsanet=real_emsanet,
                           encoder_fusion=mapper.config['emsanet_fusion'] if real_emsanet else None,
                           compressed_keyframe=True, projection=True, loop_reprojection=True,
-                          reload=True, map_reset=True)
+                          reload=True, map_reset=True, full_graph_pose_recovery=True,
+                          missing_pose_queue_released=pose_queue_released)
             print(json.dumps(report))
             output = project/'logs/semantic_validation'
             output.mkdir(parents=True, exist_ok=True)

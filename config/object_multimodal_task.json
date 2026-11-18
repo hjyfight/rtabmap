@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "tracking_frame": "map",
+  "max_targets": 4,
+  "reassociation_s": 3.0,
+  "min_nir_coverage": 0.35,
+  "audio_angle_deg": 12.0,
+  "audio_ambiguity_deg": 5.0,
+  "base_weights": [1.0, 1.0, 1.0, 1.0],
+  "weight_policy": "configured_task_prior_times_measured_signal_quality",
+  "task_period_s": null,
+  "accuracy_validation": "deferred_by_user",
+  "audio_event_classes": ["person speaking", "dog barking", "vehicle engine", "mechanical noise", "impact", "background noise"],
+  "acoustic_source_classes": ["person", "man", "woman", "robot", "robot dog", "dog", "cat", "vehicle", "car", "truck", "bus", "machine"],
+  "templates": ["a photo of a {}.", "a close-up of a {}."],
+  "classes": [
+    {"name": "person"}, {"name": "robot"}, {"name": "dog"}, {"name": "cat"},
+    {"name": "vehicle"}, {"name": "machine"}, {"name": "floor"}, {"name": "ceiling"},
+    {"name": "wall"}, {"name": "door"}, {"name": "window"}, {"name": "cabinet"},
+    {"name": "shelf"}, {"name": "box"}, {"name": "chair"}, {"name": "table"},
+    {"name": "television"}, {"name": "computer"}, {"name": "bottle"}, {"name": "bag"},
+    {"name": "equipment"}, {"name": "tree"}, {"name": "vegetation"}, {"name": "road"}
+  ]
+}

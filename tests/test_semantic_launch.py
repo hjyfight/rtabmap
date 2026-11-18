@@ -9,7 +9,7 @@ from launch.actions import (
     OpaqueFunction, SetLaunchConfiguration,
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.utilities import perform_substitutions
+from launch.utilities import perform_substitutions,normalize_to_list_of_substitutions
 from launch_ros.actions import Node
 from launch_ros.utilities import evaluate_parameters
 
@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 os.environ.setdefault('ROS_LOG_DIR', '/tmp/semantic_launch_test_logs')
 
 
-def resolve_launch(*, inspect_action=None, **overrides):
+def resolve_launch(*, inspect_action=None, launch_file='launch/semantic_slam.launch.py', **overrides):
     context = LaunchContext()
     nodes = {}
 
@@ -47,7 +47,7 @@ def resolve_launch(*, inspect_action=None, **overrides):
             raise AssertionError(f'Unhandled launch action: {type(action).__name__}')
 
     visit(IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(str(ROOT / 'launch/semantic_slam.launch.py')),
+        PythonLaunchDescriptionSource(str(ROOT / launch_file)),
         launch_arguments=overrides.items()))
     return nodes
 
@@ -80,6 +80,30 @@ class SemanticLaunchTests(unittest.TestCase):
         nodes = resolve_launch(register_depth='false', depth_topic='/external/registered_depth')
         self.assertNotIn('register_node', nodes)
         self.assertIn('rgbd_sync', nodes)
+
+    def test_depth_preview_and_mapping_have_separate_rgbd_outputs_and_one_registration(self):
+        preview_remaps={};preview_names={};mapping_remaps={}
+        def inspect_preview(action,context):
+            if isinstance(action,Node):
+                executable=str(action.node_executable)
+                preview_remaps[executable]=dict((perform_substitutions(context,s),perform_substitutions(context,t))
+                    for s,t in (action._Node__remappings or []))
+                preview_names[executable]=perform_substitutions(context,normalize_to_list_of_substitutions(action._Node__node_name))
+        def inspect_mapping(action,context):
+            if isinstance(action,Node):
+                mapping_remaps[str(action.node_executable)]=dict((perform_substitutions(context,s),perform_substitutions(context,t))
+                    for s,t in (action._Node__remappings or []))
+        preview=resolve_launch(launch_file='launch/realsense_rgbd_preview.launch.py',inspect_action=inspect_preview)
+        mapping=resolve_launch(register_depth='false',inspect_action=inspect_mapping)
+        self.assertIn('register_node',preview)
+        self.assertNotIn('register_node',mapping)
+        self.assertEqual(preview_names['rgbd_sync'],'depth_preview_rgbd_sync')
+        self.assertEqual(preview_remaps['rgbd_sync']['rgbd_image'],'/depth_preview/rgbd_image')
+        self.assertEqual(mapping_remaps['rgbd_sync']['rgbd_image'],'rgbd_image_unchecked')
+        self.assertEqual(mapping_remaps['rtabmap']['rgbd_image'],'rgbd_image')
+        self.assertEqual(preview_remaps['register_node']['depth_registered/image_rect'],
+            mapping_remaps['rgbd_sync']['depth/image'])
+        self.assertEqual(mapping['semantic_mapper'][0]['detector_backend'],'yolov8')
 
     def test_registration_rejects_feedback_topic(self):
         with self.assertRaises(ValueError):
@@ -117,6 +141,20 @@ class SemanticLaunchTests(unittest.TestCase):
         self.assertEqual(mapper['detector_backend'], 'yoloe_pf')
         self.assertEqual(prefix, python)
         self.assertFalse(nodes['rtabmap_viz'][0]['semantic_label_details'])
+
+    def test_yoloe_gpu_keeps_the_paired_map_and_uses_the_cuda_runtime(self):
+        model=str(ROOT/'models/yoloe-11s-seg-pf.pt')
+        python=str(ROOT/'.venv-segmentation-gpu/bin/python3')
+        nodes=resolve_launch(model_path=model,semantic_python=python,semantic_backend='yoloe_pf',
+            semantic_device='cuda:0',semantic_config=str(ROOT/'src/rtabmap_semantic/config/yoloe.yaml'),
+            semantic_label_details='false',register_depth='false')
+        mapper,prefix=nodes['semantic_mapper']
+        self.assertEqual(mapper['model_path'],model)
+        self.assertEqual(mapper['device'],'cuda:0')
+        self.assertEqual(mapper['detector_backend'],'yoloe_pf')
+        self.assertEqual(prefix,python)
+        self.assertNotIn('register_node',nodes)
+        self.assert_paired_map(nodes,mapper['database_path'])
 
     def test_overrides_reach_slam_mapper_and_gui(self):
         database = '/tmp/semantic launch test/map.db'

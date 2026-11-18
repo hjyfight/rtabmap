@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "version": "unverified_mounting",
+  "measurement_scope": "unverified",
+  "common_frame": "base_link",
+  "note": "Fill measured mounting transforms, clock bounds and intact evidence references. Null values never authorize target point/sound association.",
+  "sensors": {
+    "rgb": {"frame_id": "camera_color_optical_frame", "status": "unverified", "common_from_sensor": null, "clock_offset_s": 0.0, "clock_uncertainty_s": null},
+    "infrared": {"frame_id": "camera_infra2_optical_frame", "status": "factory", "common_from_sensor": null, "clock_offset_s": 0.0, "clock_uncertainty_s": null},
+    "lidar": {"frame_id": "livox_frame", "status": "unverified", "common_from_sensor": null, "clock_offset_s": 0.0, "clock_uncertainty_s": null},
+    "audio": {"frame_id": "microphone_array", "status": "unverified", "common_from_sensor": null, "microphone_positions_m": null, "clock_offset_s": 0.0, "clock_uncertainty_s": null}
+  }
+}
