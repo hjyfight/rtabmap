@@ -25,6 +25,36 @@ test('old retained messages cannot be displayed as current audio',()=>{
   const replay=renderToStaticMarkup(React.createElement(panel.View,{snapshot:snapshot(),receivedAt:110000,now:110001}));
   assert.match(replay,/音频已中断/);
 });
+test('cat and dog scores remain visible outside Top-5 without inventing patrol events',()=>{
+  const v=snapshot();v.scores[78]=.27;v.scores[70]=.21;v.patrol_events=[];
+  const original=JSON.stringify(v);
+  const html=renderToStaticMarkup(React.createElement(panel.View,{snapshot:v,receivedAt:100000,now:100100}));
+  assert.match(html,/猫狗实时分数/);assert.match(html,/猫叫／呼噜/);assert.match(html,/犬吠／低吼/);
+  assert.match(html,/0.270/);assert.match(html,/0.210/);assert.match(html,/前 1 名/);
+  assert.match(html,/尚无已确认的声音事件/);assert.equal(JSON.stringify(v),original);
+  const stopped=renderToStaticMarkup(React.createElement(panel.View,{snapshot:v,receivedAt:100000,now:105000}));
+  assert.match(stopped,/猫狗上一帧分数/);assert.doesNotMatch(stopped,/猫狗实时分数/);
+});
+test('animal score groups follow the official model class map',()=>{
+  const rows=fs.readFileSync(path.join(root,'config/yamnet_class_map.csv'),'utf8').split(/\r?\n/);
+  const expected={cat:['Cat','Meow','Purr','Caterwaul'],dog:['Bark','Dog','Bow-wow','Growling','Howl']};
+  for(const group of panel.animalScores(snapshot())){
+    assert.deepEqual(Array.from(group.indices,i=>rows[i+1].split(',').slice(2).join(',')),expected[group.key]);
+  }
+});
+test('remote heartbeat handles clock skew while rejecting old results and stopped streams',()=>{
+  for(const skew of [-60,60]){
+    const v=snapshot();v.source.frame_id='orin_microphone_array';v.published_at=100+skew;
+    const status={state:'recognizing',published_at:v.published_at+.2,last_result_at:v.published_at};
+    const props={snapshot:v,status,receivedAt:100000,statusReceivedAt:100000,now:100100};
+    const render=p=>renderToStaticMarkup(React.createElement(panel.View,p));
+    assert.match(render(props),/声音识别已更新/);assert.match(render(props),/Orin 实时麦克风/);
+    assert.match(render({...props,now:105000}),/音频已中断/);
+    assert.match(render({...props,statusReceivedAt:95000}),/音频已中断/);
+    assert.match(render({...props,snapshot:{...v,published_at:v.published_at-10}}),/音频已中断/);
+    assert.match(render({...props,snapshot:{...v,input_age_s:10}}),/音频已中断/);
+  }
+});
 test('malformed classes, inconsistent scores and invented locations are rejected',()=>{
   for(const mutate of [v=>v.scores.pop(),v=>v.scores[0]=NaN,v=>v.top_k[0].score=.4,
     v=>v.top_k.push(v.top_k[0]),v=>v.source_localization.available=true,
@@ -33,7 +63,8 @@ test('malformed classes, inconsistent scores and invented locations are rejected
   }
 });
 test('offline recordings and loading/error status have explicit banners',()=>{
-  const v=snapshot();v.mode='offline';assert.match(renderToStaticMarkup(React.createElement(panel.View,{snapshot:v})),/离线录音结果/);
+  const v=snapshot();v.mode='offline';const recording=renderToStaticMarkup(React.createElement(panel.View,{snapshot:v}));
+  assert.match(recording,/离线录音结果/);assert.match(recording,/猫狗录音分数/);assert.doesNotMatch(recording,/猫狗实时分数/);
   const html=renderToStaticMarkup(React.createElement(panel.View,{now:100,statusReceivedAt:99,
     status:{state:'model_error',last_error:'missing weights'}}));assert.match(html,/声音识别异常/);assert.match(html,/missing weights/);
   assert.equal(panel.parseStatus({data:JSON.stringify({schema:'yamnet_audio_events/1',classes:521,state:'waiting_audio',published_at:100,last_error:''})}).state,'waiting_audio');

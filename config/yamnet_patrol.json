@@ -9,6 +9,8 @@
      "classes": ["Walk, footsteps", "Run"]},
     {"key": "dog", "label_zh": "听到犬吠／低吼", "threshold": 0.35, "confirm_windows": 2,
      "classes": ["Bark", "Dog", "Bow-wow", "Growling", "Howl"]},
+    {"key": "cat", "label_zh": "听到猫叫／呼噜", "threshold": 0.35, "confirm_windows": 2,
+     "classes": ["Cat", "Meow", "Purr", "Caterwaul"]},
     {"key": "vehicle", "label_zh": "听到车辆／发动机声", "threshold": 0.35, "confirm_windows": 2,
      "classes": ["Vehicle", "Motor vehicle (road)", "Car", "Truck", "Bus", "Motorcycle", "Engine", "Idling", "Engine starting"]},
     {"key": "alarm", "label_zh": "听到警报声", "threshold": 0.35, "confirm_windows": 2,

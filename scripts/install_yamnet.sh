@@ -7,11 +7,13 @@ YAMNET_ENV="$YAMNET_PROJECT/.venv-yamnet"
 YAMNET_MODEL="$YAMNET_PROJECT/models/yamnet/yamnet.tflite"
 YAMNET_SHA=4d8b4a53282dc83ef04e3e7dbc4fbc98082e34e44ed798e16c3a0cdd4c584faf
 YAMNET_INSTALL_DEPS=true
+YAMNET_WHEELHOUSE=${YAMNET_WHEELHOUSE:-}
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --no-deps) YAMNET_INSTALL_DEPS=false; shift ;;
+    --wheelhouse) YAMNET_WHEELHOUSE=${2:?missing wheelhouse}; shift 2 ;;
     --proxy) export https_proxy="${2:?missing proxy}" http_proxy="$2"; shift 2 ;;
-    *) printf 'Usage: %s [--no-deps] [--proxy URL]\n' "$0" >&2; exit 2 ;;
+    *) printf 'Usage: %s [--no-deps] [--wheelhouse DIR] [--proxy URL]\n' "$0" >&2; exit 2 ;;
   esac
 done
 export PYTHONNOUSERSITE=1 PIP_CACHE_DIR="$YAMNET_PROJECT/.cache/yamnet/pip"
@@ -22,8 +24,13 @@ fi
 if $YAMNET_INSTALL_DEPS; then
   YAMNET_PIP_PYTHON=${YAMNET_PIP_PYTHON:-"$YAMNET_PROJECT/.venv-emsanet/bin/python3"}
   [[ -x "$YAMNET_PIP_PYTHON" ]] || { printf '设置 YAMNET_PIP_PYTHON 为已有 pip 的 Python 解释器。\n' >&2; exit 1; }
+  YAMNET_PIP_OPTIONS=(--only-binary=:all:)
+  if [[ -n $YAMNET_WHEELHOUSE ]]; then
+    [[ -d $YAMNET_WHEELHOUSE ]] || { printf '依赖目录不存在：%s\n' "$YAMNET_WHEELHOUSE" >&2; exit 1; }
+    YAMNET_PIP_OPTIONS+=(--no-index --find-links "$YAMNET_WHEELHOUSE")
+  fi
   "$YAMNET_PIP_PYTHON" -m pip --python "$YAMNET_ENV/bin/python3" install \
-    --disable-pip-version-check -r scripts/requirements_yamnet.txt
+    --disable-pip-version-check "${YAMNET_PIP_OPTIONS[@]}" -r scripts/requirements_yamnet.txt
 fi
 if [[ ! -s "$YAMNET_MODEL" ]] || [[ $(sha256sum "$YAMNET_MODEL" | cut -d ' ' -f 1) != "$YAMNET_SHA" ]]; then
   curl -fL --retry 3 --connect-timeout 20 --max-time 120 \

@@ -68,6 +68,49 @@ bash scripts/start_fourmodal_audio.sh --alsa-device hw:CARD=XFMDPV0018,DEV=0
 YAMNet 与四模态特征节点可以同时订阅。
 Ctrl+C 分别停止本轮识别和独立网页进程。
 
+### 使用 Orin 的实时识别结果
+
+Orin 上的 WHEELTEC 麦克风和 YAMNet 使用 ROS 域 74，入口为
+`bash scripts/start_orin_audio.sh`。主机通过 Wi-Fi
+`wlx6c1ff712636d` 连接 Orin `192.168.1.103`，只转发音频帧、声音事件和状态到域 0：
+
+```bash
+bash scripts/start_orin_audio_relay.sh --sink-dds config/hotspot_sensor_cyclonedds.xml
+```
+
+这里使用本机回环 DDS，适用于主机有线网卡断开时的声音展示。
+另一个终端启动声音网页和 8768 桥接，同样使用回环 DDS：
+
+```bash
+export ROS_DOMAIN_ID=0 ROS_LOCALHOST_ONLY=0 RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export CYCLONEDDS_URI="file://$PWD/config/hotspot_sensor_cyclonedds.xml"
+bash scripts/start_yamnet_miti.sh
+```
+
+已有 <http://localhost:3002/> 通过 8768 接收这一路结果；也可打开
+<http://localhost:3004/rtabmap.html?view=audio>。面板根据结果中的
+`source.frame_id=orin_microphone_array` 显示“Orin 实时麦克风”。
+转发保留原始消息、采集时间和源 ID，主机无需再启动 YAMNet。
+两机时钟不同时，面板结合本机接收时间与同一识别进程的心跳判断实时状态；
+结果或心跳断流、结果落后于心跳时仍显示中断，不修改消息时间戳。
+域 0 的同名话题已有发布者时，转发器会拒绝启动；应先处理旧声音来源。
+回环连接仅用于本机展示，地图和视觉区域需要各自的传输连接。
+
+实际链路检查：
+
+```bash
+.tools/miti/root/usr/lib/miti/node/bin/node tests/check_yamnet_bridge.js \
+  logs/audio/yamnet/orin_bridge_3002_check.json \
+  http://127.0.0.1:3002 ws://127.0.0.1:8768 orin_microphone_array
+```
+
+该检查接收至少三帧实际声音结果和状态，并验证 Orin 来源及面板渲染。
+实际浏览器检查记录在 `logs/audio/yamnet/orin_browser/report.json`，截图在同一目录。
+独立浏览器已验证实时显示、断开连接约 4.2 秒后的中断提示，以及重连后的恢复；
+验证期间转发进程持续接收 Orin 数据。
+转发器状态写入 `logs/audio/yamnet/orin_relay.json`；Ctrl+C 或 SIGTERM
+停止转发和网页进程。更换网络环境后，按实际网卡选择 DDS 配置。
+
 ## 模型与预处理
 
 - Google 官方 YAMNet TFLite 模型，约 4 MB；模型 SHA-256 固定校验。
@@ -95,13 +138,25 @@ YAMNet 的 521 类分数作为分类结果发布。原有 UniBind 声学语义�
 本机 ALSA 采集仍是 `host_read_end_estimate`，不代表硬件同步已经验证。
 远程音频的偏移可通过 `audio_clock_offset_s` 设置。
 
-`config/yamnet_patrol.json` 提供人声、脚步、犬吠、车辆／发动机、警报、
-敲击／撞击和破碎声七组规则。持续声音默认连续两个窗口达到阈值才确认；
+`config/yamnet_patrol.json` 提供人声、脚步、犬吠、猫叫／呼噜、车辆／发动机、警报、
+敲击／撞击和破碎声八组规则。猫叫与犬吠均以 0.35 分、连续两个窗口作为确认条件。
+持续声音默认连续两个窗口达到阈值才确认；
 短促敲击和破碎声默认一个窗口。确认后同一段声音保留同一事件 ID，
 首次确认进入网页最近巡逻记录。可调整类别、阈值、确认窗口数及最低音量。
 这些阈值用于演示起点，需在巡逻现场录音上评估误报与漏报。
 
-声音面板显示原始类别及模型分数。断流后显示“音频已中断”，保留的上一帧候选不会标为实时结果。
+声音面板固定显示猫叫／呼噜和犬吠／低吼的分组最高分，即使这些类别没有进入当前 Top-5。
+候选表显示每帧分数最高的五类；最近巡逻记录只保存连续确认的事件。
+电脑播放录音或视频时，声音需通过扬声器被 Orin 的实体麦克风采集。
+断流后显示“音频已中断”，保留的上一帧候选和猫狗分数不会标为实时结果。
+2026-11-19 已将猫叫规则部署到 Orin，备份旧配置并重启独立声音启动器；
+3002 网页已刷新到包含猫狗固定分数的版本。验证记录位于
+`logs/audio/yamnet/cat_dog_20261119/orin_update.json` 和同目录 `bridge_check.json`。
+以新规则回放 2026-11-18 20:40—21:10 的 3599 帧原始分数，确认猫叫 9 次、犬吠 1 次；
+这些是历史日志回放结果，未作为新的实时事件发布。
+实际 8768 链路收到重启后的三帧 Orin 结果，验证了网页提供的面板代码、
+猫狗分数显示和两机约 66 秒时钟偏差下的实时状态。
+本次浏览器自动化环境没有可用浏览器，验证采用实际网页资源与桥接消息渲染。
 现有项目布局刷新时会增加声音面板；也可使用独立的 `view=audio` 布局。
 已有桥接服务需允许 `/perception/audio/(events|status)`，独立网页启动入口已包含这两个话题。
 

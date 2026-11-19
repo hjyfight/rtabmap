@@ -19,6 +19,15 @@ function rtabmapAudioEventsFactory(React) {
   'use strict';
   const h=React.createElement,finite=x=>typeof x==='number'&&Number.isFinite(x);
   const score=x=>finite(x)&&x>=0&&x<=1;
+  // Indices follow the pinned official 521-class map, including classes outside Top-5.
+  const animalGroups=[
+    {key:'cat',label:'猫叫／呼噜',indices:[76,78,77,80]},
+    {key:'dog',label:'犬吠／低吼',indices:[70,69,73,74,72]}
+  ];
+  function animalScores(snapshot) {
+    return animalGroups.map(group=>({...group,
+      score:Math.max(...group.indices.map(i=>snapshot.scores[i]))}));
+  }
   function parseSnapshot(message) {
     try {
       if(typeof message?.data!=='string'||message.data.length>100000)return null;
@@ -70,9 +79,15 @@ function rtabmapAudioEventsFactory(React) {
   const fmt=x=>finite(x)?x.toFixed(3):'—';
   function View({snapshot=null,history=[],status=null,error='',now=Date.now(),receivedAt=0,statusReceivedAt=0}) {
     const offline=snapshot?.mode==='offline';
-    const fresh=offline||receivedAt>0&&now-receivedAt<4000&&
-      snapshot&&now-snapshot.published_at*1000<5000&&now-snapshot.published_at*1000>-5000;
     const currentStatus=status&&now-statusReceivedAt<4000?status:null;
+    // Results and heartbeat share the producer's clock, which can differ from this browser's.
+    const producerFresh=currentStatus&&['recognizing','inferencing'].includes(currentStatus.state)&&
+      finite(snapshot?.input_age_s)&&snapshot.input_age_s>=0&&snapshot.input_age_s<=3&&
+      finite(currentStatus.published_at)&&finite(currentStatus.last_result_at)&&
+      Math.abs(currentStatus.published_at-snapshot.published_at)<4&&
+      Math.abs(currentStatus.last_result_at-snapshot.published_at)<4;
+    const fresh=offline||receivedAt>0&&now-receivedAt<4000&&snapshot&&
+      (producerFresh||Math.abs(now-snapshot.published_at*1000)<5000);
     const failed=['model_error','inference_error'].includes(currentStatus?.state);
     const banner=error?'声音数据校验失败':failed?'声音识别异常':offline?'离线录音结果':
       fresh?'声音识别已更新':currentStatus?.state==='loading_model'?'正在加载 YAMNet':
@@ -80,12 +95,20 @@ function rtabmapAudioEventsFactory(React) {
     return h('div',{style:{padding:12,overflow:'auto',height:'100%',background:'#101923',color:'#dce7f0',fontSize:13}},
       h('h3',null,'哨兵巡逻 · 声音事件'),
       h('p',{role:'status',style:{color:fresh?'#70ddc4':'#ffc577'}},banner),
-      h('p',null,'YAMNet · 521 类声音 · 实时麦克风'),
+      h('p',null,'YAMNet · 521 类声音 · '+
+        (snapshot?.source?.frame_id==='orin_microphone_array'?'Orin 实时麦克风':'实时麦克风')),
       error||failed?h('p',null,error||currentStatus.last_error):null,
       snapshot?h(React.Fragment,null,
         h('p',null,'音量 '+snapshot.audio.rms_dbfs.toFixed(1)+' dBFS · 分析窗口 '+snapshot.audio.duration_s.toFixed(2)+
           ' s · 计算 '+fmt(snapshot.processing_s)+' s'),
-        h('strong',null,fresh?'本帧声音候选':'上一帧声音候选'),
+        h('h4',null,offline?'猫狗录音分数':fresh?'猫狗实时分数':'猫狗上一帧分数'),
+        h('table',{'aria-label':'猫狗声音分数',style:{width:'100%',opacity:fresh?1:.55}},
+          h('thead',null,h('tr',null,h('th',null,'声音类别'),h('th',null,'模型分数'))),
+          h('tbody',null,...animalScores(snapshot).map(row=>h('tr',{key:row.key},
+            h('td',null,row.label),h('td',null,fmt(row.score)))))),
+        h('small',null,offline?'录音模型分数；确认事件见下方巡逻记录。':
+          '分数持续更新；连续达到阈值后进入下方巡逻记录。'),
+        h('p',null,h('strong',null,fresh?'本帧声音候选（前 '+snapshot.top_k.length+' 名）':'上一帧声音候选')),
         h('table',{style:{width:'100%',opacity:fresh?1:.55}},
           h('thead',null,h('tr',null,h('th',null,'声音类别'),h('th',null,'模型分数'))),
           h('tbody',null,...snapshot.top_k.map(row=>h('tr',{key:row.index},
@@ -93,7 +116,7 @@ function rtabmapAudioEventsFactory(React) {
         h('p',null,snapshot.patrol_events.length?snapshot.patrol_events.map(event=>
           event.label_zh+'（'+(event.status==='confirmed'?'连续观测已确认':'待连续观测')+'）').join('；'):'本帧没有达到巡逻事件阈值'),
         h('small',null,'采集时间来源：'+snapshot.source.stamp_quality)):
-        h('p',null,'说话、脚步、犬吠、车辆、警报和撞击声会在收到音频后显示。'),
+        h('p',null,'说话、脚步、猫叫、犬吠、车辆、警报和撞击声会在收到音频后显示。'),
       h('h4',null,'最近巡逻记录'),
       history.length?h('ol',null,...history.slice(0,20).map(event=>h('li',{key:event.event_id+'-'+event.stamp},
         new Date(event.stamp*1000).toLocaleTimeString('zh-CN',{hour12:false})+' · '+event.label_zh+' · 分数 '+fmt(event.score)))):
@@ -124,5 +147,5 @@ function rtabmapAudioEventsFactory(React) {
     return h(View,{snapshot:sample?.snapshot,receivedAt:sample?.receivedAt||0,history,
       status:status?.value,statusReceivedAt:status?.receivedAt||0,error,now});
   }
-  return {Component,View,parseSnapshot,parseStatus};
+  return {Component,View,parseSnapshot,parseStatus,animalScores};
 }

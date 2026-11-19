@@ -91,6 +91,23 @@ class PatrolTests(unittest.TestCase):
         self.assertEqual({row['key'] for row in rows}, {'speech', 'alarm'})
         self.assertEqual([row['score'] for row in rows], [.8, .7])
 
+    def test_cat_and_dog_confirm_independently_and_reset_only_the_missing_sound(self):
+        self.scores.fill(0)
+        self.scores[78], self.scores[70] = .8, .7
+        first = self.tracker.update(self.scores, 1, -30)
+        self.assertEqual({row['key'] for row in first}, {'cat', 'dog'})
+        self.assertTrue(all(row['status'] == 'candidate' for row in first))
+        confirmed = {row['key']: row for row in self.tracker.update(self.scores, 1.5, -30)}
+        self.assertTrue(all(row['onset'] and row['status'] == 'confirmed' for row in confirmed.values()))
+        self.assertNotEqual(confirmed['cat']['event_id'], confirmed['dog']['event_id'])
+        self.scores[78] = .1
+        only_dog = self.tracker.update(self.scores, 2, -30)
+        self.assertEqual([row['key'] for row in only_dog], ['dog'])
+        self.scores[78] = .8
+        resumed = {row['key']: row for row in self.tracker.update(self.scores, 2.5, -30)}
+        self.assertEqual(resumed['cat']['status'], 'candidate')
+        self.assertEqual(resumed['dog']['event_id'], confirmed['dog']['event_id'])
+
     def test_duplicate_timestamps_and_invalid_scores_do_not_advance_confirmation(self):
         self.tracker.update(self.scores, 1, -30)
         for scores, stamp in [(self.scores, 1), (self.scores, .5), (np.zeros(520), 2),

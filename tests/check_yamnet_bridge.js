@@ -5,8 +5,7 @@ const vendor=createRequire(path.join(root,'.tools/miti/root/usr/lib/miti/package
 const WS=vendor('next/dist/compiled/ws'),React=vendor('react'),{renderToStaticMarkup}=vendor('react-dom/server.browser');
 const output=process.argv[2]||path.join(root,'logs/audio/yamnet/bridge_check.json');
 const web=process.argv[3]||'http://127.0.0.1:3004',bridge=process.argv[4]||'ws://127.0.0.1:8768';
-const context=vm.createContext({});vm.runInContext(fs.readFileSync(path.join(root,'config/miti_audio_events.js'),'utf8'),context);
-const panel=context.rtabmapAudioEventsFactory(React);
+const expectedFrame=process.argv[5];
 
 async function read(url,json=false){const response=await fetch(url,{signal:AbortSignal.timeout(5000)});assert.ok(response.ok,url);return json?response.json():response.text();}
 async function main(){
@@ -17,6 +16,13 @@ async function main(){
   const renderer=await read(web+manifest.assets[0]),page=await read(web+manifest.assets[1]);
   assert.match(renderer,/const RtabmapAudioEventsPanel = rtabmapAudioEventsFactory/);
   assert.match(page,/rtabmapMigrateAudioEventsLayout/);
+  assert.ok(renderer.includes(fs.readFileSync(path.join(root,'config/miti_audio_events.js'),'utf8')),
+    'Served audio panel differs from the current project source');
+  const panelStart=renderer.indexOf('function rtabmapAudioEventsFactory(');
+  const panelEnd=renderer.indexOf('\nconst RtabmapAudioEventsPanel',panelStart);
+  assert.ok(panelStart>=0&&panelEnd>panelStart);
+  const context=vm.createContext({});vm.runInContext(renderer.slice(panelStart,panelEnd),context);
+  const panel=context.rtabmapAudioEventsFactory(React);
   let workspace=null;
   if(new URL(web).port==='3002'){
     const settingsMatch=page.match(/const RtabmapWorkspaceSettings = (\{[^\n]+\});/);
@@ -65,13 +71,21 @@ async function main(){
     });
   });
   const latest=received.results.at(-1),now=Date.now();
+  if(expectedFrame)for(const result of received.results)assert.equal(result.source.frame_id,expectedFrame);
   const html=renderToStaticMarkup(React.createElement(panel.View,{snapshot:latest,receivedAt:now,now,
     status:received.status,statusReceivedAt:now,history:latest.patrol_events.filter(e=>e.onset)}));
   assert.match(html,/声音识别已更新/);assert.match(html,/521 类/);assert.ok(html.includes(latest.top_k[0].label_zh));
+  assert.match(html,/猫狗实时分数/);assert.match(html,/猫叫／呼噜/);assert.match(html,/犬吠／低吼/);
+  const animals=panel.animalScores(latest).map(({key,score})=>({key,score}));
+  for(const row of animals)assert.ok(html.includes(row.score.toFixed(3)));
+  if(expectedFrame==='orin_microphone_array')assert.match(html,/Orin 实时麦克风/);
   fs.mkdirSync(path.dirname(output),{recursive:true});
   fs.writeFileSync(path.join(path.dirname(output),'bridge_render.html'),html);
   const report={passed:true,web,bridge,publications:received.results.length,classes:latest.scores.length,
-    microphone_source:latest.source.source_id,top_k:latest.top_k,processing_s:latest.processing_s,
+    microphone_source:latest.source.source_id,microphone_frame:latest.source.frame_id,
+    top_k:latest.top_k,animal_scores:animals,processing_s:latest.processing_s,
+    served_audio_panel_matches:true,
+    published_at:latest.published_at,checked_at:now/1000,publisher_minus_host_s:latest.published_at-now/1000,
     latest_sequence:latest.sequence,workspace_sync:workspace,rendered_html:path.join(path.dirname(output),'bridge_render.html')};
   fs.writeFileSync(output,JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report));
 }
