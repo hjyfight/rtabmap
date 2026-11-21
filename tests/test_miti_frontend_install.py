@@ -126,6 +126,7 @@ class FrontendInstallTests(unittest.TestCase):
         self.assertIn('case"audio-events":return(0,r.jsx)(RtabmapAudioEventsPanel,', renderer)
         self.assertIn('type:"audio-events",label:"声音事件"', page)
         self.assertIn('rtabmapSyncWorkspaceStorage(window.localStorage,window.location,RtabmapWorkspaceSettings)', page)
+        self.assertIn('"port": 3000', page)
         self.assertIn('"port": 3002', page)
 
 

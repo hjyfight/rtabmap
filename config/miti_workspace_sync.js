@@ -1,6 +1,18 @@
 /* Apply a requested workspace update once in each browser's own storage. */
 function rtabmapSyncWorkspaceStorage(storage, location, settings) {
-  if(!storage||!location||String(location.port)!==String(settings.port))return {applied:false};
+  if(!storage||!location)return {applied:false};
+  if(String(location.port)!==String(settings.port)) {
+    const other=settings.workspaces?.find(s=>String(s.port)===String(location.port));
+    return other?rtabmapSyncWorkspaceStorage(storage,location,other):{applied:false};
+  }
+  if(settings.stylesheet&&typeof document!=='undefined') {
+    document.documentElement.classList.add('rtabmap-dashboard');
+    if(!document.getElementById('rtabmap-dashboard-style')) {
+      const link=document.createElement('link');link.id='rtabmap-dashboard-style';link.rel='stylesheet';
+      link.href=settings.stylesheet+'?v='+encodeURIComponent(settings.revision);document.head.appendChild(link);
+    }
+    document.title='多模态感知与建图 · 实时控制台';
+  }
   const marker='rtabmap_workspace_sync_'+settings.port;
   const keys=['miti_layout_config','miti_bridge_url','miti_stream_mode',marker];
   const previous=Object.fromEntries(keys.map(key=>[key,storage.getItem(key)]));
@@ -10,7 +22,15 @@ function rtabmapSyncWorkspaceStorage(storage, location, settings) {
   const valid=layout&&Array.isArray(layout.widgets)&&layout.widgets.length<=256&&layout.mosaic;
   const vendorIds=new Set(['urdf-viewer-1','camera-viewer-1','camera-viewer-2','log-1']);
   const vendorDefault=valid&&layout.widgets.length>0&&layout.widgets.every(w=>vendorIds.has(w.i));
-  if(!valid||vendorDefault)layout=copy(settings.layout);
+  if(settings.replaceLayout&&previous[marker]!==settings.revision) {
+    const old=valid?layout.widgets:[];
+    layout=copy(settings.layout);
+    for(const widget of layout.widgets) {
+      const existing=old.find(w=>w.i===widget.i&&w.type===widget.type);
+      if(existing?.props)widget.props={...widget.props,...existing.props};
+    }
+  }
+  else if(!valid||vendorDefault)layout=copy(settings.layout);
   else layout=copy(layout);
   function leaves(tree) {
     const result=[],pending=[tree];let count=0;

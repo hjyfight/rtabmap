@@ -26,11 +26,95 @@ spec.loader.exec_module(adapter)
 
 
 class SceneAdapterTest(unittest.TestCase):
+    def test_legacy_static_clothing_and_shoes_expire_with_their_last_observation(self):
+        for label in ('连裤袜', '鞋子', 'pantyhose', 'footwear', '手臂', '衣服'):
+            with self.subTest(label=label):
+                message = self.objects()
+                clothing = self.objects(object_id=2).objects[0]
+                clothing.label, clothing.dynamic = label, False
+                clothing.observations[0].node_stamp = 100.
+                message.objects.append(clothing)
+                gate = adapter.DynamicObservationFilter()
+                first = gate.filter(message, acquisition_stamp=100., now=0.)
+                self.assertEqual(len(first.objects), 2)
+                self.assertTrue(first.objects[1].dynamic)
+                gate.filter(message, acquisition_stamp=101., now=2.)
+                expired = gate.filter(message, acquisition_stamp=104., now=4.)
+                self.assertEqual([obj.label for obj in expired.objects], ['椅子'])
+                self.assertFalse(clothing.dynamic, 'Original persistent map data must remain unchanged')
+                # A display restart must not resurrect a static historical clothing label.
+                restored = adapter.DynamicObservationFilter()
+                self.assertEqual([obj.label for obj in restored.filter(message, acquisition_stamp=104., now=0.).objects], ['椅子'])
+
+    def test_moving_clothing_uses_the_latest_position_instead_of_static_history_average(self):
+        message = self.objects()
+        obj = message.objects[0]
+        obj.label = '鞋子'
+        obj.observations[0].node_stamp = 100.
+        recent = deepcopy(obj.observations[0])
+        recent.node_id, recent.node_stamp, recent.position.x = 2, 101., 4.
+        obj.observations.append(recent)
+        current = adapter.DynamicObservationFilter().filter(message, acquisition_stamp=101., now=0.)
+        self.assertEqual(len(current.objects[0].observations), 1)
+        np.testing.assert_allclose(adapter.object_position(current.objects[0], {1: np.eye(4), 2: np.eye(4)}), [4., 0., 0.])
+        self.assertEqual(len(obj.observations), 2)
+
+    def test_person_attached_category_policy_does_not_match_building_fixtures_by_substring(self):
+        for label in ('鞋盒', 'shoe box', 'shoe shop', '衣帽架', 'coatrack',
+                      'headboard', '床头板', 'hand dryer', '烘手机', '地面', '国旗', '办公桌'):
+            with self.subTest(label=label):
+                self.assertFalse(adapter.transient_person_label(label))
+
+    def test_person_expires_despite_repeated_snapshots_and_static_furniture_remains(self):
+        message = self.objects()
+        person = self.objects(object_id=2).objects[0]
+        person.label, person.dynamic = '人', True
+        person.observations[0].node_stamp = 100.0
+        message.objects.append(person)
+        gate = adapter.DynamicObservationFilter(ttl=3.0)
+        state = adapter.SemanticMarkers()
+        poses = {1: np.eye(4)}
+        def update(now, acquisition=100.):
+            return state.update(gate.filter(message, acquisition_stamp=acquisition, now=now), poses, message.header)
+        first = update(0)
+        self.assertEqual(len([m for m in first.markers if m.type == 9 and m.action == Marker.ADD]), 2)
+        update(2.5)  # Graph callbacks and retransmissions keep publishing the identical old observation.
+        expired = update(3.1)
+        self.assertEqual([m.text for m in expired.markers if m.type == 9 and m.action == Marker.ADD], ['椅子'])
+        self.assertEqual(len([m for m in expired.markers if m.action == Marker.DELETE]), 2)
+        self.assertEqual(len(message.objects), 2, 'Display filtering must not mutate mapper data')
+        # The removed marker must stay removed after another identical retained snapshot.
+        self.assertFalse(any(m.text == '人' and m.action == Marker.ADD for m in update(4).markers))
+        person.observations[0].node_stamp = 101.0
+        revived = update(4.1, acquisition=101.)
+        self.assertTrue(any(m.text == '人' and m.action == Marker.ADD for m in revived.markers))
+
+    def test_camera_clock_rejects_historical_people_after_display_restart(self):
+        message = self.objects()
+        message.objects[0].label, message.objects[0].dynamic = '人', True
+        message.objects[0].observations[0].node_stamp = 100.
+        gate = adapter.DynamicObservationFilter()
+        self.assertEqual(gate.filter(message, acquisition_stamp=110., now=0).objects, [])
+        message.objects[0].observations[0].node_stamp = 109.
+        self.assertEqual(len(gate.filter(message, acquisition_stamp=110., now=1).objects), 1)
+        message.objects[0].observations[0].node_stamp = 108.
+        self.assertEqual(gate.filter(message, acquisition_stamp=110., now=2).objects, [])
+
+    def test_dynamic_targets_never_inherit_cached_positions_when_new_anchors_are_missing(self):
+        message = self.objects()
+        message.objects[0].dynamic = True
+        cached = {1: np.array([5., 5., 5.])}
+        self.assertEqual(adapter.markers_for(message, {}, message.header, cached).markers, [])
+        self.assertEqual(cached, {})
+        message.objects[0].dynamic = False
+        self.assertEqual(len(adapter.markers_for(message, {}, message.header, {1: np.array([5., 5., 5.])}).markers), 2)
+
     def make_scene(self):
         self.frames, self.paths = [], []
         node = SimpleNamespace(poses={}, graph=None, objects=None, session=None,
             object_extents={}, geometry_session=None, last_geometry_read=-float('inf'),
             markers=adapter.SemanticMarkers(), cache_epoch=0,
+            dynamic_observations=adapter.DynamicObservationFilter(), latest_camera_stamp=None,
             path_pub=SimpleNamespace(publish=self.paths.append),
             marker_pub=SimpleNamespace(publish=self.frames.append),
             get_clock=lambda: SimpleNamespace(now=lambda: SimpleNamespace(to_msg=lambda: Time(sec=123))))

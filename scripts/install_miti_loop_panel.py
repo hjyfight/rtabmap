@@ -143,6 +143,8 @@ def extend_bundle(path, source, panel, height_clip, title, camera_heading, headi
         'function G(){var e,t;if(typeof window!=="undefined")try{'
         'rtabmapSyncWorkspaceStorage(window.localStorage,window.location,RtabmapWorkspaceSettings);'
         '}catch(error){console.warn("Project workspace synchronization failed",error);}')
+    source = replace_once(source, 'es(window.innerWidth>=1024)',
+                          'es(window.location.port!=="3000"&&window.innerWidth>=1024)')
     source = replace_once(source,
         't({mosaic:r.mosaic,widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})})',
         't(rtabmapMigrateAudioEventsLayout(rtabmapMigrateSegmentationLayout(rtabmapHideAuxiliaryMaps(rtabmapMigrateFourmodalLayout(rtabmapMigrateGraphFeatureLayout(rtabmapMigrateArcCameraLayout(rtabmapMigrateInfraredLayout(rtabmapMigrateGridLayout({...r,mosaic:r.mosaic,widgets:r.widgets.map(e=>"urdf-viewer"!==e.type||e.props?e:{...e,props:{...n}})'
@@ -190,15 +192,16 @@ def install(app=APP):
     audio_events = (PROJECT / 'config/miti_audio_events.js').read_text()
     workspace_sync = (PROJECT / 'config/miti_workspace_sync.js').read_text()
     workspace_settings = json.loads((PROJECT / 'config/miti_workspace_sync.json').read_text())
-    if (workspace_settings.get('schema') != 1 or
-            type(workspace_settings.get('port')) is not int or not 1024 <= workspace_settings['port'] <= 65535 or
-            type(workspace_settings.get('bridgePort')) is not int or not 1024 <= workspace_settings['bridgePort'] <= 65535 or
-            not isinstance(workspace_settings.get('revision'), str) or not workspace_settings['revision']):
-        raise ValueError('Invalid project workspace synchronization settings')
-    workspace_settings['layout'] = json.loads((PROJECT / 'config' / workspace_settings['defaultLayout']).read_text())
-    map_layout = json.loads((PROJECT / 'config' / workspace_settings['mapLayout']).read_text())
-    workspace_settings['mapWidget'] = next(widget for widget in map_layout['widgets']
-                                          if widget['i'] == workspace_settings['mapWidgetId'])
+    for settings in [workspace_settings, *workspace_settings.get('workspaces', [])]:
+        if (settings.get('schema') != 1 or
+                type(settings.get('port')) is not int or not 1024 <= settings['port'] <= 65535 or
+                type(settings.get('bridgePort')) is not int or not 1024 <= settings['bridgePort'] <= 65535 or
+                not isinstance(settings.get('revision'), str) or not settings['revision']):
+            raise ValueError('Invalid project workspace synchronization settings')
+        settings['layout'] = json.loads((PROJECT / 'config' / settings['defaultLayout']).read_text())
+        map_layout = json.loads((PROJECT / 'config' / settings['mapLayout']).read_text())
+        settings['mapWidget'] = next(widget for widget in map_layout['widgets']
+                                     if widget['i'] == settings['mapWidgetId'])
     heading_config = json.loads((PROJECT / 'config/miti_camera_heading.json').read_text())
     if (not isinstance(heading_config, dict) or
             not isinstance(heading_config.get('enabled'), bool) or
@@ -279,6 +282,10 @@ def install(app=APP):
                  (json.dumps(assets, indent=2) + '\n').encode())
     atomic_write(app / 'public/rtabmap-audio-layout.json',
                  (PROJECT / 'config/miti_audio_layout.json').read_bytes())
+    atomic_write(app / 'public/rtabmap-dashboard-layout.json',
+                 (PROJECT / 'config/miti_dashboard_layout.json').read_bytes())
+    atomic_write(app / 'public/rtabmap-dashboard.css',
+                 (PROJECT / 'config/miti_dashboard.css').read_bytes())
     print('MITI project frontend extensions: ' + ('installed' if changed else 'up to date'))
 
 

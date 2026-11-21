@@ -21,7 +21,35 @@ from rtabmap_msgs.srv import GetMap
 from sensor_msgs.msg import CameraInfo, Image
 from std_msgs.msg import String
 from visualization_msgs.msg import Marker, MarkerArray
+from builtin_interfaces.msg import Duration
 from guard_rgbd_input import validate_rgbd
+
+
+# These predictions often describe parts of a moving person. A legacy mapper
+# may mark them static, so they must not become permanent building landmarks.
+# Use exact names: shoe racks, clothing stores and furniture remain static.
+PERSON_ATTACHED_LABELS = frozenset({
+    'person', '人', 'people', '人物', 'human',
+    'body', '躯干', 'limb', '肢体', 'head', '头', 'face', '脸',
+    'arm', '手臂', 'hand', '手', 'leg', '腿', 'foot', '脚',
+    'clothing', 'garment', '衣服', 'underclothes', '内衣',
+    'pantyhose', '连裤袜', 'tights', '紧身裤袜', 'legging', '紧身裤/秋裤',
+    'pants', 'trousers', '裤子', 'sweat pant', '运动裤', 'shorts', '短裤',
+    'shirt', '衬衫', 'dress shirt', '正装衬衫', 't shirt', 't-shirt', 't恤',
+    'sweatshirt', '运动衫', 'coat', '外套', 'overcoat', '大衣',
+    'trench coat', '风衣', 'sports coat', '运动外套', 'raincoat', '雨衣',
+    'dress', '连衣裙/特定场合的服装', 'skirt', '裙子',
+    'shoe', '鞋', 'shoes', 'footwear', '鞋子', 'sock', 'socks', '短袜', '袜子',
+    'boot', '靴子', 'cowboy boot', '牛仔靴', 'hiking boot', '徒步靴',
+    'rain boot', '雨靴', 'ski boot', '滑雪靴', 'skiing shoes', '滑雪鞋',
+    'running shoe', '跑步鞋', 'leather shoe', 'dress shoe', '皮鞋',
+    'hat', '帽子', 'baseball hat', '棒球帽', 'sun hat', '太阳帽',
+    'headscarf', '头巾', 'helmet', '头盔',
+})
+
+
+def transient_person_label(label):
+    return isinstance(label, str) and label.strip().lower() in PERSON_ATTACHED_LABELS
 
 
 def pose_matrix(pose):
@@ -53,6 +81,49 @@ def object_position(obj, poses):
     return total / weight if weight > 0 else None
 
 
+class DynamicObservationFilter:
+    """Fresh observations, rather than graph/ROS heartbeats, keep moving targets visible."""
+    def __init__(self, ttl=3.0):
+        self.ttl = ttl
+        self.session = None
+        self.observed = {}
+
+    def filter(self, message, acquisition_stamp=None, now=None):
+        now = time.monotonic() if now is None else now
+        session = (message.map_key, message.map_uuid, message.header.frame_id)
+        if session != self.session:
+            self.session, self.observed = session, {}
+        result = deepcopy(message)
+        result.objects = []
+        for obj in message.objects:
+            if not obj.dynamic and not transient_person_label(obj.label):
+                result.objects.append(deepcopy(obj))
+                continue
+            stamps = [(o.node_stamp, o.node_id) for o in obj.observations
+                      if math.isfinite(o.node_stamp) and o.node_stamp > 0]
+            if not stamps:
+                continue
+            signature = max(stamps)
+            if (acquisition_stamp is not None and
+                    not -self.ttl <= acquisition_stamp - signature[0] <= self.ttl):
+                continue
+            previous = self.observed.get(obj.object_id)
+            if previous is None or signature[0] > previous[0][0]:
+                self.observed[obj.object_id] = (signature, now)
+            elif signature != previous[0]:
+                # Old keyframes and out-of-order snapshots cannot revive a departed target.
+                continue
+            if now - self.observed[obj.object_id][1] <= self.ttl:
+                current = deepcopy(obj)
+                current.dynamic = True
+                # Clothing was previously averaged across old static anchors.
+                # Draw a moving person's parts at the latest observation only.
+                current.observations = [deepcopy(o) for o in obj.observations
+                                        if (o.node_stamp, o.node_id) == signature]
+                result.objects.append(current)
+        return result
+
+
 def markers_for(message, poses, header, positions=None):
     """Build ADD/upsert markers, retaining a known position while its anchors are in transit."""
     positions = {} if positions is None else positions
@@ -63,9 +134,11 @@ def markers_for(message, poses, header, positions=None):
     result = MarkerArray()
     for obj in message.objects:
         position = object_position(obj, poses)
-        if position is None:
+        if position is None and not obj.dynamic:
             position = positions.get(obj.object_id)
         if position is None:
+            if obj.dynamic:
+                positions.pop(obj.object_id, None)
             continue
         positions[obj.object_id] = position
         color = ((1.0, 0.85, 0.1) if obj.dynamic else
@@ -78,6 +151,8 @@ def markers_for(message, poses, header, positions=None):
             marker.pose.position.x, marker.pose.position.y, marker.pose.position.z = map(float, position)
             marker.color.r, marker.color.g, marker.color.b = color
             marker.color.a = 1.0
+            if obj.dynamic:
+                marker.lifetime = Duration(sec=3)
             if kind == 'label':
                 marker.text = obj.label
                 marker.pose.position.z += 0.18
@@ -276,6 +351,8 @@ class MitiSceneAdapter(Node):
         self.last_geometry_read = -float('inf')
         self.session = None
         self.markers = SemanticMarkers()
+        self.dynamic_observations = DynamicObservationFilter()
+        self.latest_camera_stamp = None
         state_dir = os.environ.get('MITI_STATE_DIR')
         self.cache_path = FilePath(state_dir) / 'semantic_display.json' if state_dir else None
         if self.cache_path is not None and self.cache_path.is_file():
@@ -297,10 +374,12 @@ class MitiSceneAdapter(Node):
         self.depth_pub = self.create_publisher(Image, '/miti/aligned_depth/image_raw', image_qos)
         self.depth_info_pub = self.create_publisher(CameraInfo, '/miti/aligned_depth/camera_info', image_qos)
         self.create_subscription(RGBDImage, '/rgbd_image', self.on_rgbd, qos_profile_sensor_data)
+        self.create_subscription(Image, '/camera/color/image_raw', self.on_camera_clock, qos_profile_sensor_data)
         self.create_subscription(MapGraph, '/mapGraph', self.on_graph, 5)
         self.map_client = self.create_client(GetMap, '/rtabmap/get_map_data')
         self.create_timer(1.0, self.fill_missing_poses)
         self.create_timer(2.0, self.save_display_cache)
+        self.create_timer(0.5, self.publish_markers)
         try:
             from rtabmap_semantic_msgs.msg import SemanticMap
             self.create_subscription(SemanticMap, '/semantic/objects', self.on_objects, latched)
@@ -308,6 +387,11 @@ class MitiSceneAdapter(Node):
         except ImportError:
             self.get_logger().warning('Semantic messages unavailable; trajectory display is enabled.')
         self.get_logger().info('MITI display adapter ready; waiting for /mapGraph, /semantic/objects and /rgbd_image')
+
+    def on_camera_clock(self, message):
+        stamp = message.header.stamp.sec + message.header.stamp.nanosec / 1e9
+        if stamp > 0 and (self.latest_camera_stamp is None or stamp > self.latest_camera_stamp):
+            self.latest_camera_stamp = stamp
 
     def on_rgbd(self, message):
         error = validate_rgbd(message)
@@ -444,7 +528,9 @@ class MitiSceneAdapter(Node):
             try:extents=stored_object_extents(self.objects.map_key,self.objects.map_uuid,poses)
             except (sqlite3.Error,OSError,ValueError,TypeError,KeyError) as error:
                 self.get_logger().warning('Cannot read legacy display geometry: '+str(error),throttle_duration_sec=5.)
-        self.marker_pub.publish(self.markers.update(self.objects, poses, header, extents))
+        objects = self.objects
+        objects = self.dynamic_observations.filter(objects, self.latest_camera_stamp)
+        self.marker_pub.publish(self.markers.update(objects, poses, header, extents))
 
     def save_display_cache(self):
         snapshot = self.markers.cache_snapshot()

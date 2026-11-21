@@ -8,5 +8,5 @@ source setup.bash
 }
 source install/features/local_setup.bash
 export PYTHONNOUSERSITE=1 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2
-exec .venv-fourmodal/bin/python3 scripts/run_fourmodal_features.py \
+exec "${FOURMODAL_RUNTIME_PYTHON:-$FEATURE_PROJECT/.venv-fourmodal/bin/python3}" scripts/run_fourmodal_features.py \
   --ros-args --params-file config/fourmodal_features.yaml "$@"

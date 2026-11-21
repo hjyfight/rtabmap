@@ -3,6 +3,9 @@
 set -eo pipefail
 YAMNET_PROJECT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$YAMNET_PROJECT"
+if [[ ${YAMNET_MITI_PORT:-3000} == 3000 ]]; then
+  exec bash scripts/start_dashboard_miti.sh "$@"
+fi
 source scripts/setup_miti.bash
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
 export ROS_LOCALHOST_ONLY=${ROS_LOCALHOST_ONLY:-0}

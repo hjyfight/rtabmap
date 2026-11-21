@@ -1,9 +1,20 @@
 {
   "schema": 1,
-  "revision": "yamnet-3002-20261118-1",
-  "port": 3002,
-  "bridgePort": 8768,
-  "defaultLayout": "miti_fusion_layout.json",
+  "revision": "dashboard-3000-20261119-1",
+  "port": 3000,
+  "bridgePort": 8765,
+  "replaceLayout": true,
+  "stylesheet": "/rtabmap-dashboard.css",
+  "defaultLayout": "miti_dashboard_layout.json",
   "mapLayout": "miti_live_layout.json",
-  "mapWidgetId": "rtabmap-scene"
+  "mapWidgetId": "rtabmap-scene",
+  "workspaces": [{
+    "schema": 1,
+    "revision": "yamnet-3002-20261118-1",
+    "port": 3002,
+    "bridgePort": 8768,
+    "defaultLayout": "miti_fusion_layout.json",
+    "mapLayout": "miti_live_layout.json",
+    "mapWidgetId": "rtabmap-scene"
+  }]
 }

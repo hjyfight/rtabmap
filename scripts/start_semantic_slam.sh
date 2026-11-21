@@ -36,7 +36,12 @@ export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}
 export CYCLONEDDS_URI=${CYCLONEDDS_URI:-'<CycloneDDS><Domain><General><Interfaces><NetworkInterface name="enxec1ac312a316"/></Interfaces></General></Domain></CycloneDDS>'}
 SEMANTIC_CHECK=$(mktemp /tmp/semantic_rgbd_check_XXXXXX.json)
 SEMANTIC_REGISTRATION_PID=''
+SEMANTIC_DASHBOARD_PID=''
 cleanup_registration() {
+  if [[ -n "$SEMANTIC_DASHBOARD_PID" ]]; then
+    kill -TERM "$SEMANTIC_DASHBOARD_PID" 2>/dev/null || true
+    wait "$SEMANTIC_DASHBOARD_PID" 2>/dev/null || true
+  fi
   if [[ -n "$SEMANTIC_REGISTRATION_PID" ]]; then
     kill -INT "$SEMANTIC_REGISTRATION_PID" 2>/dev/null || true
     wait "$SEMANTIC_REGISTRATION_PID" 2>/dev/null || true
@@ -60,6 +65,15 @@ python3 "$SEMANTIC_PROJECT/scripts/verify_fusion_input.py" "$SEMANTIC_CHECK" --g
 if $SEMANTIC_CHECK_ONLY; then
   printf '建图输入预检查通过；模型为 %s，后端为 %s。\n' "$SEMANTIC_MODEL_PATH" "$SEMANTIC_BACKEND"
   exit 0
+fi
+if [[ ${SEMANTIC_DASHBOARD_PERCEPTION:-0} == 1 ]]; then
+  SEMANTIC_DASHBOARD_ARGS=()
+  if [[ ${SEMANTIC_DASHBOARD_GPU:-false} == true ]]; then
+    SEMANTIC_DASHBOARD_ARGS+=(--gpu)
+  fi
+  python3 -u "$SEMANTIC_PROJECT/scripts/start_dashboard_perception.py" "${SEMANTIC_DASHBOARD_ARGS[@]}" 9>&- &
+  SEMANTIC_DASHBOARD_PID=$!
+  printf '已启用 3000 音频、UniBind、目标感知及展示的自动启动。\n'
 fi
 for SEMANTIC_CAM_VAR in CAM_X CAM_Y CAM_Z CAM_ROLL CAM_PITCH CAM_YAW; do
   if [[ -z "${!SEMANTIC_CAM_VAR}" ]]; then

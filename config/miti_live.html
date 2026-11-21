@@ -22,7 +22,8 @@
     <div class="card"><b>⑤ 拼接输出 J</b><small>4096 维 · 按 RGB / NIR / LiDAR / Audio 保留四段</small></div>
     <div class="card"><b>⑥ 加权输出 f</b><small>1024 维 · 加权求和后归一化 · 逐维查看贡献</small></div>
   </div>
-  <button id="fusion">打开融合专用布局</button>
+  <button id="dashboard">打开统一控制台 · 3000</button>
+  <p><button id="fusion">打开融合专用布局</button></p>
   <p><button id="target">打开单目标四模态融合</button></p>
   <p><button id="audio">打开哨兵巡逻声音识别</button></p>
   <p><button id="refresh">更新显示并保留当前布局</button></p>
@@ -35,14 +36,14 @@ let entering = false;
 async function enter(applyLayout, fusion = false) {
   if (entering) return;
   entering = true;
-  const buttons = ['apply', 'refresh', 'fusion', 'target', 'audio'].map(id => document.getElementById(id));
+  const buttons = ['dashboard', 'apply', 'refresh', 'fusion', 'target', 'audio'].map(id => document.getElementById(id));
   const status = document.getElementById('status');
   buttons.forEach(button => { button.disabled = true; });
   status.textContent = '正在加载融合与传感器控件…';
   try {
     let layout;
     if (applyLayout) {
-      const response = await fetch(fusion === 'audio' ? '/rtabmap-audio-layout.json' : fusion === 'target' ? '/rtabmap-object-fusion-layout.json' : fusion ? '/rtabmap-fusion-layout.json' : '/rtabmap-layout.json', {cache: 'no-store'});
+      const response = await fetch(fusion === 'dashboard' ? '/rtabmap-dashboard-layout.json' : fusion === 'audio' ? '/rtabmap-audio-layout.json' : fusion === 'target' ? '/rtabmap-object-fusion-layout.json' : fusion ? '/rtabmap-fusion-layout.json' : '/rtabmap-layout.json', {cache: 'no-store'});
       if (!response.ok) throw new Error('无法读取项目布局');
       layout = await response.json();
     }
@@ -76,6 +77,10 @@ async function enter(applyLayout, fusion = false) {
   }
 }
 document.getElementById('apply').addEventListener('click', () => enter(true));
+document.getElementById('dashboard').addEventListener('click', () => {
+  if(location.port==='3000')enter(true,'dashboard');
+  else {const url=new URL(location.href);url.port='3000';url.pathname='/';url.search='';location.assign(url.href);}
+});
 document.getElementById('fusion').addEventListener('click', () => enter(true, true));
 document.getElementById('target').addEventListener('click', () => enter(true, 'target'));
 document.getElementById('audio').addEventListener('click', () => enter(true, 'audio'));

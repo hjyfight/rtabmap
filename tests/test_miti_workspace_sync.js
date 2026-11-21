@@ -6,9 +6,9 @@ settings.layout=JSON.parse(fs.readFileSync(path.join(root,'config',settings.defa
 settings.mapWidget=JSON.parse(fs.readFileSync(path.join(root,'config',settings.mapLayout))).widgets.find(w=>w.i===settings.mapWidgetId);
 function storage(initial={}){const values=new Map(Object.entries(initial));return {values,getItem:key=>values.get(key)??null,
   setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)};}
-const target={port:'3002',hostname:'localhost',protocol:'http:'};
+const target={port:String(settings.port),hostname:'localhost',protocol:'http:'};
 function leaves(tree){return typeof tree==='string'?[tree]:[...leaves(tree.first),...leaves(tree.second)];}
-test('each empty browser receives the same map, fusion and sound layout on port 3002',()=>{
+test('each empty browser receives the same map, fusion and sound layout on port 3000',()=>{
   const first=storage(),second=storage();
   for(const local of [first,second]){
     const result=context.rtabmapSyncWorkspaceStorage(local,target,settings);assert.equal(result.applied,true);
@@ -17,7 +17,7 @@ test('each empty browser receives the same map, fusion and sound layout on port 
     assert.ok(layout.widgets.some(w=>w.i==='rtabmap-scene'&&w.props.frame.fixedFrame==='map'));
     assert.ok(layout.widgets.some(w=>w.type==='fourmodal-features'));
     const visible=leaves(layout.mosaic);assert.ok(visible.includes(result.mapId));assert.ok(visible.includes(result.audioId));
-    assert.equal(JSON.parse(local.getItem('miti_bridge_url')),'ws://localhost:8768');
+    assert.equal(JSON.parse(local.getItem('miti_bridge_url')),'ws://localhost:8765');
   }
   assert.equal(first.getItem('miti_layout_config'),second.getItem('miti_layout_config'));
 });
@@ -41,10 +41,11 @@ test('vendor default layouts gain a real map and sound while other ports stay un
   assert.equal(other.getItem('miti_layout_config'),JSON.stringify(vendor));
 });
 test('an existing map keeps its view, and hidden sound panels become visible',()=>{
+  const preserved={...settings,replaceLayout:false};
   const map=JSON.parse(JSON.stringify(settings.mapWidget));map.props.frame.fixedFrame='livox_frame';map.props.view.distance=23;
   const layout={widgets:[map,{i:'audio',type:'audio-events'}],mosaic:map.i};
   const local=storage({miti_layout_config:JSON.stringify(layout)});
-  context.rtabmapSyncWorkspaceStorage(local,target,settings);const updated=JSON.parse(local.getItem('miti_layout_config'));
+  context.rtabmapSyncWorkspaceStorage(local,target,preserved);const updated=JSON.parse(local.getItem('miti_layout_config'));
   const actual=updated.widgets.find(w=>w.i===map.i);assert.equal(actual.props.view.distance,23);assert.equal(actual.props.frame.fixedFrame,'map');
   assert.ok(leaves(updated.mosaic).includes('audio'));
 });
@@ -54,5 +55,5 @@ test('storage write failure restores the prior layout and bridge',()=>{
   local.setItem=(key,value)=>{if(key==='miti_bridge_url'&&!failed){failed=true;throw new Error('quota');}return write(key,value);};
   assert.throws(()=>context.rtabmapSyncWorkspaceStorage(local,target,settings),/quota/);
   for(const [key,value] of Object.entries(initial))assert.equal(local.getItem(key),value);
-  assert.equal(local.getItem('rtabmap_workspace_sync_3002'),null);
+  assert.equal(local.getItem('rtabmap_workspace_sync_3000'),null);
 });

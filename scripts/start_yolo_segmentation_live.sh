@@ -11,7 +11,7 @@ if [[ ${1:-} == --clock-report ]]; then
   cp "$2" "$SEG_RUN/clock.json"
   shift 2
 else
-  python3 scripts/measure_fourmodal_clock.py --output "$SEG_RUN/clock.json"
+  python3 scripts/measure_fourmodal_clock.py --sensor-fallback --output "$SEG_RUN/clock.json"
 fi
 python3 - "$SEG_RUN" <<'PY'
 import json
@@ -24,7 +24,7 @@ if not 0 <= time.time()-clock['measured_at'] < 86400:
     raise ValueError('Clock report must be less than one day old; measure the robot clock again')
 config = {'yolo_segmentation': {'ros__parameters': {
     'rgb_clock_offset_s': clock['workstation_minus_robot_s'],
-    'clock_offset_uncertainty_s': clock['round_trip_uncertainty_s'],
+    'clock_offset_uncertainty_s': clock.get('round_trip_uncertainty_s') or min(5.0,clock.get('offset_observed_spread_s',0.0)),
     'clock_offset_method': clock['method']+'@'+str(clock['measured_at'])}}}
 (run/'runtime.yaml').write_text(json.dumps(config,indent=2)+'\n')
 PY

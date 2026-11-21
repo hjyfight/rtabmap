@@ -503,6 +503,10 @@ bash /home/jyfight/Project/rtabmap_slam/scripts/start_semantic_slam.sh
 ## yoloe 分割模型
 bash /home/jyfight/Project/rtabmap_slam/scripts/start_semantic_yoloe.sh --gpu
 
+## 以后机器狗传感器开启、主机 M260C 接好后，执行：
+cd /home/jyfight/Project/rtabmap_slam
+source scripts/ros2_wired_env.sh
+bash scripts/start_semantic_yoloe.sh --gpu
 
 
 ## 红外+深度 语义分割 分割类比效果不好

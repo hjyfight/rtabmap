@@ -119,7 +119,7 @@ def write_packet(fd, packet):
         pending = pending[count:]
 
 
-def run(args, emit):
+def run(args, emit, should_stop=None):
     identity = usb_identity(args.port)
     if identity != ("1a86", "55d4"):
         raise OSError(f"该串口不是已确认的 M260C USB 转串口（实际 {identity}）")
@@ -147,7 +147,7 @@ def run(args, emit):
         started = last_handshake = time.monotonic()
         next_query = started + 1.0
         version_reply = False
-        while time.monotonic() - started < args.seconds:
+        while time.monotonic() - started < args.seconds and not (should_stop and should_stop()):
             now = time.monotonic()
             if (stats["version_queries"] < 3 and not version_reply
                     and now >= next_query and now - last_handshake >= 1.0):

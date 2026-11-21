@@ -1,0 +1,52 @@
+/* Shared console chrome. The 3000 workspace opts in before hydration. */
+.rtabmap-dashboard {color-scheme:dark}
+.rtabmap-dashboard .miti-workspace {
+  --miti-bg-chrome:#0b121b;--miti-bg-panel:#101b27;--miti-bg-popover:#152331;
+  --miti-bg-hover:#203448;--miti-border:#243447;--miti-border-strong:#37506a;
+  --miti-text:#d9e5ef;--miti-text-strong:#eef6fc;--miti-text-secondary:#9cb0c3;
+  --miti-text-muted:#70889e;--miti-accent:#62d5be;--miti-accent-muted:#183d3c;
+  font-family:Inter,"Noto Sans CJK SC",system-ui,sans-serif;
+}
+.rtabmap-dashboard .workspace-titlebar {height:56px;padding:0 18px;gap:16px}
+.rtabmap-dashboard .workspace-brand {gap:12px;min-width:0}
+.rtabmap-dashboard .workspace-brand:before {content:"";width:10px;height:10px;flex:none;border-radius:3px;background:#62d5be;box-shadow:0 0 16px #62d5be55}
+.rtabmap-dashboard .layout-name {color:#8eb8c7;background:#152635;border:1px solid #294254;padding:4px 10px;border-radius:20px}
+.rtabmap-dashboard .workspace-statusbar {height:28px;font-size:11px}
+.rtabmap-dashboard .activity-bar {width:42px;flex-basis:42px;background:#0b121b}
+.rtabmap-dashboard .workspace-canvas {padding:5px;background:#0b121b}
+.rtabmap-dashboard .mosaic-root {inset:7px}
+.rtabmap-dashboard .panel-shell {border:1px solid #26394c;border-radius:10px;box-shadow:0 4px 16px #0002}
+.rtabmap-dashboard .panel-tabbar {height:36px;background:#142232;border-bottom-color:#2a3d50}
+.rtabmap-dashboard .panel-tab {border:0;background:transparent;padding:0 12px;gap:7px}
+.rtabmap-dashboard .panel-tab-title {font-size:12px;font-weight:600;letter-spacing:.02em}
+.rtabmap-dashboard .panel-action {width:25px;height:25px}
+.rtabmap-dashboard .panel-selected .panel-tab {box-shadow:none;color:#76e0ca}
+.rtabmap-dashboard .mosaic-split:hover {background:#62d5be33}
+.rtabmap-dashboard .panel-shell canvas {max-width:100%;max-height:100%}
+.rtabmap-dashboard #panel-rtabmap-color canvas,
+.rtabmap-dashboard #panel-rtabmap-infrared canvas,
+.rtabmap-dashboard #panel-rtabmap-depth canvas {width:100%!important;height:100%!important;object-fit:contain}
+.rtabmap-dashboard .rtab-four {padding:12px}
+.rtabmap-dashboard .rtab-four-header {margin-bottom:10px}
+.rtabmap-dashboard .rtab-four-inputs {gap:7px}
+.rtabmap-dashboard .rtab-four button.rtab-four-input {padding:8px}
+.rtabmap-dashboard .rtab-four-input-size {min-height:0}
+.rtabmap-dashboard .rtab-four-empty-spark,
+.rtabmap-dashboard .rtab-four svg.rtab-four-spark {height:18px;margin:5px 0}
+.rtabmap-dashboard .rtab-four-chart {padding:10px}
+.rtabmap-dashboard .rtab-four-chart .rtab-four-empty-spark,
+.rtabmap-dashboard .rtab-four-chart svg.rtab-four-spark {height:65px}
+.rtabmap-dashboard .rtab-loop {padding:10px 12px}
+.rtabmap-dashboard .rtab-loop-last {display:none}
+.rtabmap-dashboard .rtab-loop-total {font-size:25px}
+.rtabmap-dashboard .rtab-loop-counts {padding:6px 0;gap:10px}
+.rtabmap-dashboard .rtab-loop-rates {padding:6px 0}
+.rtabmap-dashboard .rtab-loop-detail {margin:4px 0;font-size:11px}
+.rtabmap-dashboard * {scrollbar-width:thin;scrollbar-color:#3b5165 transparent}
+@media(max-width:1000px) {
+  .rtabmap-dashboard .workspace-titlebar {height:48px;padding:0 10px;gap:8px}
+  .rtabmap-dashboard .layout-name {display:none}
+  .rtabmap-dashboard .panel-tabbar {height:32px}
+  .rtabmap-dashboard .panel-tab {padding:0 7px}
+  .rtabmap-dashboard .panel-tab-title {font-size:11px}
+}
