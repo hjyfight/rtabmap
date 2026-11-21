@@ -532,6 +532,25 @@ bash scripts/start_miti.sh
 打开浏览器 点击 应用项目布局并进入展示
 http://localhost:3000/rtabmap.html
 
+## 3001 多模态分割研究页面
+
+在原有传感器驱动和建图服务运行后，另开终端：
+
+```bash
+cd /home/jyfight/Project/rtabmap_slam
+bash scripts/start_fusion_research.sh
+```
+
+打开 <http://localhost:3001/>。独立页面保留两张地图、建图状态、RGB、NIR和对齐深度，提供预测类别／区域标注、真实特征展示、NPZ下载与离线对照。
+
+| 输入 | 当前模型 | 输出 |
+| --- | --- | --- |
+| RGB＋深度＋LiDAR | ODIN-Swin，ScanNet20完整预训练权重 | 20类室内语义分割 |
+| RGB＋音频 | AVSegFormer ResNet50，AVSS完整预训练权重 | 71类，含背景 |
+| RGB＋近红外 | YOLOv8s-seg，共享冻结骨干，RGB 90%＋NIR 10%特征融合 | COCO 80类实例分割 |
+
+PMF与PointTransformerV3保留作候选／对照；全部模型冻结推理，融合精度尚未用人工真值验收。LiDAR外参目前为实验自动估计，尚未完成实测标定。完整说明见 [3001使用说明](docs/fusion_research_3001.md)。
+
 ## 通过热点连接与传输
 
 以下为旧的跨网段转发配置记录。主机和机载电脑都直接接入同一 Wi-Fi 局域网时，请使用

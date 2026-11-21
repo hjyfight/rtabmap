@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "status": "auto_estimated",
+  "geometry_verified": false,
+  "camera_frame": "camera_color_optical_frame",
+  "lidar_frame": "livox_frame",
+  "camera_from_lidar": [
+    [
+      -0.9983553996660579,
+      0.05188945132923976,
+      0.024371721284629288,
+      0.021762668732096768
+    ],
+    [
+      -0.021347066686550877,
+      0.05806721468143686,
+      -0.9980844159303457,
+      -0.01993562179693816
+    ],
+    [
+      -0.053205250694881086,
+      -0.9969632307261338,
+      -0.056864029742926855,
+      -0.11226466696297041
+    ],
+    [
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "intensity_scale": 0.00392156862745098,
+  "evidence": "logs/research/extrinsic_estimate.json + logs/research/extrinsic_independent_validation.json",
+  "validation": {
+    "old_common": {
+      "points": 954,
+      "median_m": 0.7340924987109627,
+      "p90_m": 3.9108253005907176,
+      "within_20cm": 0.2190775681341719,
+      "within_10cm": 0.13626834381551362
+    },
+    "estimated_common": {
+      "points": 954,
+      "median_m": 0.14212703249894965,
+      "p90_m": 2.21872337631417,
+      "within_20cm": 0.5513626834381551,
+      "within_10cm": 0.4088050314465409
+    },
+    "improvement_observed": true
+  },
+  "note": "实机RGB-D/LiDAR自动估计，仅研究使用；未完成标定验收。"
+}

@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "status": "unverified",
+  "camera_frame": "camera_color_optical_frame",
+  "lidar_frame": "livox_frame",
+  "camera_from_lidar": null,
+  "intensity_scale": null,
+  "evidence": "",
+  "note": "填入实测外参、标定记录及已确认的强度转换比例后，将 status 设为 measured。此矩阵将 LiDAR XYZ 变换到 RGB 光学坐标。不要使用猜测的安装位姿。"
+}

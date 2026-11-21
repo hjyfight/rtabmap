@@ -1,0 +1,19 @@
+{
+  "background": 0, "accordion": 1, "airplane": 2, "axe": 3,
+  "baby": 4, "bassoon": 5, "bell": 6, "bird": 7, "boat": 8,
+  "boy": 9, "bus": 10, "car": 11, "cat": 12, "cello": 13,
+  "clarinet": 14, "clipper": 15, "clock": 16, "dog": 17,
+  "donkey": 18, "drum": 19, "duck": 20, "elephant": 21,
+  "emergency-car": 22, "erhu": 23, "flute": 24, "frying-food": 25,
+  "girl": 26, "goose": 27, "guitar": 28, "gun": 29, "guzheng": 30,
+  "hair-dryer": 31, "handpan": 32, "harmonica": 33, "harp": 34,
+  "helicopter": 35, "hen": 36, "horse": 37, "keyboard": 38,
+  "leopard": 39, "lion": 40, "man": 41, "marimba": 42,
+  "missile-rocket": 43, "motorcycle": 44, "mower": 45, "parrot": 46,
+  "piano": 47, "pig": 48, "pipa": 49, "saw": 50, "saxophone": 51,
+  "sheep": 52, "sitar": 53, "sorna": 54, "squirrel": 55,
+  "tabla": 56, "tank": 57, "tiger": 58, "tractor": 59, "train": 60,
+  "trombone": 61, "truck": 62, "trumpet": 63, "tuba": 64,
+  "ukulele": 65, "utv": 66, "vacuum-cleaner": 67, "violin": 68,
+  "wolf": 69, "woman": 70
+}
