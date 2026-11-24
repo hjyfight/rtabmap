@@ -282,6 +282,35 @@ class AVS:
         self.trace.handles.append(self.net.head.fusion_block.register_forward_pre_hook(mixer))
         self.trace.hook(self.net.head.fusion_block, 'audiovisual.fused', 'audio query attention → sigmoid channel weights × visual map')
         self.trace.hook(self.net.head.query_generator, 'audiovisual.queries', 'audio-conditioned queries + learned queries')
+        # Observe the existing attention computation; never replace its output.
+        projected = {}
+        def audio_q(_, inputs, out):
+            projected['q'] = out.detach()[-1:]
+        def visual_kv(_, inputs, out):
+            projected['kv'] = out.detach()[-1:]
+        block = self.net.head.fusion_block
+        self.trace.handles.append(block.q_proj.register_forward_hook(audio_q))
+        self.trace.handles.append(block.kv_proj.register_forward_hook(visual_kv))
+        def mixer_attention(_, inputs, out):
+            q, kv = projected.pop('q'), projected.pop('kv')
+            _, n, twice_c = kv.shape
+            c = twice_c // 2
+            q = q.reshape(1, 1, block.n_heads, c // block.n_heads).permute(0, 2, 1, 3)
+            k = kv.reshape(1, n, 2, block.n_heads, c // block.n_heads).permute(2, 0, 3, 1, 4)[0]
+            attention = ((q @ k.transpose(-2, -1)) * block.scale).softmax(-1).mean(1)
+            h, w = inputs[0].shape[-2:]
+            self.trace.record('audio.visual_attention', attention.reshape(1, 1, h, w),
+                              'actual audio-Q / visual-K softmax; mean over attention heads')
+        self.trace.handles.append(block.register_forward_hook(mixer_attention))
+        def channel_weights(_, inputs, out):
+            self.trace.record('audio.channel_weights', out.sigmoid(), 'actual mixer sigmoid channel weights')
+        self.trace.handles.append(block.proj.register_forward_hook(channel_weights))
+        def decoder_attention(_, inputs, out):
+            if out[1] is not None:
+                self.trace.record('queries.visual_attention', out[1],
+                                  'last decoder cross-attention weights: sound-conditioned queries → visual tokens')
+        decoder = self.net.head.transformer.decoder.layers[-1].cross_attn
+        self.trace.handles.append(decoder.register_forward_hook(decoder_attention))
 
     @torch.inference_mode()
     def infer(self, rgbs, pcm, rate):
@@ -294,7 +323,10 @@ class AVS:
         frames = np.stack([np.asarray(Image.fromarray(rgb).resize((224,224),getattr(Image,'Resampling',Image).BILINEAR),
                                       np.float32).transpose(2,0,1)/255 for rgb in rgbs])
         frames = (frames - np.asarray([.485,.456,.406],np.float32)[None,:,None,None]) / np.asarray([.229,.224,.225],np.float32)[None,:,None,None]
-        return self.infer_preprocessed(frames,mel.numpy(),rgbs[-1])
+        result = self.infer_preprocessed(frames,mel.numpy(),rgbs[-1])
+        self.trace.arrays.update(input_pcm=np.asarray(pcm,np.float32).copy(),
+                                input_sample_rate=np.array(rate,np.int32))
+        return result
 
     @torch.inference_mode()
     def infer_preprocessed(self,frames,log_mel,rgb):

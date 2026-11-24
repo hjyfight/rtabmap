@@ -69,7 +69,9 @@ class Research:
         rgb = CvBridge().imgmsg_to_cv2(msg, 'rgb8').copy()
         with self.lock:
             self.frames.append((stamp, rgb, msg.header.frame_id))
-            self.observe('rgb', stamp, width=msg.width, height=msg.height, frame=msg.header.frame_id)
+            self.observe('rgb', stamp, width=msg.width, height=msg.height, frame=msg.header.frame_id,
+                         raw_stamp=stamp-self.cfg['rgb_clock_offset_s'],encoding=msg.encoding,
+                         topic=self.cfg['rgb_topic'])
 
     def receive_info(self, msg):
         with self.lock:
@@ -105,7 +107,8 @@ class Research:
         with self.lock:
             if self.nir_frames and stamp<self.nir_frames[-1]['stamp']-1:self.nir_frames.clear()
             self.nir_frames.append(dict(stamp=stamp,raw_stamp=raw_stamp,image=image,frame=msg.header.frame_id))
-            self.observe('nir',stamp,width=msg.width,height=msg.height,frame=msg.header.frame_id)
+            self.observe('nir',stamp,width=msg.width,height=msg.height,frame=msg.header.frame_id,
+                         raw_stamp=raw_stamp,encoding=msg.encoding,topic=self.cfg['nir_topic'])
 
     def receive_nir_info(self,msg):
         from rtabmap_research import registration
@@ -187,7 +190,8 @@ class Research:
                 self.clouds.clear()
             self.clouds.append((stamp, msg))
             self.observe('lidar', stamp, points=msg.width*msg.height, fields=[f.name for f in msg.fields],
-                         frame=msg.header.frame_id)
+                         frame=msg.header.frame_id,raw_stamp=stamp-self.cfg['lidar_clock_offset_s'],
+                         topic=self.cfg['lidar_topic'])
 
     def receive_audio(self, msg):
         if msg.channels < 1 or len(msg.samples) % msg.channels:
@@ -198,6 +202,7 @@ class Research:
             self.audio.add(stamp, pcm, msg.sample_rate, msg.source_id, msg.stamp_quality)
             self.observe('audio', stamp+len(pcm)/msg.sample_rate, rate=msg.sample_rate, channels=msg.channels,
                          quality=msg.stamp_quality, duration_s=len(pcm)/msg.sample_rate,
+                         source_id=msg.source_id,topic=self.cfg['audio_topic'],
                          rms_dbfs=float(20*np.log10(max(1e-8,float(np.sqrt(np.mean(pcm**2)))))))
 
     def callback(self, fn):
@@ -386,9 +391,12 @@ class Research:
                         context = dict(sync_gap_s=bundle['gap_s'], audio_start=bundle['audio_start'],
                             audio_end=bundle['audio_end'],frame_stamps=bundle['frame_stamps'],
                             stamp_quality=bundle['stamp_quality'],time_sampling='centres of 0.96s log-Mel patches',
-                            duration_s=10, audio_dim=128, projected_dim=256)
+                            duration_s=10, audio_dim=128, projected_dim=256, sample_rate=bundle['rate'],
+                            audio_source='workstation WheelTec; /multimodal/audio')
                     elapsed = time.perf_counter()-start
                     context['clock_alignment']=self.cfg.get('clock_alignment',dict(method='configured_offsets'))
+                    context['clock_offsets_s']={name:self.cfg.get(name+'_clock_offset_s',0.)
+                                                for name in ('rgb','lidar','nir','audio')}
                     result.update(sequence=self.sequence[key]+1, source_stamp=bundle['stamp'], inference_s=elapsed,
                                   context=context, accuracy_verified=False)
                     if self.cfg['save_features']:

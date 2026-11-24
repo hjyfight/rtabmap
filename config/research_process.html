@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>多源感知 · 流程与验证</title>
+  <link rel="stylesheet" href="/research-process.css?v=1">
+  <script defer src="/research-process.js?v=1"></script>
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="/">◈ <span>多源感知</span></a><span class="divider"></span><strong>流程与验证</strong><a class="monitor-link" href="/">返回实时监控 ↗</a></header>
+  <main class="workspace">
+    <div class="page-heading"><div><p class="eyebrow">MULTIMODAL PROCESS EXPLORER</p><h1>看见输入如何成为融合结果</h1><p class="intro">三条分支共同展示任务书流程，按实际处理环节逐步查看。</p></div><div class="sample-controls"><button id="freeze" aria-pressed="false">冻结当前样本</button><button id="download" disabled>导出展示记录</button></div></div>
+    <nav class="branches" aria-label="融合分支"><button data-branch="pmf" aria-pressed="true">RGB + LiDAR <span>深度辅助</span></button><button data-branch="rgbnir" aria-pressed="false">RGB + 近红外</button><button data-branch="avs" aria-pressed="false">RGB + 声学</button><button data-branch="coverage" aria-pressed="false">任务书覆盖</button></nav>
+    <div id="sample-status" class="sample-status" role="status">正在读取3001保存记录…</div>
+    <div class="explorer">
+      <nav id="stages" class="stages" aria-label="处理步骤"></nav>
+      <section class="stage-content" aria-live="polite"><div class="stage-heading"><div><p id="stage-kicker" class="eyebrow"></p><h2 id="stage-title"></h2></div><span id="stage-tag" class="tag"></span></div><p id="stage-description" class="description"></p><div id="visual"></div></section>
+      <aside class="evidence"><p class="eyebrow">当前证据</p><div id="evidence"></div></aside>
+    </div>
+    <footer>现场验证记录须对应样本与实测结果；处理过程展示和模型输出不直接表示精度合格。</footer>
+  </main>
+</body>
+</html>

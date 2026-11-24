@@ -47,7 +47,7 @@ const loader=`const sources=${JSON.stringify(sources)},cache={};function require
       report.panels[task].features=await panel.locator('.fr-feature').count();
       if(report.panels[task].features<4)throw Error(task+' feature cards missing');
     }
-    if(report.panels.rgbnir.features!==12||report.panels.avs.features!==10)throw Error('Unexpected feature trace count');
+    if(report.panels.rgbnir.features!==12||report.panels.avs.features<10)throw Error('Missing feature traces');
     await page.screenshot({path:path.join(directory,'features.png'),fullPage:true});
     if(errors.length)throw Error(errors.join('\n'));
     fs.writeFileSync(path.join(directory,'browser-check.json'),JSON.stringify(report,null,2));

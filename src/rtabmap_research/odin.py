@@ -177,7 +177,12 @@ class ODINComparison(ODIN):
         arrays=self.trace.arrays
         with torch.random.fork_rng(devices=[]):
             torch.random.default_generator.manual_seed(123)
-            labels,_=self.reference.infer_points(arrays['scene_xyz'],arrays['scene_rgb'],arrays['scene_normals'])
+            labels,reference_stats=self.reference.infer_points(arrays['scene_xyz'],arrays['scene_rgb'],arrays['scene_normals'])
+        arrays['reference_ptv3_input_features']=reference_stats['features']
+        arrays['reference_ptv3_selected_indices']=reference_stats['selected_indices']
+        result['reference_input']=dict(shape=list(reference_stats['features'].shape),
+            voxels=reference_stats['voxels'],operation='normalized RGB (3) + LiDAR surface normals (3) → 6',
+            role='separate comparison branch; not concatenated with the primary model')
         uv=arrays['projection_uv'];indices=arrays['render_indices'];rgb=arrays['source_rgb_frames'][-1]
         old=np.zeros(rgb.shape[:2],np.uint8);old[uv[:,1],uv[:,0]]=labels[indices]+1
         pictures,_=predictions(rgb,old,['忽略']+CHINESE,old>0)

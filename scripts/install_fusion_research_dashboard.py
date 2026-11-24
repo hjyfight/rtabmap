@@ -78,6 +78,10 @@ def install():
         module.PROJECT=stage
         module.install(TARGET)
     public=TARGET/'public'
+    for source, destination in [('research_process.html','research-process.html'),
+                                ('research_process.css','research-process.css'),
+                                ('research_process.js','research-process.js')]:
+        shutil.copyfile(ROOT/'config'/source, public/destination)
     (public/'rtabmap-research-layout.json').write_text(json.dumps(research,ensure_ascii=False,indent=2))
     (public/'rtabmap.html').write_text('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>融合研究</title><script>location.replace("/")</script><a href="/">进入 PMF / AVSegFormer 融合研究页面</a></html>')
     directory=public/'research';directory.mkdir(exist_ok=True)

@@ -119,6 +119,10 @@ def main():
                 if not inference_python.exists():raise RuntimeError('缺少所选室内模型的独立推理环境')
                 spawn('inference',[inference_python,'-u',ROOT/'scripts/run_fusion_research.py','--config',runtime])
                 if args.audio=='auto':spawn('audio',[PYTHON,'-u',ROOT/'scripts/research_audio_capture.py','--alsa-device',args.alsa_device])
+            exporter_python=ROOT/'.venv-indoor-research/bin/python3'
+            if not exporter_python.exists():exporter_python=PYTHON
+            spawn('process-export',[exporter_python,'-u',ROOT/'scripts/export_research_process.py',
+                  '--directory',APP/'public/research'])
             spawn('web',[APP/'node/bin/node',APP/'server.js'],APP)
             (directory/'supervisor.json').write_text(json.dumps(dict(pid=os.getpid(),web_port=3001,bridge_port=8766,
                  children={name:process.pid for name,process in children}),indent=2))
