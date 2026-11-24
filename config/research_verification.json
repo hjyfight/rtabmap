@@ -1,0 +1,7 @@
+{
+  "schema": "research_verification/1",
+  "reference": "多源异构融合标准大纲 V12 性能要求",
+  "sync_limit_ms": 50.0,
+  "pair_check_limit_ms": 50.0,
+  "measurement_file": "logs/research/sync_measurements.json"
+}

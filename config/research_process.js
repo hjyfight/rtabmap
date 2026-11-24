@@ -3,7 +3,7 @@
   'use strict';
   const $ = id => document.getElementById(id);
   const names = {pmf:'RGB + LiDAR（深度辅助）',rgbnir:'RGB + 近红外',avs:'RGB + 声学'};
-  const steps = ['模态输入','标定与预处理','时间与接口','特征提取','匹配、拼接与对齐','融合输出与精度'];
+  const steps = ['模态输入','标定与预处理','时间与接口','特征提取','匹配、拼接与对齐','融合结果与对照'];
   const titles = {
     pmf:['图像与真实LiDAR点云','点—像素对应与坐标基准','同组观测的时间与字段','图像特征与三维几何特征','颜色与法向量的实际拼接','三维感知结果与对照'],
     rgbnir:['可见光与近红外输入','深度辅助配准与有效区域','同帧配对与接口','两路输入的多尺度特征','特征尺度匹配与加权融合','同一RGB样本的融合与对照'],
@@ -16,6 +16,43 @@
   };
   let branch='pmf',step=0,frozen=false,status=null,polling=false,featureChoice={},plotObserver=null;
   const samples={},pending={};
+  let visualDisclosureScope=null,evidenceDisclosureScope=null;
+  const disclosureState=new Map(),disclosureStorageKey='research-process-disclosures-v1';
+  try{
+    const stored=JSON.parse(sessionStorage.getItem(disclosureStorageKey)||'{}');
+    for(const [scope,values] of Object.entries(stored||{})){
+      if(values&&typeof values==='object'&&!Array.isArray(values))
+        disclosureState.set(scope,new Map(Object.entries(values).filter(([key,value])=>typeof value==='boolean')));
+    }
+  }catch(_){/* Storage may be unavailable; in-memory state still works. */}
+  function persistDisclosures(){
+    try{sessionStorage.setItem(disclosureStorageKey,JSON.stringify(Object.fromEntries(
+      [...disclosureState].map(([scope,values])=>[scope,Object.fromEntries(values)]))));}catch(_){}
+  }
+  function captureDisclosures(root,scope){
+    if(!root||!scope)return;
+    const states=disclosureState.get(scope)||new Map();let changed=false;
+    root.querySelectorAll('details[data-disclosure]').forEach(detail=>{
+      const key=detail.dataset.disclosure;
+      if(states.get(key)!==detail.open){states.set(key,detail.open);changed=true;}
+    });
+    if(changed){disclosureState.set(scope,states);persistDisclosures();}
+  }
+  function restoreDisclosures(root,scope){
+    if(!root||!scope)return;
+    root.querySelectorAll('details[data-disclosure]').forEach(detail=>{
+      const key=detail.dataset.disclosure,states=disclosureState.get(scope);
+      if(states?.has(key))detail.open=states.get(key);
+      detail.addEventListener('toggle',()=>{
+        // A queued event from an old, replaced subtree must not overwrite state.
+        if(detail.isConnected===false)return;
+        const current=disclosureState.get(scope)||new Map();
+        if(current.get(key)!==detail.open){
+          current.set(key,detail.open);disclosureState.set(scope,current);persistDisclosures();
+        }
+      });
+    });
+  }
   const esc = value => String(value??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const fmt = (value, digits=3) => Number.isFinite(Number(value)) && value!=null ? Number(value).toFixed(digits) : '—';
   const shape = row => (row?.saved_shape||row?.shape||[]).join(' × ');
@@ -29,8 +66,41 @@
   const allFeatures = s => s?.features||[];
   const feature = (s,name) => allFeatures(s).find(f=>f.name===name);
   const heat = (s,name,label) => {const f=feature(s,name);return figure(f?.heatmap,label||name,shape(f));};
-  const sampleId = s => s?`${s.session_id}:${s.sequence}`:'';
+  const sampleId = s => s?[s.session_id,s.sequence,s.validation_revision].filter(x=>x!=null).join(':'):'';
   const stamp = t => Number.isFinite(t)?new Date(t*1000).toLocaleString('zh-CN',{hour12:false,timeZone:'Asia/Shanghai'}):'—';
+
+  const checkLabel = state => ({pass:'核对通过',fail:'不满足 / 不一致',missing:'归档缺失',pending:'待验证',not_applicable:'不适用',defined:'已明确'})[state]||'未记录';
+  const checkTag = (state,label) => `<span class="check-state ${esc(state||'pending')}">${esc(label||checkLabel(state))}</span>`;
+  function interfaceMarkup(s){
+    const audit=s.interface_validation;
+    if(!audit)return note('该旧样本尚未生成接口规范与核查记录。');
+    const contracts=(audit.protocol?.layers||[]).map(layer=>'<details class="contract" data-disclosure="contract-'+esc(layer.name)+'"><summary>'+esc(layer.name)+' · '+esc(layer.transport)+'</summary>'+table(['字段','类型','单位','要求','含义'],layer.fields.map(f=>[f.label+' · '+f.key,f.type,f.unit,f.required,f.meaning]))+'</details>').join('');
+    const inputs=(audit.inputs||[]).map((r,i)=>[i+1,r.modality,r.topic,r.source_id,r.format,(r.shape||[]).join('×')+' / '+r.dtype,r.frame||'不涉及空间坐标',fmt(r.raw_stamp,6),fmt(r.aligned_stamp,6),r.stamp_quality]);
+    const features=(audit.features||[]).map(f=>[f.name,f.archive_key,(f.full_shape||[]).join('×'),(f.saved_shape||[]).join('×'),f.dtype,f.operation]);
+    return '<section class="verification-block"><h3>接口规范与当前批次核查</h3><div class="verification-summary">'+checkTag(audit.state)+'<span>通过 '+audit.counts.pass+' · 不一致 '+audit.counts.fail+' · 缺失 '+audit.counts.missing+'</span></div><p class="note mono">批次：'+esc(audit.batch_key)+'</p>'+contracts+'<details data-disclosure="inputs-used"><summary>本次实际参与处理的输入字段（'+inputs.length+'条）</summary>'+table(['输入','模态','话题','来源标识','格式','形状 / 类型','坐标系','原始时间 / s','对齐时间 / s','时间质量'],inputs)+'<p class="note">字段来自选中输入的归档；重叠声学窗口只记录实际贡献的采样区间。旧归档缺少的字段明确列为缺失。</p></details><details data-disclosure="feature-arrays"><summary>中间特征接口与数组对应（'+features.length+'项）</summary>'+table(['特征','数组键','完整模型形状','保存形状','类型','处理模块'],features)+'</details><details data-disclosure="interface-checks"><summary>逐项字段与输入—特征—输出核查</summary>'+table(['环节','核查项','状态','实际记录'],audit.checks.map(c=>[c.layer,c.name,checkLabel(c.state),c.detail]))+'</details>'+note(audit.note)+'</section>';
+  }
+  function syncDetailsMarkup(s){
+    const v=s.sync_validation;if(!v)return note('该旧样本尚未生成同步指标核查记录。');
+    const stats=v.statistics||{},measurement=v.measurement;
+    const requirementRows=[['通用同步误差限值',fmt(v.sync_limit_ms)+' ms',v.reference],['当前配对核查门限',fmt(v.pair_limit_ms)+' ms','以校正后输入时间差核查，不等同于同步精度'],['本分支实际运行容差',fmt(v.runtime_tolerance_ms)+' ms','归档中的推理配对参数，不作为验收限值']];
+    const measuredRows=[['同步误差测量状态',checkLabel(v.measurement_state)],['实测最大误差',measurement?fmt(measurement.max_error_ms)+' ms':'尚无覆盖采集时间的测量记录'],['测量不确定度',measurement?fmt(measurement.uncertainty_ms)+' ms':'—'],['测量方法',measurement?.method||'—'],['证据编号 / 文件',measurement?.evidence||'—'],['本批次同步精度结论',checkLabel(v.state)]];
+    return '<section class="verification-block"><h3>时间同步要求与测量</h3>'+table(['指标 / 参数','规定值或状态','依据 / 口径'],requirementRows)+'<p class="formula mono">'+esc(v.formula)+'</p><div class="verification-summary">'+checkTag(v.pair_state,v.pair_state==='pass'?'配对门限核查通过':v.pair_state==='fail'?'存在超门限配对':'配对门限待核查')+'<span>'+stats.count+'组 · 最大 '+fmt(stats.maximum_ms)+' ms · 超门限 '+(stats.over_limit_count??'—')+'组</span></div>'+table(['配对统计','实测值'],[['平均时间差',fmt(stats.mean_ms)+' ms'],['P95时间差',fmt(stats.p95_ms)+' ms'],['最大时间差',fmt(stats.maximum_ms)+' ms']])+table(['同步精度测量','记录'],measuredRows)+'<details data-disclosure="clock-quality"><summary>时间基准与偏移测量质量</summary>'+table(['记录项','本次记录'],[['时间基准',v.timebase],['偏移方法',v.clock_method],['往返估计不确定度',v.clock_uncertainty_ms!=null?'±'+fmt(v.clock_uncertainty_ms)+' ms':'未提供有界估计'],['偏移观测跨度',v.clock_spread_ms!=null?fmt(v.clock_spread_ms)+' ms':'—'],['采集时间质量',v.acquisition_timestamp_quality]])+'<pre>'+esc(JSON.stringify(s.timing.explicit_offsets||{},null,2))+'</pre></details>'+(v.measurement_error?note('同步测量记录未采用：'+v.measurement_error):'')+note(v.note)+'</section>';
+  }
+
+  function pairingChart(s,limit){
+    const values=(s.timing?.rows||[]).map(r=>Number.isFinite(r.a)&&Number.isFinite(r.b)?Math.abs(r.a-r.b)*1000:null);
+    if(!values.some(Number.isFinite))return '';
+    const w=720,h=180,left=45,right=700,top=20,bottom=145;
+    const domain=Math.max(10,Math.ceil(Math.max(limit||0,...values.filter(Number.isFinite))*1.2/10)*10);
+    const y=v=>bottom-v/domain*(bottom-top),cell=(right-left)/values.length,width=Math.min(44,cell*.58);
+    return '<figure class="pairing-chart"><svg viewBox="0 0 '+w+' '+h+'" role="img" aria-label="各组配对时间差与门限">'+[0,domain/2,domain].map(v=>'<line x1="'+left+'" x2="'+right+'" y1="'+y(v)+'" y2="'+y(v)+'" class="chart-grid"/><text x="'+(left-8)+'" y="'+(y(v)+4)+'" text-anchor="end">'+fmt(v,0)+'</text>').join('')+(Number.isFinite(limit)?'<line x1="'+left+'" x2="'+right+'" y1="'+y(limit)+'" y2="'+y(limit)+'" class="chart-limit"/><text x="'+right+'" y="'+(y(limit)-6)+'" text-anchor="end">门限 '+fmt(limit,0)+' ms</text>':'')+values.map((v,i)=>Number.isFinite(v)?'<rect x="'+(left+cell*(i+.5)-width/2)+'" y="'+Math.min(bottom-2,y(v))+'" width="'+width+'" height="'+Math.max(2,bottom-y(v))+'" class="'+(Number.isFinite(limit)&&v>limit+1e-6?'over-limit':'within-limit')+'"><title>第'+(i+1)+'组：'+fmt(v)+' ms</title></rect><text x="'+(left+cell*(i+.5))+'" y="166" text-anchor="middle">'+(i+1)+'</text>':'').join('')+'<text x="8" y="13">ms</text></svg><figcaption>各组配对时间差 · 横轴为输入组号</figcaption></figure>';
+  }
+  function syncMarkup(s){
+    const v=s.sync_validation;if(!v)return note('等待本样本的同步记录。');
+    const stats=v.statistics||{},result=v.pair_state==='pass'?'满足配对门限':v.pair_state==='fail'?'存在超限配对':'暂无配对记录';
+    const measured=v.state==='pass'?'已验证，满足限值':v.state==='fail'?'实测未满足限值':'待验证';
+    return '<section class="verification-block sync-core"><h3>时间同步</h3><p class="note">时间基准：按本样本记录的采集时间与偏移配对。</p><div class="sync-core-grid"><div class="core-metric"><span>同步限值</span><strong>≤ '+fmt(v.sync_limit_ms,0)+' <small>ms</small></strong></div><div class="core-metric"><span>最大配对时间差</span><strong>'+fmt(stats.maximum_ms,2)+' <small>ms</small></strong></div><div class="core-metric core-status"><span>配对核查结果</span>'+checkTag(v.pair_state,result)+'</div></div><p class="core-context">本次 '+stats.count+' 组配对'+(stats.over_limit_count?'，'+stats.over_limit_count+' 组超限':'')+' · 同步精度：'+esc(measured)+'</p>'+pairingChart(s,v.pair_limit_ms)+'<p class="note">配对核查按时间戳计算；同步精度依据独立测量记录。</p></section><details class="record-details" data-disclosure="sync-statistics"><summary>查看同步测量与统计详情</summary>'+syncDetailsMarkup(s)+'</details>';
+  }
 
   function canvasContext(id) {
     const c=$(id);if(!c)return null;
@@ -95,9 +165,9 @@
     ctx.fillStyle='#99adbc';ctx.fillText('记录变换 · 轴长 0.15 m · 三维斜投影',14,20);
   }
   function inputTable(s){
-    const relevant=branch==='pmf'?['rgb','registered_depth','lidar']:branch==='rgbnir'?['rgb','nir','registered_depth']:['rgb','audio'];
-    const rows=relevant.filter(k=>s.interface_example[k]).map(k=>{const r=s.interface_example[k];return[k,r.topic||r.source_id||(k==='audio'?'工作站声学输入':'相机 / LiDAR数据'),r.encoding||(k==='audio'?`${r.rate} Hz / ${r.channels} ch`:k==='lidar'?'PointCloud2 / '+(r.fields||[]).join(','):r.width+' × '+r.height),r.frame||r.quality,fmt(r.raw_stamp??r.stamp,6)];});
-    return '<details><summary>输入来源、格式、坐标与时间字段</summary>'+table(['模态','来源','格式 / 尺寸','坐标 / 时间质量','记录时间 / s'],rows)+'<p class="note">接口示例来自来源快照，实际样本配对时间见“时间与接口”。</p></details>';
+    const relevant=branch==='pmf'?['rgb','depth','lidar']:branch==='rgbnir'?['rgb','nir','depth']:['rgb','audio'];
+    const rows=relevant.filter(k=>s.interface_example[k]).map(k=>{const r=s.interface_example[k];return[k,r.topic,r.format+' / '+(r.shape||[]).join('×'),r.frame||r.stamp_quality,fmt(r.raw_stamp,6)];});
+    return '<details data-disclosure="sample-inputs"><summary>本样本输入来源、格式、坐标与时间字段</summary>'+table(['模态','来源','格式 / 尺寸','坐标 / 时间质量','原始时间 / s'],rows)+'<p class="note">仅展示本次选中输入的归档字段；完整批次与缺失项见“时间与接口”。</p></details>';
   }
   function dots(jpg,uv,label) {
     if(!jpg||!uv?.length)return figure(jpg,label);
@@ -111,15 +181,21 @@
     return `<div class="local-controls"><label for="feature-select">${esc(label)}</label><select id="feature-select">${available.map(n=>`<option value="${esc(n)}"${choice===n?' selected':''}>${esc(n)} · ${esc(shape(feature(s,n)))}</option>`).join('')}</select></div>`;
   }
   function setEvidence(s) {
-    if(branch==='coverage'){$('evidence').innerHTML='<p>每项要求可以在不同分支查看。已保存的处理证据、现场能力验证和精度评测分别确认。</p>'+note('没有新输入的分支使用已保存样本，不自动宣称四类传感器同时在线。');return;}
-    if(!s){$('evidence').innerHTML='<p>等待该分支生成可对应的输入与特征归档。</p>';return;}
+    const evidenceRoot=$('evidence');
+    captureDisclosures(evidenceRoot,evidenceDisclosureScope);
+    evidenceDisclosureScope=branch+':evidence';
+    if(branch==='coverage'){evidenceRoot.innerHTML='<p>每项要求可以在不同分支查看。已保存的处理证据、现场能力验证和精度评测分别确认。</p>'+note('没有新输入的分支使用已保存样本，不自动宣称四类传感器同时在线。');return;}
+    if(!s){evidenceRoot.innerHTML='<p>等待该分支生成可对应的输入与特征归档。</p>';return;}
     const context=s.context||{},b=status?.branches?.[branch];
-    const values=[['分支',names[branch]],['样本序号',s.sequence],['输入时间',stamp(s.source_stamp)],['会话',s.session_id.slice(0,12)],['当前采集状态',b?.detail||'未读取'],['标定记录',context.calibration||'本样本未归档空间标定'],['配对最大时间差',fmt(s.timing.maximum_gap_ms)+' ms'],['本次模型计算耗时',fmt(s.inference_ms,1)+' ms'],['输出形状',(s.output_shape||[]).join(' × ')]];
-    $('evidence').innerHTML='<dl>'+values.map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')+'</dl><p class="note">'+esc(context.geometry_verified?'标定记录已测量，查看对应证据。':branch==='pmf'?'现有LiDAR外参为估计参数，尚未完成标定验收。':branch==='rgbnir'?'相机内参和外参来自工厂参数记录，现场配准效果需另行验证。':'声学时间戳质量：'+(context.stamp_quality||'未记录'))+'</p><a href="/research/'+branch+'_features.npz">下载原始特征归档 ↗</a><details><summary>本样本模型与处理来源</summary><pre>'+esc(JSON.stringify(s.model,null,2))+'</pre></details>';
+    const values=[['分支',names[branch]],['样本序号',s.sequence],['接口核查',checkLabel(s.interface_validation?.state)],['标定记录',context.calibration||'本样本未归档空间标定'],['输出形状',(s.output_shape||[]).join(' × ')]];
+    const extra=[['输入时间',stamp(s.source_stamp)],['会话',s.session_id],['当前采集状态',b?.detail||'未读取'],['最大配对时间差',fmt(s.timing.maximum_gap_ms)+' ms'],['同步精度',checkLabel(s.sync_validation?.state)],['模型计算耗时',fmt(s.inference_ms,1)+' ms'],['采集时间质量',context.stamp_quality||'传感器消息时间']];
+    $('evidence').innerHTML='<dl>'+values.map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')+'</dl><details data-disclosure="sample-runtime"><summary>样本时间与运行详情</summary>'+table(['记录项','本次记录'],extra)+'</details><p class="note">'+esc(context.geometry_verified?'标定记录已测量，查看对应证据。':branch==='pmf'?'现有LiDAR外参为估计参数，尚未完成标定验收。':branch==='rgbnir'?'相机内参和外参来自工厂参数记录，现场配准效果需另行验证。':'声学输入来自本样本匹配的音频窗口。')+'</p><a href="/research/'+branch+'_features.npz">下载原始特征归档 ↗</a><details data-disclosure="model-source"><summary>本样本模型与处理来源</summary><pre>'+esc(JSON.stringify(s.model,null,2))+'</pre></details>';
+    restoreDisclosures(evidenceRoot,evidenceDisclosureScope);
   }
   function coverage() {
-    const items=[['四类模态输入','RGB、近红外、真实LiDAR与声学分别在三条分支输入端展示。',[['pmf',0],['rgbnir',0],['avs',0]]],['特征提取、拼接与融合','提取：三条分支；拼接：颜色＋法向量、视觉token；融合：几何交互、加权、声学条件交互。',[['pmf',4],['rgbnir',3],['avs',4]]],['接口与数据同步','来源、格式、尺寸、特征形状、坐标系、输入组与输出关系。',[['pmf',2],['rgbnir',2],['avs',2]]],['时间同步与融合精度','时间轴和配对时间差已有记录；硬件同步误差、融合精度与增益仍需实测评价。',[['pmf',2],['rgbnir',5],['avs',5]]],['标定、时间对齐与预处理','相机参数、外参、点—像素映射、配准有效区、点云筛选及声学预处理。',[['pmf',1],['rgbnir',1],['avs',1]]],['特征尺度匹配与跨模态语义对齐','近红外展示尺寸与RMS幅值匹配；声学展示128→256及声学条件查询对视觉token的注意力。',[['rgbnir',4],['avs',4]]]];
-    return '<div class="coverage-list">'+items.map((r,i)=>`<div class="coverage-item"><span class="index">${i+1}</span><div><strong>${esc(r[0])}</strong><p>${esc(r[1])}</p>${r[2].map(([b,st])=>`<button data-jump="${b}:${st}">${esc(names[b])} ↗</button>`).join('')}</div></div>`).join('')+'</div>'+note('共享骨干和维度统一只能说明结构兼容；声学条件注意力可展示跨模态语义交互机制，语义对齐效果需要与任务输出及评测记录共同验证。');
+    const items=[['四类模态输入','RGB、近红外、真实LiDAR与声学分别在三条分支输入端展示。',[['pmf',0],['rgbnir',0],['avs',0]]],['特征提取、拼接与融合','提取：三条分支；拼接：颜色＋法向量、视觉token；融合：几何交互、加权、声学条件交互。',[['pmf',4],['rgbnir',3],['avs',4]]],['接口与数据同步','接口字段规范、实际选中输入、特征数组及同批次输出核查。',[['pmf',2],['rgbnir',2],['avs',2]]],['时间同步与融合精度','同步限值与当前配对核查集中展示；融合结果通过同样本图片进行定性对照。',[['pmf',2],['rgbnir',5],['avs',5]]],['标定、时间对齐与预处理','相机参数、外参、点—像素映射、配准有效区、点云筛选及声学预处理。',[['pmf',1],['rgbnir',1],['avs',1]]],['特征尺度匹配与跨模态语义对齐','近红外展示尺寸与RMS幅值匹配；声学展示128→256及声学条件查询对视觉token的注意力。',[['rgbnir',4],['avs',4]]]];
+    const verificationSummary='<h3 style="margin-top:24px">接口与时间同步记录</h3>'+table(['分支','接口核查','配对门限','同步精度'],Object.entries(names).map(([key,name])=>[name,checkLabel(samples[key]?.interface_validation?.state),checkLabel(samples[key]?.sync_validation?.pair_state),checkLabel(samples[key]?.sync_validation?.state)]));
+    return '<div class="coverage-list">'+items.map((r,i)=>`<div class="coverage-item"><span class="index">${i+1}</span><div><strong>${esc(r[0])}</strong><p>${esc(r[1])}</p>${r[2].map(([b,st])=>`<button data-jump="${b}:${st}">${esc(names[b])} ↗</button>`).join('')}</div></div>`).join('')+'</div>'+verificationSummary+note('共享骨干和维度统一只能说明结构兼容；声学条件注意力可展示跨模态语义交互机制，语义对应应结合任务输出及验证记录核对。');
   }
   function stageMarkup(s) {
     const v=s.visuals,t=s.tables,img=s.images,c=s.context;
@@ -129,13 +205,13 @@
       return '<div class="gallery">'+figure(img.raw,'匹配窗口内的RGB帧')+(v.waveform?plot('waveform','WheelTec原始PCM波形',true):figure(null,'原始PCM波形'))+'</div><div style="margin-top:16px">'+figure(v.log_mel||img.spectrum,'实际log-Mel频谱')+'</div>'+inputTable(s)+(!v.waveform?note('旧样本仅保存log-Mel；新增采集会保留原始PCM，波形与功率频谱随后显示。'):'');
     }
     if(step===1){
-      if(branch==='pmf')return '<div class="gallery">'+dots(img.raw,v.correspondence?.uv,'LiDAR投影到RGB')+plot('filter-cloud','同一扫描筛选前后 · '+(v.filter?.frame||''))+'</div>'+table(['对应点','X / m','Y / m','Z / m','u / px','v / px'],(v.correspondence?.xyz||[]).slice(0,8).map((p,i)=>[i+1,...p.map(x=>fmt(x)),...v.correspondence.uv[i].map(x=>fmt(x,1))]))+note(v.filter?.note||'此样本没有同扫描筛选记录')+'<details><summary>相机参数与坐标变换</summary>'+matrix('RGB内参 K',t.intrinsics)+matrix('camera_from_lidar · 平移单位 m',t.extrinsics)+note(c.calibration_evidence||'无独立标定证据')+'</details>';
-      if(branch==='rgbnir')return '<div class="gallery three">'+figure(v.nir_raw,'配准前近红外')+figure(v.nir_registered,'配准到RGB网格')+figure(v.valid_mask,'有效区域','白色有效；黑色不使用近红外')+'</div>'+table(['对应点','RGB u','RGB v','NIR u','NIR v'],(v.correspondence?.rgb_uv||[]).slice(0,8).map((p,i)=>[i+1,...p.map(x=>fmt(x,1)),...v.correspondence.nir_uv[i].map(x=>fmt(x,1))]))+'<details><summary>相机参数与坐标变换</summary>'+matrix('RGB内参 K',t.intrinsics)+matrix('nir_from_rgb · 平移单位 m',t.extrinsics)+note('标定版本：'+c.calibration)+'</details>';
-      return flow([['PCM','采样率 '+(v.waveform?.rate||c.sample_rate||'未归档')+' Hz'],['STFT','时频变换'],['log-Mel','96 × 64 / 片段']])+'<div class="gallery">'+(v.waveform?plot('waveform','原始波形 · 幅值',true):empty('该样本未保存原始PCM'))+figure(v.log_mel,'log-Mel · 时间×频率响应')+'</div>'+(v.spectrum?plot('spectrum','实际PCM Welch功率谱密度',true):note('功率频谱将在新的PCM归档产生后显示。'))+note('工作站声学时间戳采用采集端记录；空间定位、麦克风阵列标定或口令执行没有在该流程中验证。');
+      if(branch==='pmf')return '<div class="gallery">'+dots(img.raw,v.correspondence?.uv,'LiDAR投影到RGB')+plot('filter-cloud','同一扫描筛选前后 · '+(v.filter?.frame||''))+'</div>'+table(['对应点','X / m','Y / m','Z / m','u / px','v / px'],(v.correspondence?.xyz||[]).slice(0,8).map((p,i)=>[i+1,...p.map(x=>fmt(x)),...v.correspondence.uv[i].map(x=>fmt(x,1))]))+note(v.filter?.note||'此样本没有同扫描筛选记录')+'<details data-disclosure="calibration-parameters"><summary>相机参数与坐标变换</summary>'+matrix('RGB内参 K',t.intrinsics)+matrix('camera_from_lidar · 平移单位 m',t.extrinsics)+note(c.calibration_evidence||'无独立标定证据')+'</details>';
+      if(branch==='rgbnir')return '<div class="gallery three">'+figure(v.nir_raw,'配准前近红外')+figure(v.nir_registered,'配准到RGB网格')+figure(v.valid_mask,'有效区域','白色有效；黑色不使用近红外')+'</div>'+table(['对应点','RGB u','RGB v','NIR u','NIR v'],(v.correspondence?.rgb_uv||[]).slice(0,8).map((p,i)=>[i+1,...p.map(x=>fmt(x,1)),...v.correspondence.nir_uv[i].map(x=>fmt(x,1))]))+'<details data-disclosure="calibration-parameters"><summary>相机参数与坐标变换</summary>'+matrix('RGB内参 K',t.intrinsics)+matrix('nir_from_rgb · 平移单位 m',t.extrinsics)+note('标定版本：'+c.calibration)+'</details>';
+      return flow([['PCM','采样率 '+(v.waveform?.rate||c.sample_rate||'未归档')+' Hz'],['STFT','时频变换'],['log-Mel','96 × 64 / 片段']])+'<div class="gallery">'+(v.waveform?plot('waveform','原始波形 · 幅值',true):empty('该样本未保存原始PCM'))+figure(v.log_mel,'log-Mel · 时间×频率响应')+'</div>'+(v.spectrum?plot('spectrum','实际PCM Welch功率谱密度',true):note('功率频谱将在新的PCM归档产生后显示。'))+note('声学原始时间、应用偏移及时间质量在“时间与接口”中按本批次记录。');
     }
     if(step===2){
       const rows=s.timing.rows||[];
-      return timeline(s.timing)+table(['输入组','RGB时间 / s','另一模态时间 / s','配对差 / ms'],rows.map((r,i)=>[i+1,fmt(r.a,6),fmt(r.b,6),fmt(r.gap_ms,3)]))+'<details><summary>原始时间轴与时钟校正记录</summary>'+timeline(s.timing,true)+'<pre>'+esc(JSON.stringify(s.timing.explicit_offsets||s.timing.clock,null,2))+'</pre></details>'+note(s.timing.note)+'<details><summary>接口字段与数据流</summary>'+flow([['输入','来源 / 时间 / 坐标'],['特征','形状 / 层级 / 归档'],['输出','结果 / 同一样本标识']])+table(['特征字段','归档形状','处理方式'],allFeatures(s).map(f=>[f.name,shape(f),f.operation]))+'<p class="note">以下为来源快照中的接口字段示例，采集时间可能晚于当前归档样本。</p><pre>'+esc(JSON.stringify(s.interface_example,null,2))+'</pre></details>';
+      return syncMarkup(s)+'<details class="record-details" data-disclosure="source-timestamps"><summary>查看逐组原始与校正时间</summary>'+timeline(s.timing)+table(['输入组','RGB对齐时间 / s','另一模态对齐时间 / s','配对差 / ms'],rows.map((r,i)=>[i+1,fmt(r.a,6),fmt(r.b,6),fmt(r.gap_ms,3)]))+'<h3>原始时间轴</h3>'+timeline(s.timing,true)+'</details>'+interfaceMarkup(s);
     }
     if(step===3){
       if(branch==='rgbnir'){const controls=selectFeatures(s,['P3.rgb','P4.rgb','P5.rgb']);const level=(featureChoice.rgbnir||'P3.rgb').split('.')[0];return controls+'<div class="gallery">'+heat(s,level+'.rgb',level+' RGB原始特征')+heat(s,level+'.nir',level+' 近红外原始特征')+'</div>'+note('热图使用各张特征图自身范围归一化，只展示空间响应；幅值比较请查看下一步RMS数值。');}
@@ -150,7 +226,7 @@
     let gallery='<div class="gallery">'+figure(img.annotated_overlay||img.overlay,'融合结果');
     gallery+=branch==='rgbnir'?figure(img.reference_overlay,'同样本RGB对照'):branch==='pmf'?figure(img.reference_overlay,'独立颜色＋法向量对照'):figure(img.raw,'对应RGB输入');gallery+='</div>';
     if(branch==='avs')gallery='<div class="gallery">'+heat(s,'visual.before_mixer','声学交互前的视觉特征')+heat(s,'audiovisual.fused','声学交互后的视觉特征')+'</div><div style="margin-top:16px">'+gallery+'</div>';
-    return gallery+table(['输出类别','预测点/像素数','预测占比'],s.classes.map(r=>[r.display_label||r.label,r.count,fmt(r.fraction*100,1)+'%']))+table(['验证项目','记录状态'],[['本次模型计算耗时',fmt(s.inference_ms,1)+' ms（不等同于端到端处理周期）'],['配对最大时间差',fmt(s.timing.maximum_gap_ms,3)+' ms（不等同于硬件同步误差）'],['融合与最佳单模态精度','待同样本评测'],['任务周期限值与精度增益','待任务要求及实测记录']])+note(branch==='pmf'?'此处对照是两个多源模型的结果差异，不能作为融合与最佳单模态精度比较。':s.evaluation.note);
+    return gallery+note(branch==='pmf'?'当前图片分别展示两个多源模型的结果，按实际模型标识进行定性对照。':branch==='rgbnir'?'对比同一RGB样本的融合结果与原RGB结果，观察类别、目标区域及漏检或误检情况。':'查看匹配RGB帧与音视频融合结果，观察发声区域及类别对应情况。')+'<details data-disclosure="output-records"><summary>输出类别统计与模型记录</summary>'+table(['输出类别','预测点/像素数','预测占比'],s.classes.map(r=>[r.display_label||r.label,r.count,fmt(r.fraction*100,1)+'%']))+note('图片对照用于定性观察；此处不自动生成定量精度或合格结论。')+'</details>';
   }
   function drawPlots(s){
     if(!s)return;const v=s.visuals,t=s.tables;
@@ -166,18 +242,21 @@
     mountDots();
   }
   function render(){
+    captureDisclosures($('visual'),visualDisclosureScope);
+    visualDisclosureScope=branch+':'+step+':visual';
     plotObserver?.disconnect();
     document.querySelectorAll('[data-branch]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.branch===branch)));
     $('stages').innerHTML=branch==='coverage'?'':steps.map((name,i)=>`<button data-step="${i}" aria-pressed="${i===step}"><span class="step-number">0${i+1}</span>${name}</button>`).join('');
     $('stage-kicker').textContent=branch==='coverage'?'TASK BOOK COVERAGE':names[branch]+' · STEP 0'+(step+1);
     $('stage-title').textContent=branch==='coverage'?'三条分支共同覆盖任务书':titles[branch][step];
     $('stage-description').textContent=branch==='coverage'?'点击条目跳转到对应分支证据。技术性能仍以实测记录判定。':descriptions[branch][step];
-    $('stage-tag').textContent=branch==='coverage'?'六项要求':step===5?'精度待测':'实际处理记录';
+    $('stage-tag').textContent=branch==='coverage'?'六项要求':step===5?'图片定性对照':'实际处理记录';
     const s=samples[branch];$('visual').innerHTML=branch==='coverage'?coverage():s?stageMarkup(s):empty('等待该分支的同会话输入与特征归档；其他分支可独立查看。');
     if(s&&step===1&&branch!=='avs'&&s.tables.extrinsics){
       const summary=[...$('visual').querySelectorAll('summary')].find(e=>e.textContent.includes('相机参数'));
       if(summary){summary.insertAdjacentHTML('afterend',plot('calibration-axes','内外参记录对应的传感器坐标轴'));summary.nextElementSibling.classList.add('calibration-plot');}
     }
+    restoreDisclosures($('visual'),visualDisclosureScope);
     if(step===3||step===4)$('visual').querySelectorAll('.gallery').forEach(e=>e.classList.add('feature-gallery'));
     $('download').disabled=!s;setEvidence(s);updateStatus();
     const select=$('feature-select');if(select)select.onchange=()=>{featureChoice[branch]=select.value;render();};

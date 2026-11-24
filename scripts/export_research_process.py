@@ -9,6 +9,7 @@ import signal
 import time
 
 import numpy as np
+from research_validation import interface_audit, sync_audit, load_policy, verification_revision
 
 ROOT = Path(__file__).resolve().parents[1]
 TASKS = ('pmf', 'rgbnir', 'avs')
@@ -86,9 +87,10 @@ def timing(task, context):
                 row['raw_a'], row['raw_b'] = row['a'], row['b']
                 row['a'] += offsets['rgb']
                 row['b'] += offsets['lidar' if task == 'pmf' else 'nir']
+    maximum = max((abs(r['a']-r['b'])*1000 for r in rows), default=None)
     return dict(rows=rows, a_name=a_name, b_name=b_name, explicit_offsets=offsets,
                 clock=context.get('clock_alignment', {}),
-                maximum_gap_ms=(context.get('sync_gap_s') or 0)*1000,
+                maximum_gap_ms=maximum,
                 note='配对时间差与时钟偏移估计不等同于传感器硬件同步误差；旧归档未记录应用偏移时只展示已有时间。')
 
 
@@ -100,10 +102,11 @@ def build_sample(task, snapshot, archive):
             snapshot.get('session_id'), result.get('sequence'), task):
         raise ValueError('snapshot/archive identity mismatch')
     context = meta.get('context', {})
-    # Field definitions below are from the source snapshot. They are not declared
-    # to be the simultaneous sensor readings that generated this archived result.
-    fields = {k: {f: v for f, v in row.items() if f not in ('age_s', 'receive_age_s')}
-              for k, row in snapshot.get('inputs', {}).items()}
+    # Input evidence comes only from the selected archive. Live snapshot fields
+    # are intentionally excluded, even when they look newer or more complete.
+    fields = {}
+    for record in context.get('inputs_used', []):
+        fields.setdefault(record.get('modality'), dict(record))
     sample = dict(schema='research_process/1', task=task, session_id=meta['session'],
                   sequence=meta['sequence'], source_stamp=meta['source_stamp'], exported_at=time.time(),
                   context=context, model=meta.get('model', {}), timing=timing(task, context),
@@ -114,6 +117,9 @@ def build_sample(task, snapshot, archive):
                   comparison=result.get('comparison'), reference_input=result.get('reference_input'),
                   evaluation=dict(verified=False, note='尚未导入同样本标注与性能评测记录；当前展示模型输出与处理机制。'),
                   visuals={}, tables={})
+    sample['validation_revision'] = verification_revision(ROOT)
+    sample['interface_validation'] = interface_audit(task, snapshot, meta, archive)
+    sample['sync_validation'] = sync_audit(task, meta, sample['timing'], load_policy(ROOT), ROOT)
     visuals, tables = sample['visuals'], sample['tables']
     keys = set(archive.files)
     def get(name):
@@ -219,7 +225,7 @@ def export_once(directory, cache, throttle, interval=6):
         try:
             snapshot = json.loads((directory/(task+'.json')).read_text())
             result = snapshot.get('result') or {}
-            identity = [snapshot.get('session_id'), result.get('sequence')]
+            identity = [snapshot.get('session_id'), result.get('sequence'), verification_revision(ROOT)]
             row = dict(state=snapshot.get('state'), detail=snapshot.get('detail'),
                        published_at=snapshot.get('published_at'), inputs=snapshot.get('inputs', {}),
                        sample_identity=cache.get(task), exporter_error=None)
@@ -251,7 +257,7 @@ def main():
     for task in TASKS:
         path = args.directory/'process'/(task+'.json')
         try:
-            saved = json.loads(path.read_text()); cache[task] = [saved['session_id'], saved['sequence']]
+            saved = json.loads(path.read_text()); cache[task] = [saved['session_id'], saved['sequence'], saved.get('validation_revision')]
         except (OSError, ValueError, KeyError):
             pass
     if args.once:

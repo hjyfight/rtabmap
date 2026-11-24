@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'src'))
 from rtabmap_research.inputs import (NotReady, AudioTimeline, pair_frames, measured_transform,
                                      project_pmf, tf_preview_transform, pair_rgb_lidar,estimated_transform)
+from research_validation import input_record
 
 
 def atomic_json(path, value):
@@ -37,6 +38,7 @@ class Research:
         self.nir_frames = deque(maxlen=80)
         self.nir_info = None
         self.audio = AudioTimeline()
+        self.audio_sources = deque(maxlen=512)
         self.info = None
         self.inputs = {}
         self.models = {}
@@ -58,6 +60,15 @@ class Research:
     def observe(self, name, stamp, **metadata):
         self.inputs[name] = dict(stamp=stamp, received_at=time.time(), **metadata)
 
+    def image_record(self, modality, msg, array, raw_stamp, offset, topic, **extra):
+        return input_record(modality, topic, 'sensor_msgs/msg/Image', raw_stamp, offset,
+                            frame=msg.header.frame_id, shape=array.shape, dtype=str(array.dtype),
+                            format=msg.encoding, **extra)
+
+    @staticmethod
+    def with_array(record, key, index=None):
+        return dict(record, array_ref=dict(key=key, **({'index': index} if index is not None else {})))
+
     def receive_rgb(self, msg):
         from cv_bridge import CvBridge
         stamp = msg.header.stamp.sec + msg.header.stamp.nanosec/1e9 + self.cfg['rgb_clock_offset_s']
@@ -68,7 +79,9 @@ class Research:
                 self.frames.clear()
         rgb = CvBridge().imgmsg_to_cv2(msg, 'rgb8').copy()
         with self.lock:
-            self.frames.append((stamp, rgb, msg.header.frame_id))
+            source = self.image_record('rgb', msg, rgb, stamp-self.cfg['rgb_clock_offset_s'],
+                                       self.cfg['rgb_clock_offset_s'], self.cfg['rgb_topic'])
+            self.frames.append((stamp, rgb, msg.header.frame_id, source))
             self.observe('rgb', stamp, width=msg.width, height=msg.height, frame=msg.header.frame_id,
                          raw_stamp=stamp-self.cfg['rgb_clock_offset_s'],encoding=msg.encoding,
                          topic=self.cfg['rgb_topic'])
@@ -93,6 +106,13 @@ class Research:
                  depth=CvBridge().imgmsg_to_cv2(msg.depth,'passthrough').copy(),
                  k=list(msg.rgb_camera_info.k),distortion=list(msg.rgb_camera_info.d),
                  rgb_info=camera_dict(msg.rgb_camera_info))
+        row['input_metadata'] = [
+            self.image_record('rgb', msg.rgb, row['rgb'], raw_stamp, self.cfg['rgb_clock_offset_s'],
+                              self.cfg.get('rgbd_topic', '/rgbd_image'), payload_path='rgb',
+                              stamp_quality='rgbd_header_stamp'),
+            self.image_record('depth', msg.depth, row['depth'], raw_stamp, self.cfg['rgb_clock_offset_s'],
+                              self.cfg.get('rgbd_topic', '/rgbd_image'), payload_path='depth',
+                              stamp_quality='rgbd_header_stamp', value_unit='mm' if row['depth'].dtype == np.uint16 else 'm')]
         with self.lock:
             if self.rgbd_frames and stamp<self.rgbd_frames[-1]['stamp']-1:self.rgbd_frames.clear()
             self.rgbd_frames.append(row)
@@ -106,7 +126,9 @@ class Research:
         image=CvBridge().imgmsg_to_cv2(msg,'mono8').copy()
         with self.lock:
             if self.nir_frames and stamp<self.nir_frames[-1]['stamp']-1:self.nir_frames.clear()
-            self.nir_frames.append(dict(stamp=stamp,raw_stamp=raw_stamp,image=image,frame=msg.header.frame_id))
+            self.nir_frames.append(dict(stamp=stamp,raw_stamp=raw_stamp,image=image,frame=msg.header.frame_id,
+                input_metadata=self.image_record('nir', msg, image, raw_stamp,
+                    self.cfg.get('nir_clock_offset_s', self.cfg['rgb_clock_offset_s']), self.cfg['nir_topic'])))
             self.observe('nir',stamp,width=msg.width,height=msg.height,frame=msg.header.frame_id,
                          raw_stamp=raw_stamp,encoding=msg.encoding,topic=self.cfg['nir_topic'])
 
@@ -130,7 +152,11 @@ class Research:
             transforms[source]=dict(child=source,parent=reference,
                 translation=[getattr(tf.transform.translation,k) for k in ('x','y','z')],
                 rotation=[getattr(tf.transform.rotation,k) for k in ('x','y','z','w')])
-        return register_nir(frame,nir,self.nir_info,transforms)
+        bundle = register_nir(frame,nir,self.nir_info,transforms)
+        bundle['inputs_used'] = [self.with_array(r, 'input_rgb' if r['modality']=='rgb' else 'source_depth')
+                                for r in frame.get('input_metadata', [])]
+        bundle['inputs_used'].append(self.with_array(nir['input_metadata'], 'source_nir'))
+        return bundle
 
     def file_calibration(self):
         path=ROOT/self.cfg['calibration_path']
@@ -176,19 +202,31 @@ class Research:
             observations.append(dict(rgb=frame['rgb'],depth=frame['depth'],k=frame['k'],distortion=frame['distortion'],
                 points=points,world_from_lidar=correction_matrix@ros_matrix(pose.transform),
                 rgb_stamp=frame['raw_stamp'],lidar_stamp=msg.header.stamp.sec+msg.header.stamp.nanosec/1e9,
-                corrected_stamp=frame['stamp'],gap_s=abs(cloud[0]-frame['stamp'])))
+                corrected_stamp=frame['stamp'],gap_s=abs(cloud[0]-frame['stamp']),
+                input_metadata=frame.get('input_metadata', []) + [dict(cloud[2], shape=list(points.shape),
+                    dtype=str(points.dtype), format='decoded XYZ/intensity', value_unit='XYZ:m; intensity:raw')]))
             used.add(cloud[0])
         if len(observations)<self.cfg.get('point_min_frames',4):
             raise NotReady(f'等待有同步位姿的多帧点云：{len(observations)}/{self.cfg.get("point_min_frames",4)}组')
+        sources = []
+        for i, observation in enumerate(observations):
+            for record in observation['input_metadata']:
+                key = 'source_rgb_frames' if record['modality']=='rgb' else 'source_depth_frames' if record['modality']=='depth' else 'source_lidar_'+str(i)
+                sources.append(self.with_array(record, key, i if record['modality'] != 'lidar' else None))
         return dict(stamp=observations[-1]['corrected_stamp'],observations=observations,matrix=matrix,
-                    calibration=calibration,gap_s=max(o['gap_s'] for o in observations))
+                    calibration=calibration,gap_s=max(o['gap_s'] for o in observations), inputs_used=sources)
 
     def receive_lidar(self, msg):
         stamp = msg.header.stamp.sec + msg.header.stamp.nanosec/1e9 + self.cfg['lidar_clock_offset_s']
         with self.lock:
             if self.clouds and stamp < self.clouds[-1][0]-1:
                 self.clouds.clear()
-            self.clouds.append((stamp, msg))
+            source = input_record('lidar', self.cfg['lidar_topic'], 'sensor_msgs/msg/PointCloud2',
+                stamp-self.cfg['lidar_clock_offset_s'], self.cfg['lidar_clock_offset_s'],
+                frame=msg.header.frame_id, shape=[msg.width*msg.height], dtype='structured PointCloud2',
+                format=', '.join(f.name for f in msg.fields),
+                source_fields=[dict(name=f.name, datatype=f.datatype, count=f.count) for f in msg.fields])
+            self.clouds.append((stamp, msg, source))
             self.observe('lidar', stamp, points=msg.width*msg.height, fields=[f.name for f in msg.fields],
                          frame=msg.header.frame_id,raw_stamp=stamp-self.cfg['lidar_clock_offset_s'],
                          topic=self.cfg['lidar_topic'])
@@ -199,7 +237,18 @@ class Research:
         pcm = np.asarray(msg.samples,np.float32).reshape(-1,msg.channels).mean(1)
         stamp = msg.header.stamp.sec + msg.header.stamp.nanosec/1e9 + self.cfg['audio_clock_offset_s']
         with self.lock:
+            duplicate = msg.source_id == self.audio.last_source
+            reset = self.audio.rate != msg.sample_rate or (self.audio.windows and stamp+len(pcm)/msg.sample_rate < self.audio.windows[-1][1]-.5)
+            if reset: self.audio_sources.clear()
             self.audio.add(stamp, pcm, msg.sample_rate, msg.source_id, msg.stamp_quality)
+            if not duplicate:
+                self.audio_sources.append(input_record('audio', self.cfg['audio_topic'],
+                    'rtabmap_features_msgs/msg/AudioFrame', stamp-self.cfg['audio_clock_offset_s'],
+                    self.cfg['audio_clock_offset_s'], frame=msg.header.frame_id, shape=pcm.shape,
+                    dtype=str(pcm.dtype), format='float32 PCM [-1,1]; channel mean for model',
+                    source_id=msg.source_id, stamp_quality=msg.stamp_quality,
+                    rate=int(msg.sample_rate), channels=int(msg.channels), model_channels=1,
+                    duration_s=len(pcm)/msg.sample_rate))
             self.observe('audio', stamp+len(pcm)/msg.sample_rate, rate=msg.sample_rate, channels=msg.channels,
                          quality=msg.stamp_quality, duration_s=len(pcm)/msg.sample_rate,
                          source_id=msg.source_id,topic=self.cfg['audio_topic'],
@@ -251,7 +300,9 @@ class Research:
             raise NotReady('当前RGB畸变模型尚不支持投影')
         return dict(stamp=frame[0], rgb=frame[1], cloud=cloud[1], info=dict(self.info), matrix=matrix,
                     intensity_scale=calibration['intensity_scale'], gap_s=gap,
-                    calibration=calibration)
+                    calibration=calibration, inputs_used=(
+                        [self.with_array(frame[3], 'source_rgb')] if len(frame)>3 else []) + (
+                        [self.with_array(cloud[2], 'source_lidar_points')] if len(cloud)>2 else []))
 
     def avs_bundle(self):
         # Centres of author's 0.96s log-Mel patches (96 STFT frames, 25ms window).
@@ -267,9 +318,25 @@ class Research:
         self.fresh(end)
         times = start + centres
         frames, gaps = pair_frames(self.frames, times, self.cfg['avs_sync_tolerance_s'])
+        sources = [self.with_array(r[3], 'source_rgb_frames', i) for i, r in enumerate(frames) if len(r)>3]
+        audio_sources = [dict(r) for r in getattr(self, 'audio_sources', []) if r['aligned_stamp'] < end and
+                         r['aligned_stamp']+r['duration_s'] > start]
+        owner = np.full(len(pcm), -1, np.int32)
+        for i, record in enumerate(audio_sources):
+            offset = int(round((record['aligned_stamp']-start)*rate))
+            a, b = max(0, offset), min(len(pcm), offset+record['shape'][0])
+            if b > a: owner[a:b] = i
+        for i, record in enumerate(audio_sources):
+            used = np.flatnonzero(owner == i)
+            if not len(used): continue
+            breaks = np.flatnonzero(np.diff(used)>1)+1
+            spans = np.split(used, breaks)
+            sources.append(dict(self.with_array(record, 'input_pcm'),
+                used_sample_ranges=[[int(v[0]), int(v[-1])+1] for v in spans],
+                archive_relation='overlapping capture windows cropped onto selected mono PCM timeline'))
         return dict(stamp=frames[-1][0], rgbs=[r[1] for r in frames], pcm=pcm, rate=rate,
                     audio_start=start, audio_end=end, frame_stamps=[r[0] for r in frames],
-                    gap_s=max(gaps), stamp_quality=quality)
+                    gap_s=max(gaps), stamp_quality=quality, inputs_used=sources)
 
     def project_bundle(self, bundle):
         from sensor_msgs_py import point_cloud2
@@ -282,6 +349,9 @@ class Research:
             points = np.column_stack([values[f] for f in ('x','y','z',intensity)]).astype(np.float32)
         else:
             points = np.asarray(values,np.float32).reshape(-1,4)
+        bundle['raw_points'] = points
+        for record in bundle.get('inputs_used', []):
+            if record['modality']=='lidar': record.update(shape=list(points.shape), dtype=str(points.dtype), format='decoded XYZ/intensity')
         return project_pmf(points,bundle['rgb'],bundle['info']['k'],bundle['info']['d'],
                            bundle['matrix'],bundle['intensity_scale'])
 
@@ -394,6 +464,14 @@ class Research:
                             duration_s=10, audio_dim=128, projected_dim=256, sample_rate=bundle['rate'],
                             audio_source='workstation WheelTec; /multimodal/audio')
                     elapsed = time.perf_counter()-start
+                    if key == 'avs':
+                        model.trace.arrays['source_rgb_frames'] = np.stack(bundle['rgbs'])
+                    elif key == 'pmf' and not point_backend:
+                        model.trace.arrays['source_rgb'] = bundle['rgb']
+                        if 'raw_points' in bundle: model.trace.arrays['source_lidar_points'] = bundle['raw_points']
+                    context['inputs_used'] = bundle.get('inputs_used', [])
+                    context['runtime_pair_tolerance_ms'] = self.cfg[key+'_sync_tolerance_s']*1000
+                    context['output_contract'] = dict(output_shape=result.get('output_shape'), classes=result.get('classes', []))
                     context['clock_alignment']=self.cfg.get('clock_alignment',dict(method='configured_offsets'))
                     context['clock_offsets_s']={name:self.cfg.get(name+'_clock_offset_s',0.)
                                                 for name in ('rgb','lidar','nir','audio')}
