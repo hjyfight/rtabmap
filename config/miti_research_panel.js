@@ -3,6 +3,11 @@ function rtabmapResearchFactory(React) {
   'use strict';
   const h=React.createElement, finite=x=>typeof x==='number'&&Number.isFinite(x);
   const shape=x=>Array.isArray(x)?x.join(' × '):'—';
+  function browserClockOffset(date,started,received) {
+    const server=Date.parse(date);
+    return Number.isFinite(server)&&received>=started&&received-started<3000
+      ?((started+received)/2-server-500)/1000:null;
+  }
   const titles={pmf:'PMF · RGB + LiDAR',avs:'AVSegFormer · RGB + 音频'};
   function parse(value) {
     if(value?.schema!=='downstream_fusion/1'||!['pmf','avs','rgbnir'].includes(value.task)||
@@ -15,7 +20,7 @@ function rtabmapResearchFactory(React) {
     return value;
   }
   const css=`
-    .fusion-research{height:100%;overflow:auto;background:#101b27;color:#dce8f2;font:12px/1.5 system-ui,sans-serif;padding:10px 12px}
+    .fusion-research{height:100%;min-height:0;min-width:0;box-sizing:border-box;overflow-y:auto;overflow-x:hidden;background:#101b27;color:#dce8f2;font:12px/1.5 system-ui,sans-serif;padding:10px 12px}
     .fusion-research *{box-sizing:border-box}.fr-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
     .fr-tabs{display:flex;gap:4px}.fusion-research button{border:1px solid #2a4054;border-radius:6px;background:#172a3a;color:#9db4c7;padding:4px 10px;font:inherit;cursor:pointer}
     .fusion-research button[aria-pressed=true]{color:#71e5cb;background:#1b3e3d;border-color:#396e65}.fr-status{font-size:11px;color:#79e1ca}.fr-status[data-wait=true]{color:#ebc68a}
@@ -50,16 +55,19 @@ function rtabmapResearchFactory(React) {
     const [showAnnotations,setShowAnnotations]=React.useState(true);
     const [secondView,setSecondView]=React.useState('no_rgb');
     const [now,setNow]=React.useState(Date.now());
+    const [clockOffset,setClockOffset]=React.useState(0);
     React.useEffect(()=>{
       let disposed=false,busy=false,controller=null;
       const poll=async()=>{
         if(busy||disposed)return;busy=true;controller=new AbortController();
         const timer=setTimeout(()=>controller?.abort(),3000);
         try{
+          const started=Date.now();
           const response=await fetch('/research/'+task+'.json',{cache:'no-store',signal:controller.signal});
           if(!response.ok)throw Error('等待3001推理服务');
           const value=parse(await response.json());if(!value)throw Error('推理消息格式不兼容');
-          if(!disposed){setSnapshot(value);setError('');}
+          if(!disposed){const offset=browserClockOffset(response.headers.get('date'),started,Date.now());
+            if(offset!==null)setClockOffset(offset);setSnapshot(value);setError('');}
         }catch(e){if(!disposed)setError(e.name==='AbortError'?'推理服务响应超时':e.message);}
         finally{clearTimeout(timer);busy=false;}
       };
@@ -67,14 +75,15 @@ function rtabmapResearchFactory(React) {
       return()=>{disposed=true;controller?.abort();clearInterval(interval);clearInterval(clock);};
     },[task]);
     const data=snapshot?.result,replay=snapshot?.source_mode==='offline_replay',nirTask=task==='rgbnir';
-    const offline=!snapshot||(!replay&&now/1000-snapshot.published_at>4),preview=data?.mode==='rgb_only';
+    const serverNow=now/1000-clockOffset;
+    const offline=!snapshot||(!replay&&serverNow-(snapshot.display_published_at??snapshot.published_at)>4),preview=data?.mode==='rgb_only';
     const odin=snapshot?.model?.backend_kind==='rgbd_lidar_odin';
     const indoor=odin||snapshot?.model?.backend_kind==='rgb_coloured_lidar';
     const experimental=task==='pmf'&&['tf_preview','auto_estimated'].includes(data?.context?.calibration);
-    const stale=!replay&&(offline||!data||now/1000-data.source_stamp>Math.max(6,task==='avs'?14:8)||['error','model_error'].includes(snapshot?.state)||(snapshot?.state==='waiting'&&!preview));
+    const stale=!replay&&(offline||!data||serverNow-(data.display_source_stamp??data.source_stamp)>Math.max(6,task==='avs'?14:8)||['error','model_error'].includes(snapshot?.state)||(snapshot?.state==='waiting'&&!preview));
     const state=error|| (replay?'离线回放 · 已保存真实数据':offline?'等待3001推理服务':preview&&snapshot?.state!=='error'?'RGB单分支 · 待配准':snapshot?.state==='ready'?nirTask?'RGB 90% + NIR 10% · 实验融合':odin?'室内RGB-D + LiDAR · 实验融合':indoor?'室内RGB + LiDAR · 实验对照':experimental?'RGB + LiDAR · 实验融合':'实时推理':snapshot?.state==='running'?'推理中':snapshot?.state==='loading'?'加载模型':snapshot?.state==='model_error'?'模型加载失败':'等待输入条件');
     const input=(name,label)=>{
-      const v=snapshot?.inputs[name],age=v?now/1000-v.stamp:Infinity,missing=!v||age>3||age<-.5||offline;
+      const v=snapshot?.inputs[name],age=v?serverNow-(v.display_stamp??v.stamp):Infinity,missing=!v||age>3||age<-.5||offline;
       return h('div',{className:'fr-input',key:name,'data-stale':!replay&&missing},h('strong',null,label),h('span',null,replay?'回放':missing?'等待':age.toFixed(1)+'s'),
         h('small',null,v?['rgb','nir'].includes(name)?`${v.width} × ${v.height} · ${v.frame}`:name==='lidar'?`${v.points} 点 · ${v.frame}`:`${v.rate}Hz · ${v.channels}ch · ${finite(v.rms_dbfs)?v.rms_dbfs.toFixed(1):'—'}dBFS`:'尚未收到数据'));
     };
@@ -116,5 +125,5 @@ function rtabmapResearchFactory(React) {
         snapshot?.ros_error?h('div',null,'ROS: '+snapshot.ros_error):null,
         task==='avs'&&data?h('div',null,'音频时间戳质量：'+data.context.stamp_quality+'；本模型输出画面中的发声区域。'):null)));
   }
-  return {Component,parse,Spark};
+  return {Component,parse,Spark,browserClockOffset};
 }

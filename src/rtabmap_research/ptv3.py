@@ -5,6 +5,7 @@ and unrelated models are not loaded. Every inference parameter loads strictly.
 """
 import ast
 import codecs
+from contextlib import contextmanager
 import hashlib
 import importlib
 from pathlib import Path
@@ -23,6 +24,25 @@ LABELS=['wall','floor','cabinet','bed','chair','sofa','table','door','window','b
         'bathtub','otherfurniture']
 CHINESE=['墙','地面','柜子','床','椅子','沙发','桌子','门','窗户','书架',
          '画','柜台','书桌','窗帘','冰箱','浴帘','马桶','洗手池','浴缸','其他家具']
+
+
+@contextmanager
+def checkpoint_safe_globals(allowed):
+    """Use the same temporary allowlist on JetPack nv24.08 and stable torch."""
+    serialization = torch.serialization
+    if hasattr(serialization, 'safe_globals'):
+        with serialization.safe_globals(allowed):
+            yield
+        return
+    # NVIDIA's 2.5 preview has the registry API but predates its context manager.
+    # Copy the registry before adding entries and restore it even if loading fails.
+    previous = list(serialization.get_safe_globals())
+    serialization.add_safe_globals(allowed)
+    try:
+        yield
+    finally:
+        serialization.clear_safe_globals()
+        serialization.add_safe_globals(previous)
 
 
 def package(name,directory):
@@ -128,7 +148,7 @@ class PointTransformer:
             raise ValueError('Pointcept official checkpoint SHA256 mismatch')
         # This official checkpoint includes optimizer/scheduler metadata. Permit
         # only its known metadata types while keeping weights-only deserialization.
-        with torch.serialization.safe_globals([getattr,codecs.encode,
+        with checkpoint_safe_globals([getattr,codecs.encode,
                 torch.optim.lr_scheduler.OneCycleLR,np.core.multiarray.scalar,np.dtype,
                 type(np.dtype('float64')),type(np.dtype('float32'))]):
             checkpoint=torch.load(weights,map_location='cpu',weights_only=True)

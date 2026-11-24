@@ -64,6 +64,51 @@ def test_pcm_gap_and_duplicate_do_not_fabricate_a_window():
     assert len(timeline.windows)==1
 
 
+def test_go2_short_windows_cover_ten_seconds_and_prune_old_audio():
+    rate=8000
+    source=np.sin(np.arange(rate*16)/10).astype(np.float32)
+    timeline=AudioTimeline()
+    for i in range(151):
+        offset=i*(rate//10)
+        timeline.add(offset/rate,source[offset:offset+rate//2],rate,str(i),'estimated')
+    samples,_,start,end,_=timeline.extract()
+    assert end==15.5 and start==5.5
+    np.testing.assert_array_equal(samples,source[int(start*rate):int(end*rate)])
+    assert 64<len(timeline.windows)<151
+    assert timeline.windows[0][1]>=end-timeline.max_seconds
+
+
+def test_audio_window_can_end_at_delayed_video_time_without_padding():
+    rate=8000
+    source=np.sin(np.arange(rate*15)/10).astype(np.float32)
+    timeline=AudioTimeline()
+    for i in range(27):
+        offset=i*(rate//2)
+        timeline.add(offset/rate,source[offset:offset+2*rate],rate,str(i),'estimated')
+    samples,_,start,end,_=timeline.extract(end=13.)
+    assert start==3. and end==13.
+    np.testing.assert_array_equal(samples,source[3*rate:13*rate])
+    with pytest.raises(NotReady):timeline.extract(end=15.1)
+
+
+def test_avs_pairs_local_audio_with_delayed_wifi_video(monkeypatch):
+    sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
+    from run_fusion_research import Research
+    research=Research.__new__(Research)
+    research.audio=AudioTimeline()
+    research.cfg={'max_input_age_s':3.,'avs_sync_tolerance_s':.25}
+    rate=8000
+    for i in range(27):
+        research.audio.add(i*.5,np.full(2*rate,i,np.float32),rate,str(i),'estimated')
+    research.frames=[(i*.2,None,'camera') for i in range(69)]
+    monkeypatch.setattr(time,'time',lambda:15.)
+    bundle=research.avs_bundle()
+    assert bundle['audio_end']<15.
+    assert bundle['frame_stamps'][-1]==research.frames[-1][0]
+    assert len(set(bundle['frame_stamps']))==10
+    assert bundle['gap_s']<=.25
+
+
 def test_frames_require_ten_distinct_matching_exposures():
     frames=[(float(i),None,'camera') for i in range(10)]
     selected,gaps=pair_frames(frames,np.arange(10)+.1,.2)

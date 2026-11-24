@@ -152,6 +152,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     cam_to_lidar_roll = float(LaunchConfiguration('cam_to_lidar_roll').perform(context))
     cam_to_lidar_pitch = float(LaunchConfiguration('cam_to_lidar_pitch').perform(context))
     cam_to_lidar_yaw = float(LaunchConfiguration('cam_to_lidar_yaw').perform(context))
+    publish_camera_tf = LaunchConfiguration('publish_camera_tf').perform(context).lower() == 'true'
     if not all(math.isfinite(value) for value in (
             cam_to_lidar_x, cam_to_lidar_y, cam_to_lidar_z,
             cam_to_lidar_roll, cam_to_lidar_pitch, cam_to_lidar_yaw)):
@@ -163,7 +164,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         abs(cam_to_lidar_z) < 0.001 and abs(cam_to_lidar_roll) < 0.001 and
         abs(cam_to_lidar_pitch) < 0.001 and abs(cam_to_lidar_yaw) < 0.001
     )
-    if use_camera and cam_extrinsics_all_zero:
+    if use_camera and publish_camera_tf and cam_extrinsics_all_zero:
         log_warn = [
             LogInfo(msg='\n'
             '=============================================\n'
@@ -651,7 +652,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     )
 
     # ----- 仅融合模式启动回环诊断；纯雷达仅建图 -----
-    if use_camera:
+    if use_camera and LaunchConfiguration('loop_diagnostics_enabled').perform(context).lower() == 'true':
         nodes.append(
             ExecuteProcess(
                 cmd=[FindExecutable(name='python3'),
@@ -670,7 +671,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
     # ----- 静态 TF 变换（LiDAR → 相机）-----
     # RealSense 自动发布 camera_link → camera_color_optical_frame
     # 我们只需要补上 livox_frame → camera_link 这段
-    if use_camera:
+    if use_camera and publish_camera_tf:
         nodes.append(
             Node(
                 package='tf2_ros',
@@ -747,6 +748,14 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'semantic_enabled', default_value='false',
             description='Enable object labels in the semantic-enabled rtabmap_viz overlay.'),
+
+        DeclareLaunchArgument(
+            'publish_camera_tf', default_value='true',
+            description='Publish the mounting TF; false when an existing calibrated publisher owns camera_link.'),
+
+        DeclareLaunchArgument(
+            'loop_diagnostics_enabled', default_value='true',
+            description='Start loop diagnostics; false when the display supervisor already owns them.'),
 
         DeclareLaunchArgument(
             'semantic_label_details', default_value='false',

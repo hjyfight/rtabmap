@@ -53,6 +53,21 @@ def resolve_launch(*, inspect_action=None, launch_file='launch/semantic_slam.lau
 
 
 class SemanticLaunchTests(unittest.TestCase):
+    def test_wireless_display_reuses_camera_tf_and_loop_diagnostics(self):
+        commands = []
+        def inspect(action, context):
+            if isinstance(action, ExecuteProcess):
+                commands.append([perform_substitutions(context, part) for part in action.cmd])
+        nodes = resolve_launch(inspect_action=inspect, publish_camera_tf='false',
+                               loop_diagnostics_enabled='false', register_depth='false')
+        self.assertNotIn('static_transform_publisher', nodes)
+        self.assertNotIn('register_node', nodes)
+        self.assertIn('rgbd_sync', nodes)
+        self.assertIn('semantic_mapper', nodes)
+        self.assertIn('keyframe_bridge', nodes)
+        self.assertEqual(sum(any(part.endswith('/guard_rgbd_input.py') for part in cmd) for cmd in commands), 1)
+        self.assertFalse(any(any(part.endswith('/loop_closure_diagnostics.py') for part in cmd) for cmd in commands))
+
     def test_only_validated_rgbd_reaches_backend(self):
         remaps, commands = {}, []
 

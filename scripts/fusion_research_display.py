@@ -34,5 +34,6 @@ def display_commands(root):
             ]]
     commands.append(('loops',['/usr/bin/python3','-u',str(root/'scripts/loop_closure_diagnostics.py'),
         '--status-window','false','--depth-topic','/camera/depth_registered/image_rect',
-        '--log-file',str(root/'logs/research/loops_events.jsonl'),'--ros-args',*remaps]))
+        '--log-file',str(root/'logs/research/loops_events.jsonl'),'--ros-args',
+        '-r','__node:=research_loop_closure_diagnostics_3001',*remaps]))
     return commands

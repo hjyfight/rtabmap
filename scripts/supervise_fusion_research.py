@@ -48,13 +48,16 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--audio',choices=['auto','reuse'],default='auto')
     parser.add_argument('--alsa-device',default='hw:CARD=XFMDPV0018,DEV=0')
+    parser.add_argument('--remote-research-url', help='Display Orin research outputs instead of running local models')
+    parser.add_argument('--remote-clock-offset', type=float, default=0., help='Workstation wall clock minus Orin wall clock')
+    parser.add_argument('--remote-display-host', help='Receive Orin display topics over compressed TCP instead of running local adapters')
     args=parser.parse_args()
     directory=ROOT/'logs/research';directory.mkdir(exist_ok=True)
     with (directory/'dashboard-3001.lock').open('a') as lock:
         try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:raise SystemExit('3001研究服务已启动，请访问 http://localhost:3001/')
         if port_open(3001):raise SystemExit('3001端口已被占用；不会移动到3000或其他端口')
-        if not PYTHON.exists():raise SystemExit('缺少 .venv-fusion-research 推理环境')
+        if not args.remote_research_url and not PYTHON.exists():raise SystemExit('缺少 .venv-fusion-research 推理环境')
         subprocess.run(['/usr/bin/python3',str(ROOT/'scripts/install_fusion_research_dashboard.py')],check=True)
         env=dict(os.environ,PORT='3001',HOSTNAME='0.0.0.0',MITI_BRIDGE_PORT='8766',BRIDGE_PORT='8766',BRIDGE_PORT_FIXED='1',
                  MITI_STATE_DIR=str(directory/'miti-state'),PYTHONUNBUFFERED='1',OMP_NUM_THREADS='2',MKL_NUM_THREADS='2',OPENBLAS_NUM_THREADS='1',
@@ -70,11 +73,15 @@ def main():
         def interrupted(*_):raise KeyboardInterrupt
         signal.signal(signal.SIGTERM,interrupted);signal.signal(signal.SIGINT,interrupted)
         try:
-            library=ROOT/'build/dynamic_cloud/libdynamic_cloud.so'
-            if not library.exists() or (ROOT/'scripts/dynamic_cloud_filter.cpp').stat().st_mtime>library.stat().st_mtime:
-                subprocess.run(['bash',str(ROOT/'scripts/build_dynamic_cloud.sh')],env=env,check=True)
-            for name, command in display_commands(ROOT):
-                spawn(name, command)
+            if args.remote_display_host:
+                spawn('remote-display',['/usr/bin/python3','-u',ROOT/'scripts/research_display_transport.py',
+                    'receive','--host',args.remote_display_host,'--port','7449','--socket-timeout','10'])
+            else:
+                library=ROOT/'build/dynamic_cloud/libdynamic_cloud.so'
+                if not library.exists() or (ROOT/'scripts/dynamic_cloud_filter.cpp').stat().st_mtime>library.stat().st_mtime:
+                    subprocess.run(['bash',str(ROOT/'scripts/build_dynamic_cloud.sh')],env=env,check=True)
+                for name, command in display_commands(ROOT):
+                    spawn(name, command)
             if port_open(8766):
                 if not bridge_open(8766):raise RuntimeError('8766被其他服务占用')
             else:
@@ -85,7 +92,7 @@ def main():
                         raise RuntimeError('3001独立ROS桥启动失败，请查看 logs/research/bridge.log')
                     time.sleep(.3)
             config=json.loads((ROOT/'config/fusion_research.json').read_text())
-            if config.get('clock_mode')=='ssh_preview':
+            if not args.remote_research_url and config.get('clock_mode')=='ssh_preview':
                 report_path=directory/'clock.json'
                 try:
                     subprocess.run(['/usr/bin/python3',str(ROOT/'scripts/measure_fourmodal_clock.py'),
@@ -104,9 +111,14 @@ def main():
                     print('3001未取得当前时钟估计；保留配置偏移，时间不匹配时等待：'+str(error),flush=True)
             runtime=directory/'runtime.json';runtime.write_text(json.dumps(config,indent=2))
             inference_python=ROOT/'.venv-indoor-research/bin/python3' if config.get('pmf_backend') in ('ptv3_compare','odin_compare') else PYTHON
-            if not inference_python.exists():raise RuntimeError('缺少所选室内模型的独立推理环境')
-            spawn('inference',[inference_python,'-u',ROOT/'scripts/run_fusion_research.py','--config',runtime])
-            if args.audio=='auto':spawn('audio',[PYTHON,'-u',ROOT/'scripts/research_audio_capture.py','--alsa-device',args.alsa_device])
+            if args.remote_research_url:
+                spawn('remote-research',['/usr/bin/python3','-u',ROOT/'scripts/research_result_transport.py',
+                    'pull','--directory',APP/'public/research','--url',args.remote_research_url,
+                    '--clock-offset',str(args.remote_clock_offset)])
+            else:
+                if not inference_python.exists():raise RuntimeError('缺少所选室内模型的独立推理环境')
+                spawn('inference',[inference_python,'-u',ROOT/'scripts/run_fusion_research.py','--config',runtime])
+                if args.audio=='auto':spawn('audio',[PYTHON,'-u',ROOT/'scripts/research_audio_capture.py','--alsa-device',args.alsa_device])
             spawn('web',[APP/'node/bin/node',APP/'server.js'],APP)
             (directory/'supervisor.json').write_text(json.dumps(dict(pid=os.getpid(),web_port=3001,bridge_port=8766,
                  children={name:process.pid for name,process in children}),indent=2))

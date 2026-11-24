@@ -1,5 +1,11 @@
 # Orin 建图与语义识别环境
 
+## 3001 研究模型部署与测速（2026-11-22）
+
+RGB/NIR、ODIN-Swin／PTv3 室内对照和 AVSegFormer 的 ARM64 CUDA 环境、
+完整权重及每项 10 轮 GPU 回放测速已验证，见
+[3001 研究模型部署记录](orin_research_deployment_20261122.md)。
+
 ## 同步工作站最新源码（2026-11-17）
 
 当前 SSH 地址为 `qiyuan@192.168.1.103`，项目目录仍为

@@ -193,6 +193,8 @@ class Transport(Node):
         self.active_connection = None
         self.stats = Counter()
         self.started = time.monotonic()
+        self.reported_at = self.started
+        self.reported_stats = Counter()
         self.last_link_warning = 0.0
         self.outputs = []
         self.subscriptions_owned = []
@@ -201,14 +203,7 @@ class Transport(Node):
         for index, (topic, kind) in enumerate(STREAMS):
             if args.mode == 'send' and index not in send_indices:
                 continue
-            qos = QoSProfile(depth=100 if kind is Imu else 5,
-                             reliability=ReliabilityPolicy.BEST_EFFORT)
-            if kind in (PointCloud2, CameraInfo, TFMessage) or topic in (
-                    '/camera/depth/image_rect_raw', '/camera/infra2/image_rect_raw'):
-                qos.reliability = ReliabilityPolicy.RELIABLE
-            if topic == '/tf_static':
-                qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
-                                 durability=DurabilityPolicy.TRANSIENT_LOCAL)
+            qos = self.stream_qos(topic, kind)
             if args.mode == 'send':
                 self.subscriptions_owned.append(self.create_subscription(
                     kind, topic, lambda msg, i=index: self.queue(i, msg), qos))
@@ -225,6 +220,21 @@ class Transport(Node):
                            durability=DurabilityPolicy.TRANSIENT_LOCAL)))
         self.thread = threading.Thread(target=self.network, daemon=True)
         self.thread.start()
+
+    def stream_qos(self, topic, kind):
+        qos = QoSProfile(depth=100 if kind is Imu else 5,
+                         reliability=ReliabilityPolicy.BEST_EFFORT)
+        if kind in (PointCloud2, CameraInfo, TFMessage) or topic in (
+                '/camera/depth/image_rect_raw', '/camera/infra2/image_rect_raw'):
+            qos.reliability = ReliabilityPolicy.RELIABLE
+        if topic == '/tf_static':
+            qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
+                             durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        return qos
+
+    def replay_cached(self):
+        """Optional non-TF display snapshots to replay after a reconnect."""
+        pass
 
     def queue(self, index, message):
         if STREAMS[index][0] == '/tf_static':
@@ -257,6 +267,7 @@ class Transport(Node):
             if self.static:
                 msg = TFMessage(transforms=list(self.static.values()))
                 self.latest[STATIC_STREAM_INDEX] = encode(STATIC_STREAM_INDEX, msg)[0]
+        self.replay_cached()
         while not self.stop.is_set():
             with self.condition:
                 if not self.latest and not self.imu:
@@ -267,8 +278,10 @@ class Transport(Node):
                 self.imu.clear()
                 if self.latest:
                     batch.append(self.latest.popitem(last=False))
+            # Batch small IMU frames to avoid a write/ACK round trip for each
+            # sample while retaining their individual timestamps and wire IDs.
+            connection.sendall(b''.join(packet for _, packet in batch))
             for index, packet in batch:
-                connection.sendall(packet)
                 self.stats['wire_bytes'] += len(packet)
                 self.stats['sent_' + STREAMS[index][0]] += 1
 
@@ -321,6 +334,7 @@ class Transport(Node):
                     connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                     connection.settimeout(getattr(self.args, 'socket_timeout', 5))
                     self.active_connection = connection
+                    connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                     self.get_logger().info('Compressed sensor link connected')
                     if listener:
                         self.send_session(connection)
@@ -345,14 +359,21 @@ class Transport(Node):
                 listener.close()
 
     def report(self):
-        elapsed = time.monotonic() - self.started
+        now = time.monotonic()
+        elapsed = now - self.started
+        interval = max(now - self.reported_at, 1e-6)
         result = dict(self.stats)
+        result['interval_mbps'] = round((self.stats['wire_bytes'] - self.reported_stats['wire_bytes']) * 8 / interval / 1e6, 2)
+        result['interval_hz'] = {key: round((value - self.reported_stats[key]) / interval, 2)
+                                 for key, value in self.stats.items()
+                                 if key.startswith(('sent_', 'received_'))}
         result.update(connected=self.connected, seconds=round(elapsed, 1),
                       average_mbps=round(self.stats['wire_bytes'] * 8 / elapsed / 1e6, 2))
+        self.reported_at, self.reported_stats = now, self.stats.copy()
         self.get_logger().info(json.dumps(result, sort_keys=True))
 
 
-def main():
+def main(node_class=Transport):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', choices=['send', 'receive'])
     parser.add_argument('--host', required=True)
@@ -390,7 +411,7 @@ def main():
         raise KeyboardInterrupt
     signal.signal(signal.SIGINT, stop_signal)
     signal.signal(signal.SIGTERM, stop_signal)
-    node = Transport(args)
+    node = node_class(args)
     try:
         while rclpy.ok() and not node.stop.is_set():
             rclpy.spin_once(node, timeout_sec=0.1)

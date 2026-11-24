@@ -249,10 +249,18 @@ class Research:
                     calibration=calibration)
 
     def avs_bundle(self):
-        pcm, rate, start, end, quality = self.audio.extract()
-        self.fresh(end)
         # Centres of author's 0.96s log-Mel patches (96 STFT frames, 25ms window).
-        times = start + .4875 + np.arange(10)*.96
+        centres = .4875 + np.arange(10)*.96
+        if not self.audio.windows:
+            raise NotReady('等待麦克风PCM')
+        if not self.frames:
+            raise NotReady('等待RGB图像')
+        # Local Orin audio can arrive before Go2 video over Wi-Fi. Select an
+        # actually covered audio window whose last patch has an available image.
+        end = min(self.audio.windows[-1][1], self.frames[-1][0] + 10 - centres[-1])
+        pcm, rate, start, end, quality = self.audio.extract(end=end)
+        self.fresh(end)
+        times = start + centres
         frames, gaps = pair_frames(self.frames, times, self.cfg['avs_sync_tolerance_s'])
         return dict(stamp=frames[-1][0], rgbs=[r[1] for r in frames], pcm=pcm, rate=rate,
                     audio_start=start, audio_end=end, frame_stamps=[r[0] for r in frames],
@@ -477,7 +485,7 @@ class Research:
                 value=self.snapshot(key)
                 atomic_json(self.public/f'{key}.json',value)
                 publisher=self.publishers.get(key)
-                if publisher:
+                if publisher and self.cfg.get('publish_ros_snapshots', True):
                     try:
                         publisher.publish(String(data=json.dumps(value,ensure_ascii=False,allow_nan=False)))
                     except Exception:

@@ -87,7 +87,14 @@ def main():
     except (subprocess.SubprocessError, ValueError) as error:
         if not args.sensor_fallback:
             raise
-        report = sensor_arrival_estimate()
+        try:
+            report = sensor_arrival_estimate()
+        except RuntimeError as initial_error:
+            # A short best-effort sample can miss frames during DDS discovery.
+            # One retry still fits the caller's 28-second startup deadline.
+            time.sleep(.5)
+            report = sensor_arrival_estimate()
+            report['arrival_estimate_retry_reason'] = str(initial_error)
         report['ssh_error'] = str(error)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + '\n')

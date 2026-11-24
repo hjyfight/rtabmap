@@ -143,7 +143,10 @@ class AudioTimeline:
     used as valid input. Estimated ADC timestamps remain explicitly estimated.
     """
     def __init__(self, max_seconds=14):
-        self.windows = deque(maxlen=64)
+        # Go2 publishes 0.5s windows every 0.1s. A 64-window cap retains only
+        # 6.8s, so the required 10s AVS input could never become complete.
+        # Keep a bounded buffer and prune by the actual sample timeline below.
+        self.windows = deque(maxlen=512)
         self.rate = None
         self.max_seconds = max_seconds
         self.last_source = None
@@ -164,10 +167,13 @@ class AudioTimeline:
         while self.windows and self.windows[0][1] < end - self.max_seconds:
             self.windows.popleft()
 
-    def extract(self, seconds=10):
+    def extract(self, seconds=10, *, end=None):
         if not self.windows:
             raise NotReady('等待麦克风PCM')
-        end = self.windows[-1][1]
+        if end is None:
+            end = self.windows[-1][1]
+        elif not np.isfinite(end) or end > self.windows[-1][1]:
+            raise NotReady('音频尚未覆盖请求的采集时间')
         start, count = end - seconds, int(round(seconds * self.rate))
         samples, covered = np.zeros(count, np.float32), np.zeros(count, bool)
         for t, _, pcm, _ in self.windows:

@@ -34,8 +34,8 @@ def layout():
 
 
 def install():
-    if not SOURCE.exists():raise SystemExit('请先安装项目现有MITI')
     marker=TARGET/'.research-copy-complete'
+    if not SOURCE.exists() and not marker.exists():raise SystemExit('请先安装项目现有MITI或部署便携研究网页包')
     if not marker.exists():
         # The apt bundle's .next/cache points outside the app into /var/cache.
         # It is runtime state, and must neither be shared nor dereferenced.

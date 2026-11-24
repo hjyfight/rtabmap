@@ -89,6 +89,22 @@ class PreflightTests(unittest.TestCase):
     def test_drivers_alone_can_start(self):
         self.assertEqual(preflight.verify(self.sample()), (424, 240))
 
+    def test_research_display_diagnostics_allow_mapping_restart(self):
+        display = load_script('fusion_research_display')
+        command = dict(display.display_commands(ROOT))['loops']
+        remap = next(arg for arg in command if arg.startswith('__node:='))
+        self.assertIn('/miti/loop_status:=/miti/research/display/loop_status', command)
+        sample = self.sample()
+        sample['nodes'].append('/' + remap.split(':=', 1)[1])
+        self.assertEqual(preflight.verify(sample), (424, 240))
+        for name in ('/rtabmap', '/semantic_mapper', '/semantic_keyframe_bridge',
+                     '/imu_filter_madgwick'):
+            with self.subTest(node=name):
+                unsafe = copy.deepcopy(sample)
+                unsafe['nodes'].append(name)
+                with self.assertRaisesRegex(ValueError, name):
+                    preflight.verify(unsafe)
+
     def test_separate_depth_preview_is_allowed_but_mapping_sync_still_blocks_start(self):
         sample=self.sample()
         sample['nodes']+=['/depth_registration','/depth_preview_rgbd_sync','/segmentation_fusion']

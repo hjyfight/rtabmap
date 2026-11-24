@@ -32,14 +32,29 @@ DISPLAY_LABELS = {**PMF_LABELS,
     'vacuum-cleaner':'吸尘器', 'violin':'小提琴', 'wolf':'狼', 'woman':'女人',
 }
 
+FONT_PATHS = (
+    '/usr/share/fonts/opentype/noto/NotoSansCJK-Medium.ttc',
+    '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+    '/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc',
+    '/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf',
+)
+
+
+def supports_annotation_text(candidate):
+    missing = candidate.getmask('\U0010ffff')
+    signature = (missing.size, bytes(missing))
+    return all((mask.size, bytes(mask)) != signature
+               for mask in (candidate.getmask(char) for char in 'RGB123+·墙模型预测'))
+
 
 @lru_cache(maxsize=4)
 def font(size):
-    for path in ('/usr/share/fonts/opentype/noto/NotoSansCJK-Medium.ttc',
-                 '/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf'):
+    for path in FONT_PATHS:
         if Path(path).exists():
-            return ImageFont.truetype(path, size)
-    return ImageFont.truetype('DejaVuSans.ttf', size)
+            candidate = ImageFont.truetype(path, size)
+            if supports_annotation_text(candidate):
+                return candidate
+    raise RuntimeError('预测图需要同时支持中文、英文和数字的字体，请安装 fonts-noto-cjk')
 
 
 def regions(labels, names, valid=None, background=0, limit=5):
