@@ -3,14 +3,17 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>多源感知 · 流程与验证</title>
-  <link rel="stylesheet" href="/research-process.css?v=5">
-  <script defer src="/research-process.js?v=5"></script>
+  <link rel="stylesheet" href="/research-process.css?v=6">
+  <script defer src="/research-mapping.js?v=1"></script>
+  <script defer src="/research-process.js?v=6"></script>
 </head>
 <body>
   <header class="topbar"><a class="brand" href="/">◈ <span>多源感知</span></a><span class="divider"></span><strong>流程与验证</strong><a class="monitor-link" href="/">返回实时监控 ↗</a></header>
   <main class="workspace">
-    <div class="page-heading"><div><p class="eyebrow">MULTIMODAL PROCESS EXPLORER</p><h1>看见输入如何成为融合结果</h1><p class="intro">三条分支共同展示任务书流程，按实际处理环节逐步查看。</p></div><div class="sample-controls"><button id="freeze" aria-pressed="false">冻结当前样本</button><button id="download" disabled>导出展示记录</button></div></div>
-    <nav class="branches" aria-label="融合分支"><button data-branch="pmf" aria-pressed="true">RGB + LiDAR <span>深度辅助</span></button><button data-branch="rgbnir" aria-pressed="false">RGB + 近红外</button><button data-branch="avs" aria-pressed="false">RGB + 声学</button><button data-branch="coverage" aria-pressed="false">任务书覆盖</button></nav>
+    <div class="page-heading"><div><p class="eyebrow" id="page-kicker">MULTIMODAL PROCESS EXPLORER</p><h1 id="page-title">看见输入如何成为融合结果</h1><p class="intro" id="page-intro">三条分支共同展示任务书流程，按实际处理环节逐步查看。</p></div><div class="sample-controls"><button id="freeze" aria-pressed="false">冻结当前样本</button><button id="download" disabled>导出展示记录</button></div></div>
+    <nav class="standards" aria-label="标准选择"><button data-standard="fusion" aria-pressed="true">融合标准</button><button data-standard="mapping" aria-pressed="false">建图标准</button></nav>
+    <nav id="fusion-branches" class="branches" aria-label="融合分支"><button data-branch="pmf" aria-pressed="true">RGB + LiDAR <span>深度辅助</span></button><button data-branch="rgbnir" aria-pressed="false">RGB + 近红外</button><button data-branch="avs" aria-pressed="false">RGB + 声学</button><button data-branch="coverage" aria-pressed="false">任务书覆盖</button></nav>
+    <nav id="mapping-branches" class="branches" aria-label="建图展示" hidden><button data-map-view="process" aria-pressed="true">建图流程与记录</button><button data-map-view="coverage" aria-pressed="false">任务书与大纲覆盖</button></nav>
     <div id="sample-status" class="sample-status" role="status">正在读取3001保存记录…</div>
     <div class="explorer">
       <nav id="stages" class="stages" aria-label="处理步骤"></nav>

@@ -9,7 +9,7 @@ import signal
 import time
 
 import numpy as np
-from research_validation import interface_audit, sync_audit, load_policy, verification_revision
+from research_validation import interface_audit, sync_audit, load_policy, verification_revision, PROTOCOL
 
 ROOT = Path(__file__).resolve().parents[1]
 TASKS = ('pmf', 'rgbnir', 'avs')
@@ -218,7 +218,38 @@ def build_sample(task, snapshot, archive):
     return sample
 
 
-def export_once(directory, cache, throttle, interval=6):
+def build_snapshot_sample(task, snapshot):
+    """Display recorded JSON results without inventing missing NPZ input evidence."""
+    result=snapshot.get('result') or {}
+    if snapshot.get('task')!=task or not snapshot.get('session_id') or result.get('sequence') is None:
+        raise ValueError('invalid result snapshot identity')
+    context=result.get('context') or {}
+    meta=dict(task=task,session=snapshot['session_id'],sequence=result['sequence'],context=context)
+    sample=dict(schema='research_process/1',task=task,session_id=snapshot['session_id'],sequence=result['sequence'],
+        source_stamp=result.get('source_stamp'),exported_at=time.time(),context=context,model=snapshot.get('model') or {},
+        timing=timing(task,context),interface_example={},features=result.get('features',[]),images=result.get('images',{}),
+        output_shape=result.get('output_shape'),classes=result.get('classes',[]),inference_ms=result.get('inference_s',0)*1000,
+        feature_statistics=result.get('feature_statistics',[]),comparison=result.get('comparison'),
+        reference_input=result.get('reference_input'),visuals={},tables={},archive_level='result_snapshot_only',
+        evaluation=dict(verified=False,note='仅有原模型结果快照，输入及完整张量未归档；精度仍待实测。'),
+        validation_revision=verification_revision(ROOT))
+    sample['interface_validation']=dict(schema='research_interface_check/1',state='missing',
+        batch_key=f"{task}:{snapshot['session_id']}:{result['sequence']}",protocol=PROTOCOL,inputs=[],features=[],
+        checks=[dict(layer='输入—特征—输出',name='完整特征归档',state='missing',
+                     detail='当前运行未保存NPZ，无法核对输入与数组；只展示JSON中的原模型输出。')],
+        counts={'pass':0,'fail':0,'missing':1},note='没有将结果快照转写为已验证的输入或张量归档。')
+    sample['sync_validation']=sync_audit(task,meta,sample['timing'],load_policy(ROOT),ROOT)
+    if task=='avs':
+        sample['tables']['audio_vectors']={f['name'].replace('.','_'):f['vector'] for f in sample['features']
+            if f.get('name') in ('audio.embedding','audio.projected') and f.get('vector')}
+    if task=='rgbnir' and context.get('rgb_info',{}).get('k'):
+        sample['tables']['intrinsics']=numeric(np.asarray(context['rgb_info']['k']).reshape(3,3))
+    matrix=context.get('camera_from_lidar') if task=='pmf' else context.get('nir_from_rgb')
+    if matrix is not None:sample['tables']['extrinsics']=numeric(matrix)
+    return sample
+
+
+def export_once(directory, cache, throttle, interval=6, allow_snapshot_only=False):
     output = directory/'process'; output.mkdir(exist_ok=True)
     status = dict(schema='research_process_status/1', published_at=time.time(), branches={})
     for task in TASKS:
@@ -232,8 +263,12 @@ def export_once(directory, cache, throttle, interval=6):
             if result and identity != cache.get(task) and time.monotonic()-throttle.get(task, -interval) >= interval:
                 throttle[task] = time.monotonic()
                 try:
-                    with np.load(directory/(task+'_features.npz'), allow_pickle=False) as archive:
-                        sample = build_sample(task, snapshot, archive)
+                    path=directory/(task+'_features.npz')
+                    if allow_snapshot_only and (not path.exists() or path.stat().st_size==0):
+                        sample=build_snapshot_sample(task,snapshot)
+                    else:
+                        with np.load(path, allow_pickle=False) as archive:
+                            sample = build_sample(task, snapshot, archive)
                     atomic_json(output/(task+'.json'), sample)
                     cache[task] = identity
                 except (ValueError, OSError, KeyError, EOFError) as error:
@@ -251,6 +286,7 @@ def main():
     parser.add_argument('--directory', type=Path, default=ROOT/'.tools/miti-research/root/usr/lib/miti/public/research')
     parser.add_argument('--once', action='store_true')
     parser.add_argument('--interval', type=float, default=6.)
+    parser.add_argument('--allow-snapshot-only',action='store_true',help='Display existing JSON results when no NPZ was saved; keep missing evidence explicit')
     args = parser.parse_args()
     os.nice(10)
     cache, throttle = {}, {}
@@ -261,7 +297,7 @@ def main():
         except (OSError, ValueError, KeyError):
             pass
     if args.once:
-        result=export_once(args.directory, cache, throttle, args.interval)
+        result=export_once(args.directory, cache, throttle, args.interval,args.allow_snapshot_only)
         print(json.dumps({key:dict(sample=row.get('sample_identity'),error=row.get('exporter_error'))
                           for key,row in result['branches'].items()},ensure_ascii=False))
         return
@@ -269,7 +305,7 @@ def main():
         raise SystemExit(0)
     signal.signal(signal.SIGTERM, stop); signal.signal(signal.SIGINT, stop)
     while True:
-        export_once(args.directory, cache, throttle, args.interval)
+        export_once(args.directory, cache, throttle, args.interval,args.allow_snapshot_only)
         time.sleep(3)
 
 

@@ -3,7 +3,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
 const {chromium}=require('/usr/lib/chatgpt/resources/cua_node/lib/node_modules/playwright');
 const root=path.resolve(__dirname,'..'),exportsDir=path.join(root,'.tools/miti-research/root/usr/lib/miti/public/research/process');
 const out=path.join(root,'logs/research/process-ui');fs.mkdirSync(out,{recursive:true});
-const resources={'/research-process.html':['config/research_process.html','text/html'],'/research-process.js':['config/research_process.js','text/javascript'],'/research-process.css':['config/research_process.css','text/css']};
+const resources={'/research-process.html':['config/research_process.html','text/html'],'/research-process.js':['config/research_process.js','text/javascript'],'/research-mapping.js':['config/research_mapping.js','text/javascript'],'/research-process.css':['config/research_process.css','text/css']};
 const fixtures=Object.fromEntries(['status','pmf','rgbnir','avs'].map(key=>[key,JSON.parse(fs.readFileSync(path.join(exportsDir,key+'.json'),'utf8'))]));
 const baseSequence=fixtures.pmf.sequence;
 for(const key of ['pmf','rgbnir','avs'])fixtures.status.branches[key].sample_identity=[fixtures[key].session_id,fixtures[key].sequence];

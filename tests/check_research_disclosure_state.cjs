@@ -27,6 +27,8 @@ function page(blockStorage=false){
     sessionStorage:{getItem(key){if(blockStorage)throw Error('storage disabled');return saved.get(key)||null;},
       setItem(key,value){if(blockStorage)throw Error('storage disabled');saved.set(key,value);}}};
   vm.createContext(context);
+  context.URL=URL;context.location={href:'http://test.local:3001/research-process.html'};
+  vm.runInContext(fs.readFileSync(path.join(root,'config/research_mapping.js'),'utf8'),context);
   let source=fs.readFileSync(path.join(root,'config/research_process.js'),'utf8');
   source=source.replace(/\}\)\(\);\s*$/,'globalThis.testView={render,setEvidence,setView:(next,index,value)=>{branch=next;step=index;samples[next]=value;render();}};})();');
   vm.runInContext(source,context);

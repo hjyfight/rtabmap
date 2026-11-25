@@ -7,6 +7,8 @@ const element=id=>{if(!nodes.has(id))nodes.set(id,{innerHTML:'',textContent:'',d
 const context={document:{hidden:true,getElementById:element,querySelectorAll(){return []},addEventListener(){}},
   window:{devicePixelRatio:1},ResizeObserver:class {observe(){}disconnect(){}},setInterval(){},setTimeout(){},clearTimeout(){},console};
 vm.createContext(context);
+  context.URL=URL;context.location={href:'http://test.local:3001/research-process.html'};
+  vm.runInContext(fs.readFileSync(path.join(root,'config/research_mapping.js'),'utf8'),context);
 let code=fs.readFileSync(path.join(root,'config/research_process.js'),'utf8');
 code=code.replace(/\}\)\(\);\s*$/, 'globalThis.testRender={interfaceMarkup,syncMarkup,stageMarkup,setEvidence,setBranch:(value,index=2)=>{branch=value;step=index;}};})();');
 vm.runInContext(code,context);

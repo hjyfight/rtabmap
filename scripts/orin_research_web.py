@@ -87,6 +87,11 @@ def main():
         viewer_env = dict(env, ROS_DOMAIN_ID='75')
         whitelist = "['^/(tf|tf_static|icp_odom)$','^/miti/research/display/.*$','^/camera/.*$']"
         commands = [
+            ('process_export', [str(ROOT/'.venv-indoor-research/bin/python3'), '-u',
+                str(ROOT/'scripts/export_research_process.py'), '--directory', str(APP/'public/research'),
+                '--allow-snapshot-only'], env),
+            ('mapping_export', ['/usr/bin/python3', '-u', str(ROOT/'scripts/export_research_mapping.py'),
+                '--directory', str(APP/'public/research/mapping')], env),
             ('display_send', ['/usr/bin/python3', '-u', str(ROOT / 'scripts/research_display_transport.py'),
                 'send', '--host', '127.0.0.1', '--port', '7450', '--socket-timeout', '10'], env),
             ('display_receive', ['/usr/bin/python3', '-u', str(ROOT / 'scripts/research_display_transport.py'),
@@ -103,6 +108,9 @@ def main():
         signal.signal(signal.SIGTERM, stop)
         try:
             link_results()
+            # Register initial static JSON paths before Next starts scanning public/.
+            subprocess.run([str(ROOT/'.venv-indoor-research/bin/python3'),str(ROOT/'scripts/export_research_process.py'),
+                '--directory',str(APP/'public/research'),'--allow-snapshot-only','--once'],env=env,check=True)
             for name, command, child_env in commands:
                 output = (base / (name + '.log')).open('a')
                 outputs.append(output)

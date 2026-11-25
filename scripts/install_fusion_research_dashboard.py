@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import tempfile
 from fusion_research_display import private_display_source, private_layout
+from research_mapping_data import archived_map_sample,atomic_json
 
 ROOT=Path(__file__).resolve().parents[1]
 SOURCE=ROOT/'.tools/miti/root/usr/lib/miti'
@@ -80,11 +81,18 @@ def install():
     public=TARGET/'public'
     for source, destination in [('research_process.html','research-process.html'),
                                 ('research_process.css','research-process.css'),
-                                ('research_process.js','research-process.js')]:
+                                ('research_process.js','research-process.js'),
+                                ('research_mapping.js','research-mapping.js')]:
         shutil.copyfile(ROOT/'config'/source, public/destination)
     (public/'rtabmap-research-layout.json').write_text(json.dumps(research,ensure_ascii=False,indent=2))
     (public/'rtabmap.html').write_text('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>融合研究</title><script>location.replace("/")</script><a href="/">进入 PMF / AVSegFormer 融合研究页面</a></html>')
     directory=public/'research';directory.mkdir(exist_ok=True)
+    mapping=directory/'mapping';mapping.mkdir(exist_ok=True)
+    if not (mapping/'sample.json').exists():
+        initial=archived_map_sample(ROOT)
+        atomic_json(mapping/'sample.json',initial)
+        atomic_json(mapping/'status.json',dict(schema='research_mapping_status/1',published_at=initial['published_at'],
+            state=initial['state'],session_id=initial['session_id'],sequence=initial['sequence'],sources=initial['sources']))
     offline=ROOT/'logs/research/offline'
     if (offline/'index.html').exists():
         shutil.copytree(offline,directory/'offline',dirs_exist_ok=True)

@@ -123,6 +123,8 @@ def main():
             if not exporter_python.exists():exporter_python=PYTHON
             spawn('process-export',[exporter_python,'-u',ROOT/'scripts/export_research_process.py',
                   '--directory',APP/'public/research'])
+            spawn('mapping-export',['/usr/bin/python3','-u',ROOT/'scripts/export_research_mapping.py',
+                  '--directory',APP/'public/research/mapping'])
             spawn('web',[APP/'node/bin/node',APP/'server.js'],APP)
             (directory/'supervisor.json').write_text(json.dumps(dict(pid=os.getpid(),web_port=3001,bridge_port=8766,
                  children={name:process.pid for name,process in children}),indent=2))

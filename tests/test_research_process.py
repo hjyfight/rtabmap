@@ -7,7 +7,7 @@ import pytest
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'scripts'))
-from export_research_process import build_sample, timing, waveform
+from export_research_process import build_sample, build_snapshot_sample, timing, waveform, export_once
 
 
 def archive(tmp_path, task, **values):
@@ -80,3 +80,25 @@ def test_old_time_records_do_not_guess_applied_clock_offsets():
     row=timing('pmf',context)['rows'][0]
     assert row['a']==10. and row['b']==10.03
     assert 'raw_a' not in row
+
+
+def test_json_only_results_keep_real_previews_and_missing_input_evidence():
+    value=snapshot('avs');value['result'].update(context={},images={'overlay':'original-jpeg'},
+        features=[{'name':'audio.embedding','vector':[.1,.2],'saved_shape':[1,2]}])
+    sample=build_snapshot_sample('avs',value)
+    assert sample['images']['overlay']=='original-jpeg'
+    assert sample['archive_level']=='result_snapshot_only'
+    assert sample['interface_example']=={}
+    assert sample['interface_validation']['state']=='missing'
+    assert sample['tables']['audio_vectors']['audio_embedding']==[.1,.2]
+    assert 'waveform' not in sample['visuals']
+
+
+def test_snapshot_fallback_never_hides_a_mismatching_nonempty_archive(tmp_path):
+    value=snapshot('avs');value['result']['sequence']=5
+    (tmp_path/'avs.json').write_text(json.dumps(value))
+    with archive(tmp_path,'avs') as z:
+        (tmp_path/'avs_features.npz').write_bytes((tmp_path/'sample.npz').read_bytes())
+    status=export_once(tmp_path,{}, {},allow_snapshot_only=True)
+    assert 'identity mismatch' in status['branches']['avs']['exporter_error']
+    assert not (tmp_path/'process/avs.json').exists()

@@ -68,6 +68,20 @@
   const heat = (s,name,label) => {const f=feature(s,name);return figure(f?.heatmap,label||name,shape(f));};
   const sampleId = s => s?[s.session_id,s.sequence,s.validation_revision].filter(x=>x!=null).join(':'):'';
   const stamp = t => Number.isFinite(t)?new Date(t*1000).toLocaleString('zh-CN',{hour12:false,timeZone:'Asia/Shanghai'}):'—';
+  const mapping=window.ResearchMapping.create({$,esc,fmt,empty,note,figure,plot,table,flow,cloudPlot,canvasContext,stamp});
+  function standard(value){
+    const active=value==='mapping';
+    if(!mapping.isActive()){captureDisclosures($('visual'),visualDisclosureScope);captureDisclosures($('evidence'),evidenceDisclosureScope);}
+    visualDisclosureScope=null;evidenceDisclosureScope=null;
+    plotObserver?.disconnect();mapping.activate(active);
+    document.querySelectorAll('[data-standard]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.standard===value)));
+    $('fusion-branches').hidden=active;$('mapping-branches').hidden=!active;
+    $('page-title').textContent=active?'看见环境数据如何形成地图':'看见输入如何成为融合结果';
+    $('page-intro').textContent=active?'按建图大纲查看输入、环境要素、关联与优化、地图输出及验证记录。':'三条分支共同展示任务书流程，按实际处理环节逐步查看。';
+    $('page-kicker').textContent=active?'ENVIRONMENT MAPPING EXPLORER':'MULTIMODAL PROCESS EXPLORER';
+    if(!active){$('freeze').textContent=frozen?'恢复自动更新':'冻结当前样本';$('freeze').setAttribute('aria-pressed',String(frozen));render();poll();}
+    const url=new URL(location.href);active?url.searchParams.set('standard','mapping'):url.searchParams.delete('standard');history.replaceState(null,'',url);
+  }
 
   const checkLabel = state => ({pass:'核对通过',fail:'不满足 / 不一致',missing:'归档缺失',pending:'待验证',not_applicable:'不适用',defined:'已明确'})[state]||'未记录';
   const checkTag = (state,label) => `<span class="check-state ${esc(state||'pending')}">${esc(label||checkLabel(state))}</span>`;
@@ -191,6 +205,7 @@
     const extra=[['输入时间',stamp(s.source_stamp)],['会话',s.session_id],['当前采集状态',b?.detail||'未读取'],['最大配对时间差',fmt(s.timing.maximum_gap_ms)+' ms'],['同步精度',checkLabel(s.sync_validation?.state)],['模型计算耗时',fmt(s.inference_ms,1)+' ms'],['采集时间质量',context.stamp_quality||'传感器消息时间']];
     $('evidence').innerHTML='<dl>'+values.map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')+'</dl><details data-disclosure="sample-runtime"><summary>样本时间与运行详情</summary>'+table(['记录项','本次记录'],extra)+'</details><p class="note">'+esc(context.geometry_verified?'标定记录已测量，查看对应证据。':branch==='pmf'?'现有LiDAR外参为估计参数，尚未完成标定验收。':branch==='rgbnir'?'相机内参和外参来自工厂参数记录，现场配准效果需另行验证。':'声学输入来自本样本匹配的音频窗口。')+'</p><a href="/research/'+branch+'_features.npz">下载原始特征归档 ↗</a><details data-disclosure="model-source"><summary>本样本模型与处理来源</summary><pre>'+esc(JSON.stringify(s.model,null,2))+'</pre></details>';
     restoreDisclosures(evidenceRoot,evidenceDisclosureScope);
+    snapshotNotice();
   }
   function coverage() {
     const items=[['四类模态输入','RGB、近红外、真实LiDAR与声学分别在三条分支输入端展示。',[['pmf',0],['rgbnir',0],['avs',0]]],['特征提取、拼接与融合','提取：三条分支；拼接：颜色＋法向量、视觉token；融合：几何交互、加权、声学条件交互。',[['pmf',4],['rgbnir',3],['avs',4]]],['接口与数据同步','接口字段规范、实际选中输入、特征数组及同批次输出核查。',[['pmf',2],['rgbnir',2],['avs',2]]],['时间同步与融合精度','同步限值与当前配对核查集中展示；融合结果通过同样本图片进行定性对照。',[['pmf',2],['rgbnir',5],['avs',5]]],['标定、时间对齐与预处理','相机参数、外参、点—像素映射、配准有效区、点云筛选及声学预处理。',[['pmf',1],['rgbnir',1],['avs',1]]],['特征尺度匹配与跨模态语义对齐','近红外展示尺寸与RMS幅值匹配；声学展示128→256及声学条件查询对视觉token的注意力。',[['rgbnir',4],['avs',4]]]];
@@ -271,15 +286,22 @@
     const s=samples[branch],b=status?.branches?.[branch],recent=status&&Date.now()/1000-status.published_at<15;
     const saved=!recent||!['running','ok','ready'].includes(b?.state);
     if(branch==='coverage'){$('sample-status').innerHTML=Object.entries(names).map(([key,name])=>`<span class="tag ${samples[key]?'saved':''}">${esc(name)} · ${samples[key]?'已有样本':'等待归档'}</span>`).join('');return;}
-    $('sample-status').innerHTML=`<span class="tag ${saved?'saved':'live'}">${frozen?'已冻结样本':s?saved?'已保存样本 · 当前等待输入':'正在接收记录':'等待样本'}</span>`+(s?`<span>序号 ${esc(s.sequence)} · ${esc(stamp(s.source_stamp))} · 同会话归档</span>`:'')+`<span>${esc(!recent?'采集/导出服务当前未更新':b?.detail||'等待3001服务')}</span>`+(b?.exporter_error?`<span class="error">归档检查：${esc(b.exporter_error)}</span>`:'');
+    $('sample-status').innerHTML=`<span class="tag ${saved?'saved':'live'}">${frozen?'已冻结样本':s?saved?'已保存样本 · 当前等待输入':'正在接收记录':'等待样本'}</span>`+(s?`<span>序号 ${esc(s.sequence)} · ${esc(stamp(s.source_stamp))} · ${s.archive_level==='result_snapshot_only'?'同一结果快照':'同会话归档'}</span>`:'')+`<span>${esc(!recent?'采集/导出服务当前未更新':b?.detail||'等待3001服务')}</span>`+(b?.exporter_error?`<span class="error">归档检查：${esc(b.exporter_error)}</span>`:'');
+    snapshotNotice();
+  }
+  function snapshotNotice(){
+    const s=samples[branch];if(!s||s.archive_level!=='result_snapshot_only')return;
+    if(!document.getElementById('snapshot-archive-notice'))$('sample-status').insertAdjacentHTML('beforeend','<span id="snapshot-archive-notice">完整输入与张量未归档</span>');
+    const link=$('evidence').querySelector('a[href$="_features.npz"]');
+    if(link){link.removeAttribute('href');link.textContent='原运行未保存完整特征文件';}
   }
   async function fetchJson(url){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),5000);try{const r=await fetch(url+'?t='+Date.now(),{cache:'no-store',signal:controller.signal});if(!r.ok)throw Error('HTTP '+r.status);return await r.json();}finally{clearTimeout(timer);}}
-  async function poll(){if(polling||frozen||document.hidden)return;polling=true;try{const nextStatus=await fetchJson('/research/process/status.json');if(frozen)return;status=nextStatus;for(const task of Object.keys(names)){
+  async function poll(){if(mapping.isActive()||polling||frozen||document.hidden)return;polling=true;try{const nextStatus=await fetchJson('/research/process/status.json');if(frozen||mapping.isActive())return;status=nextStatus;for(const task of Object.keys(names)){
     const identity=status.branches?.[task]?.sample_identity;
-    if(identity&&identity.join(':')!==sampleId(samples[task])&&!pending[task]){pending[task]=true;try{const s=await fetchJson('/research/process/'+task+'.json');if(s.schema!=='research_process/1'||s.task!==task)throw Error('Invalid process snapshot');if(frozen)return;samples[task]=s;if(task===branch)render();}finally{pending[task]=false;}}
+    if(identity&&identity.join(':')!==sampleId(samples[task])&&!pending[task]){pending[task]=true;try{const s=await fetchJson('/research/process/'+task+'.json');if(s.schema!=='research_process/1'||s.task!==task)throw Error('Invalid process snapshot');if(frozen||mapping.isActive())return;samples[task]=s;if(task===branch)render();}finally{pending[task]=false;}}
     }updateStatus();setEvidence(samples[branch]);}catch(error){if(!samples[branch])$('sample-status').textContent='尚未取得过程导出记录，可继续查看已有分支；启动3001后会自动读取。';else updateStatus();}finally{polling=false;}}
-  document.addEventListener('click',e=>{const button=e.target.closest('button');if(!button)return;if(button.dataset.branch){branch=button.dataset.branch;step=0;render();}if(button.dataset.step){step=Number(button.dataset.step);render();}if(button.dataset.jump){const parts=button.dataset.jump.split(':');branch=parts[0];step=Number(parts[1]);render();}});
-  $('freeze').onclick=()=>{frozen=!frozen;$('freeze').setAttribute('aria-pressed',String(frozen));$('freeze').textContent=frozen?'恢复自动更新':'冻结当前样本';updateStatus();if(!frozen)poll();};
-  $('download').onclick=()=>{const s=samples[branch];if(!s)return;const blob=new Blob([JSON.stringify({...s,display_capture:{frozen,stage:steps[step],captured_at:new Date().toISOString()}},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`${branch}-process-${s.sequence}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});render();poll();setInterval(poll,4000);
+  document.addEventListener('click',e=>{const button=e.target.closest('button');if(!button)return;if(button.dataset.standard){standard(button.dataset.standard);return;}if(mapping.isActive())return;if(button.dataset.branch){branch=button.dataset.branch;step=0;render();}if(button.dataset.step){step=Number(button.dataset.step);render();}if(button.dataset.jump){const parts=button.dataset.jump.split(':');branch=parts[0];step=Number(parts[1]);render();}});
+  $('freeze').onclick=()=>{if(mapping.isActive()){mapping.freeze();return;}frozen=!frozen;$('freeze').setAttribute('aria-pressed',String(frozen));$('freeze').textContent=frozen?'恢复自动更新':'冻结当前样本';updateStatus();if(!frozen)poll();};
+  $('download').onclick=()=>{if(mapping.isActive()){mapping.download();return;}const s=samples[branch];if(!s)return;const blob=new Blob([JSON.stringify({...s,display_capture:{frozen,stage:steps[step],captured_at:new Date().toISOString()}},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`${branch}-process-${s.sequence}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});render();new URL(location.href).searchParams.get('standard')==='mapping'?standard('mapping'):poll();setInterval(poll,4000);
 })();

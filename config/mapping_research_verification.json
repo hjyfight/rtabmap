@@ -1,0 +1,6 @@
+{
+  "schema": "mapping_verification/1",
+  "map_uuid": null,
+  "measurements": {},
+  "note": "仅填写具有场景、方法、证据编号和地图标识的实测结果。当前无性能验收数据。"
+}
