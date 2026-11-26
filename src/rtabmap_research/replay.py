@@ -26,5 +26,6 @@ def read_bundle(path):
     calibration=dict(status=context['calibration'],evidence=context['calibration_evidence'],
         camera_frame=context['camera_frame'],lidar_frame=context['lidar_frame'],intensity_scale=1/255)
     bundle=dict(observations=observations,matrix=arrays['camera_from_lidar'],calibration=calibration,
+                enforce_depth_consistency=context.get('depth_consistency_enforced',True),
                 gap_s=max(row['gap_s'] for row in observations),stamp=observations[-1]['rgb_stamp'])
     return arrays,metadata,bundle

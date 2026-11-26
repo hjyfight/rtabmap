@@ -16,8 +16,10 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'src'))
 from rtabmap_research.inputs import (NotReady, AudioTimeline, pair_frames, measured_transform,
-                                     project_pmf, tf_preview_transform, pair_rgb_lidar,estimated_transform)
+                                     project_pmf, tf_preview_transform, pair_rgb_lidar,estimated_transform,
+                                     current_transform)
 from research_validation import input_record
+from research_input_preview import build_input_preview
 
 
 def atomic_json(path, value):
@@ -159,6 +161,10 @@ class Research:
         return bundle
 
     def file_calibration(self):
+        if self.cfg.get('use_current_extrinsics'):
+            return current_transform(ROOT/self.cfg['current_calibration_path'])
+        if self.cfg.get('camera_lidar_mount_changed'):
+            raise NotReady('相机/雷达安装已改变，等待重新标定外参')
         path=ROOT/self.cfg['calibration_path']
         configured=json.loads(path.read_text())
         if configured.get('status')=='measured' or self.cfg.get('pmf_extrinsics_mode')!='tf_preview':
@@ -214,7 +220,8 @@ class Research:
                 key = 'source_rgb_frames' if record['modality']=='rgb' else 'source_depth_frames' if record['modality']=='depth' else 'source_lidar_'+str(i)
                 sources.append(self.with_array(record, key, i if record['modality'] != 'lidar' else None))
         return dict(stamp=observations[-1]['corrected_stamp'],observations=observations,matrix=matrix,
-                    calibration=calibration,gap_s=max(o['gap_s'] for o in observations), inputs_used=sources)
+                    calibration=calibration,gap_s=max(o['gap_s'] for o in observations), inputs_used=sources,
+                    enforce_depth_consistency=not self.cfg.get('use_current_extrinsics',False))
 
     def receive_lidar(self, msg):
         stamp = msg.header.stamp.sec + msg.header.stamp.nanosec/1e9 + self.cfg['lidar_clock_offset_s']
@@ -371,10 +378,16 @@ class Research:
         from rtabmap_research.rgbnir import RGBNIR
         classes={'pmf':pmf_class,'avs':AVS,'rgbnir':RGBNIR}
         for key in self.tasks:
+            if key=='pmf' and self.cfg.get('camera_lidar_mount_changed') and not self.cfg.get('use_current_extrinsics'):
+                with self.lock:
+                    self.states[key]=('waiting','相机/雷达安装已改变，等待重新标定外参')
+                continue
             try:
                 weights=self.cfg['odin_weights'] if key=='pmf' and backend=='odin_compare' else self.cfg['ptv3_weights'] if key=='pmf' and point_backend else self.cfg[key+'_weights']
                 options=dict(size=self.cfg['rgbnir_size'],confidence=self.cfg['rgbnir_confidence'],
                     nir_weight=self.cfg['rgbnir_nir_weight']) if key=='rgbnir' else {}
+                if key=='pmf' and backend=='odin_compare':
+                    options['preprocess_workers']=self.cfg.get('odin_preprocess_workers',1)
                 model = classes[key](ROOT/weights,self.cfg['device'],**options)
                 with self.lock:
                     self.models[key] = model
@@ -422,9 +435,12 @@ class Research:
                             lidar_channels=['XYZ query positions'] if backend=='odin_compare' else ['XYZ positions','surface normals'],
                             input_fusion='posed RGB-D context + Livox / valid depth point queries' if backend=='odin_compare' else 'RGB color + LiDAR normals',
                             depth_role='encoder geometry and valid depth queries; holes only inpainted for context' if backend=='odin_compare' else 'occlusion filter',
-                            occlusion_filter='registered RealSense depth, residual <=0.2m',
+                            occlusion_filter='registered RealSense depth, residual <=0.2m'
+                                if bundle.get('enforce_depth_consistency',True) else 'current-parameter projection preview',
+                            depth_consistency_enforced=bundle.get('enforce_depth_consistency',True),
                             source_frames=[dict(rgb_stamp=o['rgb_stamp'],lidar_stamp=o['lidar_stamp'],gap_s=o['gap_s'])
                                            for o in bundle['observations']],
+                            world_frame='map',
                             observation_count=len(bundle['observations']),window_s=result['window_s'],
                             motion_deskewed=False)
                     elif key=='pmf' and bundle.get('rgb_only'):
@@ -462,7 +478,7 @@ class Research:
                             audio_end=bundle['audio_end'],frame_stamps=bundle['frame_stamps'],
                             stamp_quality=bundle['stamp_quality'],time_sampling='centres of 0.96s log-Mel patches',
                             duration_s=10, audio_dim=128, projected_dim=256, sample_rate=bundle['rate'],
-                            audio_source='workstation WheelTec; /multimodal/audio')
+                            audio_source='WheelTec; '+self.cfg['audio_topic'])
                     elapsed = time.perf_counter()-start
                     if key == 'avs':
                         model.trace.arrays['source_rgb_frames'] = np.stack(bundle['rgbs'])
@@ -477,6 +493,10 @@ class Research:
                                                 for name in ('rgb','lidar','nir','audio')}
                     result.update(sequence=self.sequence[key]+1, source_stamp=bundle['stamp'], inference_s=elapsed,
                                   context=context, accuracy_verified=False)
+                    if not self.cfg['save_features']:
+                        preview_started=time.perf_counter()
+                        result['input_preview']=build_input_preview(key,self.session,result,model.trace.arrays)
+                        result['preview_s']=time.perf_counter()-preview_started
                     if self.cfg['save_features']:
                         path = self.public/f'{key}_features.npz'
                         temp = path.with_suffix('.tmp')
@@ -492,7 +512,9 @@ class Research:
                         self.results[key] = result
                         self.sequence[key] += 1
                         self.last_stamp[key] = bundle['stamp']
-                        detail = ('室内实验对照：自动外参估计已做独立帧复核，尚未完成标定验收'
+                        detail = ('按当前外参参数运行'
+                                  if key=='pmf' and context.get('calibration')=='current_parameters' else
+                                  '室内实验对照：自动外参估计已做独立帧复核，尚未完成标定验收'
                                   if key=='pmf' and context.get('calibration')=='auto_estimated' else
                                   '实验融合：使用当前SLAM TF，安装外参尚未实测标定'
                                   if key=='pmf' and context.get('calibration')=='tf_preview' else '推理完成')
@@ -517,6 +539,7 @@ class Research:
                         state=state,detail=detail,inputs=inputs,ros_error=self.ros_error,
                         offline_report=(self.public/'offline/index.html').exists(),
                         model=model.metadata if model else None,result=self.results.get(key),
+                        parameters_mode='current_parameters' if key=='pmf' and self.cfg.get('use_current_extrinsics') else None,
                         evaluation=dict(verified=False,note='尚无人工真值与独立单模态基线，不能据此判定融合精度达标'))
 
     def ros_loop(self):

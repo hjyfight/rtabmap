@@ -90,6 +90,17 @@ class SemanticLaunchTests(unittest.TestCase):
         self.assertEqual(len(guards), 1)
         self.assertIn('input:=rgbd_image_unchecked', guards[0])
         self.assertIn('output:=rgbd_image', guards[0])
+        self.assertIn('input_qos:=2', guards[0])
+
+    def test_direct_reliable_source_also_uses_reliable_guard_input(self):
+        commands = []
+        def inspect(action, context):
+            if isinstance(action, ExecuteProcess) and not isinstance(action, Node):
+                commands.append([perform_substitutions(context, part) for part in action.cmd])
+        resolve_launch(inspect_action=inspect, qos='1')
+        guards = [cmd for cmd in commands if any(x.endswith('/guard_rgbd_input.py') for x in cmd)]
+        self.assertEqual(len(guards), 1)
+        self.assertIn('input_qos:=1', guards[0])
 
     def test_external_registered_depth_does_not_start_another_publisher(self):
         nodes = resolve_launch(register_depth='false', depth_topic='/external/registered_depth')

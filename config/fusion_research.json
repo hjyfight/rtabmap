@@ -26,6 +26,7 @@
   "allow_pmf_rgb_preview": false,
   "pmf_backend": "odin_compare",
   "odin_weights": "models/odin_scannet_swin_semantic.pth.download",
+  "odin_preprocess_workers": 4,
   "ptv3_weights": "models/ptv3_scannet_best.pth",
   "point_window_s": 5.0,
   "point_min_frames": 4,
@@ -39,5 +40,5 @@
   "pmf_weights": "models/pmf_semantickitti.download",
   "avs_weights": "models/avsegformer_res50_avss.pth",
   "public_directory": ".tools/miti-research/root/usr/lib/miti/public/research",
-  "save_features": true
+  "save_features": false
 }

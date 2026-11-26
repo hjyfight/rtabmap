@@ -54,7 +54,8 @@ class IndoorComparison:
 
     def infer_bundle(self,bundle):
         import cv2
-        scene=build_scene(bundle['observations'],bundle['matrix'])
+        scene=build_scene(bundle['observations'],bundle['matrix'],
+                          enforce_depth_consistency=bundle.get('enforce_depth_consistency',True))
         labels,ablated,stats=self.compare_scene(scene)
         rgb=scene['current_rgb'];uv=scene['uv'];indices=scene['render_indices']
         display=np.zeros(rgb.shape[:2],np.uint8)

@@ -10,7 +10,7 @@ from scipy.spatial.transform import Rotation
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
-from rtabmap_research.inputs import estimated_transform, measured_transform, NotReady
+from rtabmap_research.inputs import estimated_transform, measured_transform, current_transform, NotReady
 
 
 def lidar_from_camera_link(camera_from_lidar, camera_from_link):
@@ -18,6 +18,10 @@ def lidar_from_camera_link(camera_from_lidar, camera_from_link):
 
 
 def calibration(config):
+    if config.get('use_current_extrinsics'):
+        path=ROOT/config['current_calibration_path']
+        matrix,metadata=current_transform(path)
+        return matrix,metadata,path
     path = ROOT / config['calibration_path']
     value = json.loads(path.read_text())
     if value.get('status') == 'measured' or config.get('pmf_extrinsics_mode') != 'tf_preview':

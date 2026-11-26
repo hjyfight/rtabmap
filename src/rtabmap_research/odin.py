@@ -1,5 +1,6 @@
 """Frozen indoor ODIN: posed RGB-D context queried at actual Livox points."""
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import numpy as np
 import torch
@@ -18,12 +19,39 @@ NATIVE_TO_SCANNET=np.asarray(list(range(2,20))+[0,1],np.uint8)
 NAMES=[CHINESE[i] for i in NATIVE_TO_SCANNET]
 
 
+def prepare_depth_frame(row):
+    import cv2
+    depth=row['depth'].astype(np.float32)
+    if row['depth'].dtype==np.uint16:depth/=1000
+    elif row['depth'].dtype!=np.float32:raise ValueError('Unknown aligned depth units')
+    if depth.shape!=row['rgb'].shape[:2]:raise ValueError('ODIN requires registered RGB-D')
+    if np.any(np.asarray(row['distortion'])!=0):raise ValueError('ODIN needs rectified RGB-D intrinsics')
+    mask=~np.isfinite(depth)|(depth<=.1)|(depth>=10)
+    if 1-mask.mean()<.35:raise ValueError('Insufficient valid RGB-D depth coverage')
+    millimetres=depth*1000;millimetres[mask]=0
+    filled=cv2.inpaint(millimetres,mask.astype(np.uint8),5,cv2.INPAINT_TELEA)
+    millimetres[mask]=filled[mask]
+    return millimetres/1000,mask
+
+
+def prepare_depth_context(observations,workers=1):
+    if isinstance(workers,bool) or not isinstance(workers,int) or not 1<=workers<=8:
+        raise ValueError('ODIN depth preprocessing workers must be 1..8')
+    if workers==1:
+        return [prepare_depth_frame(row) for row in observations]
+    with ThreadPoolExecutor(max_workers=workers,thread_name_prefix='odin_depth') as executor:
+        return list(executor.map(prepare_depth_frame,observations))
+
+
 class ODIN:
-    def __init__(self,weights,device='cuda:0',dense=True,backbone_kind=None):
+    def __init__(self,weights,device='cuda:0',dense=True,backbone_kind=None,preprocess_workers=1):
         backbone_kind=backbone_kind or ('swin' if 'swin' in Path(weights).name.lower() else 'resnet')
         cfg,backbone,head,geometry,shape=load_runtime(backbone_kind)
         self.cfg,self.geometry,self.device=cfg,geometry,device
         self.dense=dense
+        if isinstance(preprocess_workers,bool) or not isinstance(preprocess_workers,int) or not 1<=preprocess_workers<=8:
+            raise ValueError('ODIN depth preprocessing workers must be 1..8')
+        self.preprocess_workers=preprocess_workers
         self.net=nn.Module()
         self.net.backbone=backbone(cfg,shape(channels=3))
         self.net.sem_seg_head=head(cfg,self.net.backbone.output_shape())
@@ -65,20 +93,9 @@ class ODIN:
         import cv2
         self.trace.clear()
         rgb_frames=np.stack([row['rgb'] for row in observations])
-        depths=[];missing=[]
-        for row in observations:
-            depth=row['depth'].astype(np.float32)
-            if row['depth'].dtype==np.uint16:depth/=1000
-            elif row['depth'].dtype!=np.float32:raise ValueError('Unknown aligned depth units')
-            if depth.shape!=row['rgb'].shape[:2]:raise ValueError('ODIN requires registered RGB-D')
-            if np.any(np.asarray(row['distortion'])!=0):raise ValueError('ODIN needs rectified RGB-D intrinsics')
-            mask=~np.isfinite(depth)|(depth<=.1)|(depth>=10)
-            if 1-mask.mean()<.35:raise ValueError('Insufficient valid RGB-D depth coverage')
-            # Author's ScanNet preprocessing inpaints holes in millimetres, radius 5.
-            millimetres=depth*1000;millimetres[mask]=0
-            filled=cv2.inpaint(millimetres,mask.astype(np.uint8),5,cv2.INPAINT_TELEA)
-            millimetres[mask]=filled[mask]
-            depths.append(millimetres/1000);missing.append(mask)
+        # Author's ScanNet preprocessing, independently applied to each real view.
+        prepared=prepare_depth_context(observations,self.preprocess_workers)
+        depths=[row[0] for row in prepared];missing=[row[1] for row in prepared]
         mean=np.asarray(self.cfg.MODEL.PIXEL_MEAN,np.float32)[None,:,None,None]
         std=np.asarray(self.cfg.MODEL.PIXEL_STD,np.float32)[None,:,None,None]
         images=torch.from_numpy((rgb_frames.transpose(0,3,1,2).astype(np.float32)-mean)/std).to(self.device)
@@ -138,7 +155,8 @@ class ODIN:
 
     def infer_bundle(self,bundle):
         import cv2
-        scene=build_scene(bundle['observations'],bundle['matrix'])
+        scene=build_scene(bundle['observations'],bundle['matrix'],
+                          enforce_depth_consistency=bundle.get('enforce_depth_consistency',True))
         labels,stats=self.infer_scene(scene,bundle['observations'],bundle['matrix'])
         rgb=scene['current_rgb'];uv=scene['uv'];indices=scene['render_indices']
         display=np.zeros(rgb.shape[:2],np.uint8);display[uv[:,1],uv[:,0]]=labels[indices]+1
@@ -166,8 +184,8 @@ class ODIN:
 
 
 class ODINComparison(ODIN):
-    def __init__(self,weights,device='cuda:0',backbone_kind=None):
-        super().__init__(weights,device,backbone_kind=backbone_kind)
+    def __init__(self,weights,device='cuda:0',backbone_kind=None,preprocess_workers=1):
+        super().__init__(weights,device,backbone_kind=backbone_kind,preprocess_workers=preprocess_workers)
         from .ptv3 import PointTransformer,ROOT
         self.reference=PointTransformer(ROOT/'models/ptv3_scannet_best.pth',device)
         self.metadata['comparison_model']=self.reference.metadata

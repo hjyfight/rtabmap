@@ -2,6 +2,38 @@
 """Continuously reject invalid aligned RGB-D pairs before they reach RTAB-Map."""
 import json
 import math
+import time
+
+
+def input_qos_profile(value):
+    from rclpy.qos import QoSProfile, ReliabilityPolicy
+    if isinstance(value, bool) or not isinstance(value, int) or value not in (0, 1, 2):
+        raise ValueError('input_qos must be 0 (default), 1 (reliable) or 2 (best effort)')
+    reliability = {0: ReliabilityPolicy.SYSTEM_DEFAULT, 1: ReliabilityPolicy.RELIABLE,
+                   2: ReliabilityPolicy.BEST_EFFORT}[value]
+    return QoSProfile(depth=5, reliability=reliability)
+
+
+class InputWatchdog:
+    """Renew a silent reader only while its source publisher is still present."""
+    def __init__(self, reconnect, timeout=5., clock=time.monotonic):
+        if isinstance(timeout, bool) or not math.isfinite(timeout) or timeout <= 0:
+            raise ValueError('input timeout must be positive and finite')
+        self.reconnect, self.timeout, self.clock = reconnect, timeout, clock
+        self.last_received = self.last_reconnected = clock()
+        self.reconnections = 0
+
+    def received(self):
+        self.last_received = self.clock()
+
+    def check(self, publisher_count):
+        now = self.clock()
+        age = max(0., now-self.last_received)
+        if publisher_count > 0 and age > self.timeout and now-self.last_reconnected >= self.timeout:
+            self.reconnect()
+            self.last_reconnected = now
+            self.reconnections += 1
+        return dict(input_age_seconds=age, input_reconnections=self.reconnections)
 
 
 def validate_rgbd(message, max_interval=0.05):
@@ -34,7 +66,7 @@ def validate_rgbd(message, max_interval=0.05):
 def main(args=None):
     import rclpy
     from rclpy.node import Node
-    from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
+    from rclpy.qos import QoSProfile, ReliabilityPolicy
     from rtabmap_msgs.msg import RGBDImage
     from std_msgs.msg import String
 
@@ -49,10 +81,18 @@ def main(args=None):
             self.publisher = self.create_publisher(
                 RGBDImage, 'output', QoSProfile(depth=5, reliability=ReliabilityPolicy.RELIABLE))
             self.status = self.create_publisher(String, '/semantic/input_status', 1)
-            self.create_subscription(RGBDImage, 'input', self.on_pair, qos_profile_sensor_data)
+            self.input_qos = input_qos_profile(self.declare_parameter('input_qos', 2).value)
+            self.input_subscription = self.create_subscription(RGBDImage, 'input', self.on_pair, self.input_qos)
+            self.input_watchdog = InputWatchdog(self.reload_input, self.declare_parameter('input_timeout', 5.).value)
             self.create_timer(1.0, self.publish_status)
 
+        def reload_input(self):
+            self.destroy_subscription(self.input_subscription)
+            self.input_subscription = self.create_subscription(RGBDImage, 'input', self.on_pair, self.input_qos)
+            self.get_logger().warning('RGB-D input stopped despite an available publisher; renewed the input subscription.')
+
         def on_pair(self, message):
+            self.input_watchdog.received()
             error = validate_rgbd(message, self.max_interval)
             if error:
                 self.rejected += 1
@@ -65,8 +105,9 @@ def main(args=None):
             self.publisher.publish(message)
 
         def publish_status(self):
+            delivery = self.input_watchdog.check(self.count_publishers(self.input_subscription.topic_name))
             self.status.publish(String(data=json.dumps(dict(
-                accepted=self.accepted, rejected=self.rejected, last_error=self.last_error))))
+                accepted=self.accepted, rejected=self.rejected, last_error=self.last_error, **delivery))))
 
     rclpy.init(args=args)
     node = None

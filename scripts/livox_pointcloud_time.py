@@ -77,7 +77,7 @@ def normalize_timestamps(cloud, time_unit='auto', max_scan_duration=1.0):
 def main(args=None):
     import rclpy
     from rclpy.node import Node
-    from rclpy.qos import QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
+    from rclpy.qos import QoSProfile, ReliabilityPolicy
     from sensor_msgs.msg import PointCloud2
 
     class LivoxPointCloudTime(Node):
@@ -96,9 +96,10 @@ def main(args=None):
                 raise ValueError('qos must be 0, 1 or 2.')
             self.publisher = self.create_publisher(
                 PointCloud2, 'output_cloud', QoSProfile(depth=5, reliability=reliability[qos_value]))
-            # A best-effort reader accepts both reliable and best-effort driver publishers.
+            # Honor reliable local inputs; retain best-effort for wireless relays.
             self.subscription = self.create_subscription(
-                PointCloud2, 'input_cloud', self.on_cloud, qos_profile_sensor_data)
+                PointCloud2, 'input_cloud', self.on_cloud,
+                QoSProfile(depth=5, reliability=reliability[qos_value]))
             self.reported_unit = None
 
         def on_cloud(self, message):

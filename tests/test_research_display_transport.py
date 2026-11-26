@@ -3,6 +3,13 @@ import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+from types import SimpleNamespace
+
+import rclpy
+from rclpy.context import Context
+from rclpy.executors import SingleThreadedExecutor
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
 from geometry_msgs.msg import TransformStamped
 from sensor_msgs.msg import PointCloud2, PointField
@@ -20,6 +27,36 @@ class DisplayTransportTest(unittest.TestCase):
         node.dynamic_transforms = {}
         node.last_queued = {}
         return node
+
+    def test_late_static_tf_reader_receives_all_retained_camera_messages(self):
+        context = Context()
+        rclpy.init(context=context, domain_id=76)
+        publisher_node = Node('static_camera_history_publisher', context=context)
+        reader_node = Node('static_camera_history_reader', context=context)
+        executor = SingleThreadedExecutor(context=context)
+        try:
+            publisher = publisher_node.create_publisher(TFMessage, '/tf_static',
+                QoSProfile(depth=100, reliability=ReliabilityPolicy.RELIABLE,
+                           durability=DurabilityPolicy.TRANSIENT_LOCAL))
+            children = ['camera_depth_frame', 'camera_depth_optical_frame',
+                        'camera_color_optical_frame']
+            for child in children:
+                publisher.publish(TFMessage(transforms=[TransformStamped(child_frame_id=child)]))
+            node = self.node()
+            node.args = SimpleNamespace(mode='send')
+            received = set()
+            reader_node.create_subscription(TFMessage, '/tf_static',
+                lambda message: received.update(t.child_frame_id for t in message.transforms),
+                node.stream_qos('/tf_static', TFMessage))
+            deadline = time.monotonic() + 4
+            while received != set(children) and time.monotonic() < deadline:
+                rclpy.spin_once(reader_node, executor=executor, timeout_sec=.05)
+            self.assertEqual(received, set(children))
+        finally:
+            executor.shutdown()
+            reader_node.destroy_node()
+            publisher_node.destroy_node()
+            rclpy.shutdown(context=context)
 
     def test_separate_tf_publishers_are_aggregated_with_original_stamps(self):
         node = self.node()

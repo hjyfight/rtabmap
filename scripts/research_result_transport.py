@@ -81,11 +81,13 @@ def handler_for(directory):
                     self.wfile.write(payload)
                     return
                 allowed = [task + suffix for task in TASKS for suffix in ('.json', '_features.npz')]
+                allowed += ['process/' + task + '.json' for task in TASKS]
+                allowed += ['process/status.json', 'mapping/status.json', 'mapping/sample.json']
                 if name not in allowed:
                     self.send_error(404)
                     return
                 path = directory / name
-                if not path.is_file() or path.resolve().parent != directory:
+                if not path.is_file() or not path.resolve().is_relative_to(directory):
                     self.send_error(404)
                     return
                 with path.open('rb') as stream:

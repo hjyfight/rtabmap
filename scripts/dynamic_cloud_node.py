@@ -91,7 +91,8 @@ class DynamicCloudNode(Node):
         self.last_input_received = -math.inf
         self.outputs = deque(maxlen=30)
         self.status = dict(state='waiting', reason='等待环境地图和同步扫描', removed_points=0)
-        self.create_subscription(PointCloud2, '/cloud_map', self.on_map, latched)
+        self.map_qos = latched
+        self.map_subscription = self.create_subscription(PointCloud2, '/cloud_map', self.on_map, latched)
         self.create_subscription(PointCloud2, self.scan_topic, self.on_scan, sensor)
         try:
             from rtabmap_semantic_msgs.msg import SemanticMap
@@ -110,11 +111,26 @@ class DynamicCloudNode(Node):
         session = (message.map_key, message.map_uuid)
         if self.session is not None and self.session != session:
             self.filter.reset()
-            self.filter.set_map(np.empty((0, 3)))
-            self.map_received, self.map_dirty = False, True
+            # A semantic epoch can change after reused keyframe IDs without
+            # replacing the RTAB-Map database or its authoritative point cloud.
+            # Reset ray evidence, but keep geometry belonging to the same map.
+            if self.session[0] != session[0]:
+                self.filter.set_map(np.empty((0, 3)))
+                self.map_received = False
+                self.await_map = True
+                self.reload_map_snapshot()
+            self.map_dirty = True
             self.queue = ScanQueue(self.queue.max_age)
+            self.outputs.clear()
+            self.status = dict(state='waiting', reason='等待新扫描与对应时刻位姿', removed_points=0)
             self.clear_live()
         self.session = session
+
+    def reload_map_snapshot(self):
+        # A retained static map need not be republished while the robot is still.
+        # A new reader obtains the current publisher's retained full snapshot.
+        self.destroy_subscription(self.map_subscription)
+        self.map_subscription = self.create_subscription(PointCloud2, '/cloud_map', self.on_map, self.map_qos)
 
     def on_map(self, message):
         try:
@@ -167,33 +183,36 @@ class DynamicCloudNode(Node):
 
     def update(self):
         now = time.monotonic()
-        if self.map_received:
-            ready = self.queue.take(now, self.transform)
-            if ready is not None:
-                message, matrix, received = ready
-                started = time.perf_counter()
-                try:
-                    local = cloud_xyz(message, limit=40000)
-                    ranges = np.linalg.norm(local, axis=1)
-                    valid = np.isfinite(local).all(axis=1) & (ranges >= .3)
-                    world = np.ascontiguousarray(local[valid]@matrix[:3, :3].T+matrix[:3, 3], dtype=np.float32)
-                    if not self.await_map:
-                        self.status.update(self.filter.scan(world, matrix[:3, 3], stamp_seconds(message.header.stamp)))
-                        self.map_dirty = True
-                    live = world[ranges[valid] <= self.max_range]
-                    self.live_pub.publish(xyz_message(live, self.frame, message.header.stamp))
-                    self.last_live, self.live_present = received, bool(len(live))
-                    self.outputs.append(now)
-                    self.status.update(state='ready' if not self.await_map else 'waiting',
-                        reason='射线清理已启用' if not self.await_map else '等待回环后地图更新',
-                        scan_points=len(live), processing_ms=(time.perf_counter()-started)*1000,
-                        pose_lag_seconds=max(0., self.last_input_stamp-stamp_seconds(message.header.stamp)),
-                        input_wait_ms=(now-received)*1000)
-                except (ValueError, RuntimeError) as error:
-                    self.status.update(state='error', reason=str(error))
-                    self.get_logger().warning(str(error), throttle_duration_sec=5.)
-            elif now-self.last_live > self.live_timeout:
-                self.status.update(state='waiting', reason='等待新扫描与对应时刻位姿')
+        # A timestamped scan and its valid map transform are sufficient for live
+        # display. Waiting for a full map must not stop scans or grow the queue.
+        ready = self.queue.take(now, self.transform)
+        if ready is not None:
+            message, matrix, received = ready
+            started = time.perf_counter()
+            try:
+                local = cloud_xyz(message, limit=40000)
+                ranges = np.linalg.norm(local, axis=1)
+                valid = np.isfinite(local).all(axis=1) & (ranges >= .3)
+                world = np.ascontiguousarray(local[valid]@matrix[:3, :3].T+matrix[:3, 3], dtype=np.float32)
+                map_ready = self.map_received and not self.await_map and bool(len(self.filter.points))
+                if map_ready:
+                    self.status.update(self.filter.scan(world, matrix[:3, 3], stamp_seconds(message.header.stamp)))
+                    self.map_dirty = True
+                live = world[ranges[valid] <= self.max_range]
+                self.live_pub.publish(xyz_message(live, self.frame, message.header.stamp))
+                self.last_live, self.live_present = received, bool(len(live))
+                self.outputs.append(now)
+                self.status.update(state='ready' if map_ready else 'waiting',
+                    reason='射线清理已启用' if map_ready else
+                           '等待回环后地图更新' if self.await_map else '等待有效地图点云',
+                    scan_points=len(live), processing_ms=(time.perf_counter()-started)*1000,
+                    pose_lag_seconds=max(0., self.last_input_stamp-stamp_seconds(message.header.stamp)),
+                    input_wait_ms=(now-received)*1000)
+            except (ValueError, RuntimeError) as error:
+                self.status.update(state='error', reason=str(error))
+                self.get_logger().warning(str(error), throttle_duration_sec=5.)
+        elif now-self.last_live > self.live_timeout:
+            self.status.update(state='waiting', reason='等待新扫描与对应时刻位姿')
         if self.live_present and now-self.last_live > self.live_timeout:
             self.clear_live()
         if self.map_dirty and now-self.last_publish >= 1/self.map_rate:

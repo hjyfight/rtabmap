@@ -11,6 +11,23 @@ def sensor_clock_offset(profile):
     return float(profile['clock']['orin_minus_go2_s'])
 
 
+def camera_lidar_extrinsics_current(profile):
+    return (profile['network'].get('sensor_source', 'go2') != 'orin'
+            or not profile['local_sensors'].get('camera_lidar_mount_changed', False))
+
+
+def use_current_extrinsics(profile):
+    return (profile['network'].get('sensor_source', 'go2') == 'orin'
+            and profile['local_sensors'].get('camera_lidar_extrinsics_mode') == 'current_parameters')
+
+
+def semantic_mapping_enabled(profile):
+    semantic=profile.get('semantic',{})
+    return bool(semantic.get('enabled',False)) and (
+        camera_lidar_extrinsics_current(profile) or
+        use_current_extrinsics(profile) and semantic.get('use_current_extrinsics') is True)
+
+
 def sensor_commands(root, config):
     lidar_config = root / config['lidar_config']
     return [
@@ -20,7 +37,7 @@ def sensor_commands(root, config):
             '-p', 'frame_id:=livox_frame', '-p', 'user_config_path:=' + str(lidar_config),
             '-p', 'cmdline_input_bd_code:=livox0000000001']),
         ('camera', ['ros2', 'launch', 'realsense2_camera', 'rs_launch.py',
-            'camera_name:=camera', 'camera_namespace:=',
+            'camera_name:=camera', 'camera_namespace:=/',
             'rgb_camera.color_profile:=424,240,6', 'depth_module.depth_profile:=640,480,6',
             'depth_module.infra_profile:=640,480,6', 'enable_color:=true', 'enable_depth:=true',
             'enable_infra1:=false', 'enable_infra2:=true', 'enable_gyro:=false', 'enable_accel:=false',

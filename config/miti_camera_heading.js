@@ -5,9 +5,13 @@ function rtabmapCameraHeadingFactory(config, lookupTransform) {
   const topic = frameName(config.topic);
   const opticalFrame = frameName(config.opticalFrame);
 
-  function applies(layer) {
-    return config.enabled === true && layer.type === 'odometry' &&
+  function targets(layer) {
+    return layer.type === 'odometry' &&
       frameName(layer.topic) === topic && (!layer.poseType || layer.poseType === 'arrow');
+  }
+
+  function applies(layer) {
+    return config.enabled === true && targets(layer);
   }
 
   function transform(matrix, layer, message, tree, time = 0) {
@@ -36,6 +40,12 @@ function rtabmapCameraHeadingFactory(config, lookupTransform) {
   }
 
   function status(layer) {
+    if (config.currentParameters === true && targets(layer)) {
+      return 'Receiving · 箭头朝向：' + opticalFrame + '（当前外参参数）';
+    }
+    if (config.calibrationPending === true && targets(layer)) {
+      return 'Receiving · 箭头朝向：雷达坐标系（相机外参待标定）';
+    }
     return applies(layer) ? 'Receiving · 箭头朝向：' + opticalFrame + '（光轴）' : 'Receiving';
   }
 

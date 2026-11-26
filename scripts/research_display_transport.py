@@ -49,6 +49,11 @@ class DisplayTransport(transport.Transport):
             qos.reliability = ReliabilityPolicy.RELIABLE
             qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
             qos.depth = 1
+        if index == 1 and self.args.mode == 'send':
+            # RealSense retains several factory TF messages in one publisher.
+            # A depth-one reader only receives its last retained message.
+            # Collect the complete history before forwarding the merged tree.
+            qos.depth = 100
         return qos
 
     def queue(self, index, message):

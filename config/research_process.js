@@ -12,7 +12,7 @@
   const descriptions = {
     pmf:['真实LiDAR扫描与RGB-D图像分别输入；点云保留其采集来源。','使用已记录内外参、位姿与深度建立几何对应；外参状态与验收结论分别显示。','每组观测展示原始时间、已记录校正时间与配对时间差。','图像多尺度特征参与三维几何交互；点特征在真实XYZ位置上展示。','对照分支将每点RGB颜色与LiDAR表面法向量拼为6维输入；XYZ单独提供位置。','主分支使用RGB-D几何上下文与LiDAR点查询；对照分支独立运行。'],
     rgbnir:['近红外来自独立单通道图像；深度用于将近红外配准到RGB网格。','查看原始近红外、配准结果及有效像素。无效区域不参与近红外融合。','展示同一输入组的时间关系，保留图像尺寸、格式与坐标系信息。','共享骨干分别处理RGB与近红外，查看P3、P4、P5特征响应。','同尺度特征使用RMS增益匹配幅值，再加权组合；该分支使用加权融合。','同一RGB输入的纯RGB结果与RGB＋近红外融合结果并排查看。'],
-    avs:['工作站WheelTec采集声学数据；仅展示与RGB帧匹配的声学窗口。','实际PCM波形、频谱与log-Mel转换；声学预处理不等于声学空间标定。','十个图像帧分别匹配0.96秒log-Mel片段的中心时刻。','声学嵌入从128维投影到256维；视觉多尺度特征统一到256通道。','视觉token沿序列维拼接；声学条件查询通过注意力与视觉区域交互。','输出声学关联的图像分割。需要同样本评测记录才能判定融合精度。']
+    avs:['WheelTec麦克风采集声学数据；仅展示与RGB帧匹配的实际声学窗口。','实际PCM波形、频谱与log-Mel转换；声学预处理不等于声学空间标定。','十个图像帧分别匹配0.96秒log-Mel片段的中心时刻。','声学嵌入从128维投影到256维；视觉多尺度特征统一到256通道。','视觉token沿序列维拼接；声学条件查询通过注意力与视觉区域交互。','输出声学关联的图像分割。需要同样本评测记录才能判定融合精度。']
   };
   let branch='pmf',step=0,frozen=false,status=null,polling=false,featureChoice={},plotObserver=null;
   const samples={},pending={};
@@ -58,7 +58,7 @@
   const shape = row => (row?.saved_shape||row?.shape||[]).join(' × ');
   const empty = text => `<div class="empty">${esc(text)}</div>`;
   const note = text => `<div class="inline-note">${esc(text)}</div>`;
-  const figure = (jpg,label,sub='') => `<figure>${jpg?`<img src="data:image/jpeg;base64,${esc(jpg)}" alt="${esc(label)}">`:empty('本样本未归档：'+label)}<figcaption><strong>${esc(label)}</strong>${sub?'<br>'+esc(sub):''}</figcaption></figure>`;
+  const figure = (jpg,label,sub='') => `<figure>${jpg?`<img src="data:image/jpeg;base64,${esc(jpg)}" alt="${esc(label)}">`:empty('本样本暂无预览：'+label)}<figcaption><strong>${esc(label)}</strong>${sub?'<br>'+esc(sub):''}</figcaption></figure>`;
   const plot = (id,label,compact=false) => `<figure class="plot ${compact?'compact-plot':''}"><canvas id="${id}" aria-label="${esc(label)}" role="img"></canvas><figcaption>${esc(label)}</figcaption></figure>`;
   const table = (headers,rows) => `<div class="table-wrap"><table class="data-table"><thead><tr>${headers.map(x=>`<th>${esc(x)}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${row.map(x=>`<td>${esc(x)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
   const matrix = (name,values) => values?`<h3>${esc(name)}</h3><pre>${esc(values.map(r=>r.map(x=>fmt(x,5).padStart(10)).join(' ')).join('\n'))}</pre>`:note(name+'未归档');
@@ -181,7 +181,7 @@
   function inputTable(s){
     const relevant=branch==='pmf'?['rgb','depth','lidar']:branch==='rgbnir'?['rgb','nir','depth']:['rgb','audio'];
     const rows=relevant.filter(k=>s.interface_example[k]).map(k=>{const r=s.interface_example[k];return[k,r.topic,r.format+' / '+(r.shape||[]).join('×'),r.frame||r.stamp_quality,fmt(r.raw_stamp,6)];});
-    return '<details data-disclosure="sample-inputs"><summary>本样本输入来源、格式、坐标与时间字段</summary>'+table(['模态','来源','格式 / 尺寸','坐标 / 时间质量','原始时间 / s'],rows)+'<p class="note">仅展示本次选中输入的归档字段；完整批次与缺失项见“时间与接口”。</p></details>';
+    return '<details data-disclosure="sample-inputs"><summary>本样本输入来源、格式、坐标与时间字段</summary>'+table(['模态','来源','格式 / 尺寸','坐标 / 时间质量','原始时间 / s'],rows)+'<p class="note">字段来自本次实际处理记录；图形为抽样预览，完整批次与保存状态见“时间与接口”。</p></details>';
   }
   function dots(jpg,uv,label) {
     if(!jpg||!uv?.length)return figure(jpg,label);
@@ -215,14 +215,14 @@
   function stageMarkup(s) {
     const v=s.visuals,t=s.tables,img=s.images,c=s.context;
     if(step===0){
-      if(branch==='pmf')return '<div class="gallery">'+figure(img.raw,'RGB图像')+(v.filter?plot('raw-cloud','真实LiDAR原始扫描 · '+v.filter.frame):v.cloud?plot('scene-cloud','已保留的真实LiDAR点 · icp_odom'):empty('该样本无LiDAR归档'))+'</div>'+inputTable(s)+note('深度参与几何处理；点云来自LiDAR采集归档。');
+      if(branch==='pmf')return '<div class="gallery">'+figure(img.raw,'RGB图像')+(v.filter?plot('raw-cloud','真实LiDAR原始扫描 · '+v.filter.frame):v.cloud?plot('scene-cloud','已保留的真实LiDAR点 · '+(v.cloud?.frame||'未记录')+''):empty('该样本尚无LiDAR输入预览'))+'</div>'+inputTable(s)+note('深度参与几何处理；点云来自本次LiDAR输入，抽样展示。');
       if(branch==='rgbnir')return '<div class="gallery">'+figure(img.raw,'RGB图像')+figure(v.nir_raw,'原始近红外 · mono8')+'</div>'+inputTable(s)+note('数据来源与时间来自本分支保存记录，当前在线状态见上方。');
-      return '<div class="gallery">'+figure(img.raw,'匹配窗口内的RGB帧')+(v.waveform?plot('waveform','WheelTec原始PCM波形',true):figure(null,'原始PCM波形'))+'</div><div style="margin-top:16px">'+figure(v.log_mel||img.spectrum,'实际log-Mel频谱')+'</div>'+inputTable(s)+(!v.waveform?note('旧样本仅保存log-Mel；新增采集会保留原始PCM，波形与功率频谱随后显示。'):'');
+      return '<div class="gallery">'+figure(img.raw,'匹配窗口内的RGB帧')+(v.waveform?plot('waveform','WheelTec原始PCM波形',true):figure(null,'原始PCM波形'))+'</div><div style="margin-top:16px">'+figure(v.log_mel||img.spectrum,'实际log-Mel频谱')+'</div>'+inputTable(s)+(!v.waveform?note('当前样本尚无原始PCM预览；已有log-Mel仍可查看。'):'');
     }
     if(step===1){
       if(branch==='pmf')return '<div class="gallery">'+dots(img.raw,v.correspondence?.uv,'LiDAR投影到RGB')+plot('filter-cloud','同一扫描筛选前后 · '+(v.filter?.frame||''))+'</div>'+table(['对应点','X / m','Y / m','Z / m','u / px','v / px'],(v.correspondence?.xyz||[]).slice(0,8).map((p,i)=>[i+1,...p.map(x=>fmt(x)),...v.correspondence.uv[i].map(x=>fmt(x,1))]))+note(v.filter?.note||'此样本没有同扫描筛选记录')+'<details data-disclosure="calibration-parameters"><summary>相机参数与坐标变换</summary>'+matrix('RGB内参 K',t.intrinsics)+matrix('camera_from_lidar · 平移单位 m',t.extrinsics)+note(c.calibration_evidence||'无独立标定证据')+'</details>';
       if(branch==='rgbnir')return '<div class="gallery three">'+figure(v.nir_raw,'配准前近红外')+figure(v.nir_registered,'配准到RGB网格')+figure(v.valid_mask,'有效区域','白色有效；黑色不使用近红外')+'</div>'+table(['对应点','RGB u','RGB v','NIR u','NIR v'],(v.correspondence?.rgb_uv||[]).slice(0,8).map((p,i)=>[i+1,...p.map(x=>fmt(x,1)),...v.correspondence.nir_uv[i].map(x=>fmt(x,1))]))+'<details data-disclosure="calibration-parameters"><summary>相机参数与坐标变换</summary>'+matrix('RGB内参 K',t.intrinsics)+matrix('nir_from_rgb · 平移单位 m',t.extrinsics)+note('标定版本：'+c.calibration)+'</details>';
-      return flow([['PCM','采样率 '+(v.waveform?.rate||c.sample_rate||'未归档')+' Hz'],['STFT','时频变换'],['log-Mel','96 × 64 / 片段']])+'<div class="gallery">'+(v.waveform?plot('waveform','原始波形 · 幅值',true):empty('该样本未保存原始PCM'))+figure(v.log_mel,'log-Mel · 时间×频率响应')+'</div>'+(v.spectrum?plot('spectrum','实际PCM Welch功率谱密度',true):note('功率频谱将在新的PCM归档产生后显示。'))+note('声学原始时间、应用偏移及时间质量在“时间与接口”中按本批次记录。');
+      return flow([['PCM','采样率 '+(v.waveform?.rate||c.sample_rate||'未归档')+' Hz'],['STFT','时频变换'],['log-Mel','96 × 64 / 片段']])+'<div class="gallery">'+(v.waveform?plot('waveform','原始波形 · 幅值',true):empty('该样本未保存原始PCM'))+figure(v.log_mel,'log-Mel · 时间×频率响应')+'</div>'+(v.spectrum?plot('spectrum','实际PCM Welch功率谱密度',true):note('当前样本尚无PCM功率频谱预览。'))+note('声学原始时间、应用偏移及时间质量在“时间与接口”中按本批次记录。');
     }
     if(step===2){
       const rows=s.timing.rows||[];
@@ -230,7 +230,7 @@
     }
     if(step===3){
       if(branch==='rgbnir'){const controls=selectFeatures(s,['P3.rgb','P4.rgb','P5.rgb']);const level=(featureChoice.rgbnir||'P3.rgb').split('.')[0];return controls+'<div class="gallery">'+heat(s,level+'.rgb',level+' RGB原始特征')+heat(s,level+'.nir',level+' 近红外原始特征')+'</div>'+note('热图使用各张特征图自身范围归一化，只展示空间响应；幅值比较请查看下一步RMS数值。');}
-      if(branch==='pmf'){const controls=selectFeatures(s,allFeatures(s).filter(f=>f.heatmap_layout!=='point_index_grid'&&f.heatmap).map(f=>f.name));return controls+'<div class="gallery">'+heat(s,featureChoice.pmf,'图像/跨视角特征响应')+(v.geometry?plot('geometry-cloud','真实查询XYZ上的三维特征能量'):empty('点特征空间映射未归档'))+'</div>'+note('三维特征通过归档的点—体素索引关联到真实XYZ，点序网格不作为空间投影图。');}
+      if(branch==='pmf'){const controls=selectFeatures(s,allFeatures(s).filter(f=>f.heatmap_layout!=='point_index_grid'&&f.heatmap).map(f=>f.name));return controls+'<div class="gallery">'+heat(s,featureChoice.pmf,'图像/跨视角特征响应')+(v.geometry?plot('geometry-cloud','真实查询XYZ上的三维特征能量'):empty('点特征空间映射未归档'))+'</div>'+note('三维特征通过本次点—体素索引关联到真实XYZ，点序网格不作为空间投影图。');}
       const controls=selectFeatures(s,['visual.scale1','visual.scale2','visual.scale3','visual.scale4']);return flow([['128','声学嵌入'],['256','声学维度投影'],['256','视觉各尺度通道']])+'<div class="gallery">'+plot('audio-vectors','声学嵌入/投影的逐维数值',true)+heat(s,featureChoice.avs||'visual.scale1','视觉尺度特征')+'</div>'+controls+note('图中的维度投影是实际特征处理；统一维度本身不证明跨模态语义一致。');
     }
     if(step===4){
@@ -266,7 +266,7 @@
     $('stage-title').textContent=branch==='coverage'?'三条分支共同覆盖任务书':titles[branch][step];
     $('stage-description').textContent=branch==='coverage'?'点击条目跳转到对应分支证据。技术性能仍以实测记录判定。':descriptions[branch][step];
     $('stage-tag').textContent=branch==='coverage'?'六项要求':step===5?'图片定性对照':'实际处理记录';
-    const s=samples[branch];$('visual').innerHTML=branch==='coverage'?coverage():s?stageMarkup(s):empty('等待该分支的同会话输入与特征归档；其他分支可独立查看。');
+    const s=samples[branch];$('visual').innerHTML=branch==='coverage'?coverage():s?stageMarkup(s):empty('等待该分支的同批次推理结果与输入预览；其他分支可独立查看。');
     if(s&&step===1&&branch!=='avs'&&s.tables.extrinsics){
       const summary=[...$('visual').querySelectorAll('summary')].find(e=>e.textContent.includes('相机参数'));
       if(summary){summary.insertAdjacentHTML('afterend',plot('calibration-axes','内外参记录对应的传感器坐标轴'));summary.nextElementSibling.classList.add('calibration-plot');}
@@ -291,7 +291,7 @@
   }
   function snapshotNotice(){
     const s=samples[branch];if(!s||s.archive_level!=='result_snapshot_only')return;
-    if(!document.getElementById('snapshot-archive-notice'))$('sample-status').insertAdjacentHTML('beforeend','<span id="snapshot-archive-notice">完整输入与张量未归档</span>');
+    if(!document.getElementById('snapshot-archive-notice'))$('sample-status').insertAdjacentHTML('beforeend','<span id="snapshot-archive-notice">'+(s.input_preview_source?'同批次输入抽样预览 · 完整张量未保存':'完整输入与张量未归档')+'</span>');
     const link=$('evidence').querySelector('a[href$="_features.npz"]');
     if(link){link.removeAttribute('href');link.textContent='原运行未保存完整特征文件';}
   }
@@ -303,5 +303,5 @@
   document.addEventListener('click',e=>{const button=e.target.closest('button');if(!button)return;if(button.dataset.standard){standard(button.dataset.standard);return;}if(mapping.isActive())return;if(button.dataset.branch){branch=button.dataset.branch;step=0;render();}if(button.dataset.step){step=Number(button.dataset.step);render();}if(button.dataset.jump){const parts=button.dataset.jump.split(':');branch=parts[0];step=Number(parts[1]);render();}});
   $('freeze').onclick=()=>{if(mapping.isActive()){mapping.freeze();return;}frozen=!frozen;$('freeze').setAttribute('aria-pressed',String(frozen));$('freeze').textContent=frozen?'恢复自动更新':'冻结当前样本';updateStatus();if(!frozen)poll();};
   $('download').onclick=()=>{if(mapping.isActive()){mapping.download();return;}const s=samples[branch];if(!s)return;const blob=new Blob([JSON.stringify({...s,display_capture:{frozen,stage:steps[step],captured_at:new Date().toISOString()}},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`${branch}-process-${s.sequence}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});render();new URL(location.href).searchParams.get('standard')==='mapping'?standard('mapping'):poll();setInterval(poll,4000);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});render();new URL(location.href).searchParams.get('standard')==='mapping'?standard('mapping'):poll();setInterval(poll,1000);
 })();

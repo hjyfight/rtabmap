@@ -142,6 +142,15 @@ def resolve_launch(**overrides):
 
 
 class LaunchGraphTests(unittest.TestCase):
+    def test_resume_database_preserves_existing_data_and_initial_pose(self):
+        with patch.object(slam_launch,'Node',wraps=Node) as factory:
+            nodes=resolve_launch(use_camera='false',database_path='/tmp/existing_map.db',
+                                 delete_db_on_start='false',odom_initial_pose='1 2 3 0.1 0.2 0.3')
+            mapping=[c.kwargs for c in factory.call_args_list if c.kwargs.get('executable')=='rtabmap'
+                     and c.kwargs.get('arguments') is not None]
+            self.assertEqual(mapping[0]['arguments'],['/tmp/existing_map.db'])
+        self.assertEqual(nodes['icp_odometry'][0]['initial_pose'],'1 2 3 0.1 0.2 0.3')
+
     def test_visualizer_passes_config_with_required_d_flag(self):
         for overrides, expected_path in (
                 ({}, str(ROOT / 'launch' / '..' / 'config' / 'livox_realsense_gui.ini')),

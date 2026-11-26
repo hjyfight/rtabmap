@@ -50,6 +50,25 @@ def estimated_transform(path):
     return matrix,cfg
 
 
+def current_transform(path):
+    """Use explicitly supplied display parameters without calling them measured."""
+    cfg=json.loads(Path(path).read_text())
+    if cfg.get('status')!='current_parameters' or not cfg.get('evidence'):
+        raise NotReady('Current-parameter display requires an explicit parameter record')
+    matrix=np.asarray(cfg.get('camera_from_lidar'),dtype=np.float64)
+    if (matrix.shape!=(4,4) or not np.isfinite(matrix).all() or
+            not np.allclose(matrix[3],[0,0,0,1]) or
+            not np.allclose(matrix[:3,:3].T@matrix[:3,:3],np.eye(3),atol=1e-3) or
+            not np.isclose(np.linalg.det(matrix[:3,:3]),1,atol=1e-3)):
+        raise ValueError('Current camera_from_lidar must be a rigid transform')
+    scale=cfg.get('intensity_scale')
+    if (not cfg.get('camera_frame') or not cfg.get('lidar_frame') or scale is None or
+            not np.isfinite(scale) or scale<=0):
+        raise ValueError('Current parameters require frames and a positive intensity scale')
+    cfg=dict(cfg,geometry_verified=False)
+    return matrix,cfg
+
+
 def tf_preview_transform(translation, quaternion, camera_frame, lidar_frame, scale, evidence):
     """A runtime TF is usable for an experiment, never evidence of calibration."""
     p, q = np.asarray(translation, dtype=float), np.asarray(quaternion, dtype=float)
@@ -87,17 +106,13 @@ def pair_rgb_lidar(frames, clouds, tolerance, now, max_age):
     raise NotReady(f'RGB/LiDAR未同步：偏差 {nearest_gap:.3f}s')
 
 
-def project_pmf(points, rgb, intrinsic, distortion, camera_from_lidar, intensity_scale):
-    """Project raw XYZ/intensity; keep the closest camera-depth sample per pixel.
-
-    Point features remain in the LiDAR coordinate frame as in SemanticKITTI.
-    Right/bottom padding never changes the camera intrinsics.
-    """
+def project_lidar_indices(points, image_shape, intrinsic, distortion, camera_from_lidar):
+    """Select the closest genuine XYZI sample per pixel without building rasters."""
     import cv2
     points = np.asarray(points, np.float32)
     if points.ndim != 2 or points.shape[1] != 4:
         raise ValueError('PMF requires raw x,y,z,intensity, not a coloured map cloud')
-    h, w = rgb.shape[:2]
+    h, w = image_shape[:2]
     k = np.asarray(intrinsic, np.float64).reshape(3, 3)
     if not np.isfinite(k).all() or min(k[0, 0], k[1, 1]) <= 0:
         raise ValueError('Invalid RGB CameraInfo intrinsics')
@@ -121,6 +136,18 @@ def project_pmf(points, rgb, intrinsic, distortion, camera_from_lidar, intensity
     indices, uv = indices[chosen], uv[chosen]
     if len(indices) < 32:
         raise NotReady('相机视野内有效投影点不足32个')
+    return uv, indices
+
+
+def project_pmf(points, rgb, intrinsic, distortion, camera_from_lidar, intensity_scale):
+    """Project raw XYZ/intensity; keep the closest camera-depth sample per pixel.
+
+    Point features remain in the LiDAR coordinate frame as in SemanticKITTI.
+    Right/bottom padding never changes the camera intrinsics.
+    """
+    points = np.asarray(points, np.float32)
+    h, w = rgb.shape[:2]
+    uv, indices = project_lidar_indices(points, rgb.shape, intrinsic, distortion, camera_from_lidar)
     ph, pw = (h + 15) // 16 * 16, (w + 15) // 16 * 16
     sparse = np.zeros((5, ph, pw), np.float32)
     mask = np.zeros((ph, pw), bool)

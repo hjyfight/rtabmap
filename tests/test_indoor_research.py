@@ -7,7 +7,7 @@ import pytest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 from rtabmap_research.inputs import NotReady,estimated_transform
 from rtabmap_research.ptv3 import coloured_points,normals_from_lidar
-from rtabmap_research.point_scene import build_scene
+from rtabmap_research.point_scene import build_scene,voxel_first_indices
 
 
 def fixture():
@@ -59,3 +59,43 @@ def test_scene_uses_timestamped_pose_and_never_counts_repeated_frames():
     assert len(scene['render_indices'])>=32
     np.testing.assert_allclose(scene['xyz'][:,2],2)
     with pytest.raises(NotReady):build_scene([observations[0]]*4,np.eye(4))
+
+
+def test_current_parameter_projection_keeps_real_points_with_depth_filter_explicitly_disabled():
+    points,rgb,depth,k=fixture()
+    observations=[]
+    for i in range(4):
+        pose=np.eye(4);pose[0,3]=i*.01
+        local=points.copy();local[:,0]-=i*.01
+        observations.append(dict(points=local,rgb=rgb,depth=depth+3,k=k,distortion=[],world_from_lidar=pose,
+                                 rgb_stamp=100+i*.2,lidar_stamp=100+i*.2+.01))
+    with pytest.raises(NotReady):build_scene(observations,np.eye(4))
+    scene=build_scene(observations,np.eye(4),enforce_depth_consistency=False)
+    assert scene['depth_consistency_enforced'] is False
+    np.testing.assert_allclose(scene['xyz'][:,2],2)
+    assert len(scene['render_indices'])>=32
+
+
+@pytest.mark.parametrize('dtype',[np.float32,np.float64])
+def test_packed_voxels_preserve_first_sample_and_lexicographic_order(dtype):
+    generator=np.random.default_rng(23)
+    points=generator.uniform(-3,3,(4000,3)).astype(dtype)
+    points=np.concatenate([points,points[:50],np.zeros((4,3),dtype=dtype)])
+    expected=np.unique(np.floor(points/.04).astype(np.int64),axis=0,return_index=True)[1]
+    np.testing.assert_array_equal(voxel_first_indices(points,.04),expected)
+    assert voxel_first_indices(np.empty((0,3),dtype=dtype),.04).size==0
+
+
+def test_packed_voxels_use_exact_fallback_when_key_range_exceeds_int64():
+    points=np.asarray([[1e7,1e7,1e7],[-1e7,-1e7,-1e7],[0,0,0],[1e7,1e7,1e7]])
+    expected=np.unique(np.floor(points/.01).astype(np.int64),axis=0,return_index=True)[1]
+    np.testing.assert_array_equal(voxel_first_indices(points,.01),expected)
+
+
+def test_subset_normals_use_full_geometry_neighborhoods():
+    points=np.random.default_rng(9).normal(size=(250,3)).astype(np.float32)
+    selected=np.asarray([3,17,48,119,200])
+    normals,curvature=normals_from_lidar(points)
+    subset,subset_curvature=normals_from_lidar(points,query_indices=selected)
+    np.testing.assert_array_equal(subset,normals[selected])
+    np.testing.assert_array_equal(subset_curvature,curvature[selected])

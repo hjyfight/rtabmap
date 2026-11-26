@@ -11,6 +11,7 @@
   },
   "semantic": {
     "enabled": true,
+    "use_current_extrinsics": true,
     "backend": "yoloe_pf",
     "weights": "models/yoloe-11s-seg-pf.pt",
     "config": "src/rtabmap_semantic/config/yoloe.yaml"
@@ -26,9 +27,23 @@
     "hardware_synchronization_validated": false
   },
   "local_sensors": {
-    "lidar_interface": "",
-    "lidar_host_ip": "192.168.123.30",
-    "lidar_ip": "192.168.123.20",
+    "camera_lidar_mount_changed": true,
+    "camera_lidar_extrinsics_mode": "current_parameters",
+    "current_calibration_path": "config/fusion_research_current_calibration.json",
+    "lidar_interface": "enxec1ac312a316",
+    "lidar_host_ip": "192.168.1.130",
+    "lidar_ip": "192.168.1.131",
     "lidar_config": "config/orin_mid360_direct.json"
+  },
+  "mapping": {
+    "database_path": "/home/qiyuan/Project/rtabmap_slam/logs/go2_orin_research/20261125_165539_16338/map.db",
+    "initial_pose": [
+      -0.0089,
+      5e-05,
+      -0.00142,
+      -0.0143127470639047,
+      -0.11504599563908421,
+      -0.0019963075984311142
+    ]
   }
 }

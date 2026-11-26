@@ -75,13 +75,15 @@ function rtabmapResearchFactory(React) {
       return()=>{disposed=true;controller?.abort();clearInterval(interval);clearInterval(clock);};
     },[task]);
     const data=snapshot?.result,replay=snapshot?.source_mode==='offline_replay',nirTask=task==='rgbnir';
+    const currentParameters=snapshot?.parameters_mode==='current_parameters'||data?.context?.calibration==='current_parameters';
+    const calibrationPending=task==='pmf'&&!currentParameters&&!data&&snapshot?.state==='waiting'&&/外参/.test(snapshot?.detail||'');
     const serverNow=now/1000-clockOffset;
     const offline=!snapshot||(!replay&&serverNow-(snapshot.display_published_at??snapshot.published_at)>4),preview=data?.mode==='rgb_only';
     const odin=snapshot?.model?.backend_kind==='rgbd_lidar_odin';
     const indoor=odin||snapshot?.model?.backend_kind==='rgb_coloured_lidar';
-    const experimental=task==='pmf'&&['tf_preview','auto_estimated'].includes(data?.context?.calibration);
+    const experimental=task==='pmf'&&['tf_preview','auto_estimated','current_parameters'].includes(data?.context?.calibration);
     const stale=!replay&&(offline||!data||serverNow-(data.display_source_stamp??data.source_stamp)>Math.max(6,task==='avs'?14:8)||['error','model_error'].includes(snapshot?.state)||(snapshot?.state==='waiting'&&!preview));
-    const state=error|| (replay?'离线回放 · 已保存真实数据':offline?'等待3001推理服务':preview&&snapshot?.state!=='error'?'RGB单分支 · 待配准':snapshot?.state==='ready'?nirTask?'RGB 90% + NIR 10% · 实验融合':odin?'室内RGB-D + LiDAR · 实验融合':indoor?'室内RGB + LiDAR · 实验对照':experimental?'RGB + LiDAR · 实验融合':'实时推理':snapshot?.state==='running'?'推理中':snapshot?.state==='loading'?'加载模型':snapshot?.state==='model_error'?'模型加载失败':'等待输入条件');
+    const state=error|| (replay?'离线回放 · 已保存真实数据':offline?'等待3001推理服务':calibrationPending?'等待外参标定':preview&&snapshot?.state!=='error'?'RGB单分支 · 待配准':snapshot?.state==='ready'?nirTask?'RGB 90% + NIR 10% · 实验融合':odin?'室内RGB-D + LiDAR · 实验融合':indoor?'室内RGB + LiDAR · 实验对照':experimental?'RGB + LiDAR · 实验融合':'实时推理':snapshot?.state==='running'?'推理中':snapshot?.state==='loading'?'加载模型':snapshot?.state==='model_error'?'模型加载失败':'等待输入条件');
     const input=(name,label)=>{
       const v=snapshot?.inputs[name],age=v?serverNow-(v.display_stamp??v.stamp):Infinity,missing=!v||age>3||age<-.5||offline;
       return h('div',{className:'fr-input',key:name,'data-stale':!replay&&missing},h('strong',null,label),h('span',null,replay?'回放':missing?'等待':age.toFixed(1)+'s'),
@@ -96,29 +98,29 @@ function rtabmapResearchFactory(React) {
     const viewLabel=activeView==='lidar'?'LiDAR预测':activeView==='ptv3'?'PTv3对照':activeView==='no_rgb'?'移除RGB对照':activeView==='pmf'?'PMF对照':activeView==='projection'?nirTask?'配准NIR':'雷达投影':'RGB对照';
     const secondKey=nirTask?activeView==='rgb'?'reference_overlay':'projection':odin?activeView==='lidar'?'lidar_overlay':activeView==='ptv3'?'reference_overlay':'projection':indoor?activeView==='no_rgb'?'no_rgb_overlay':activeView==='pmf'?'reference_overlay':'projection':task==='pmf'&&!preview?activeView==='rgb'&&data?.images?.rgb_comparison?'rgb_comparison':'projection':'raw';
     const secondCaption=nirTask?activeView==='rgb'?'同帧RGB基线 · 原YOLOv8':'真实配准NIR':odin?activeView==='lidar'?'ODIN · 原始LiDAR点预测':activeView==='ptv3'?'原PTv3 · 相同LiDAR点对照':'相机视野内的LiDAR投影':indoor?activeView==='no_rgb'?'同几何、同类别 · 移除RGB输入':activeView==='pmf'?'原PMF对照 · 道路类别':'相机视野内的LiDAR投影':task==='pmf'&&!preview?secondKey==='rgb_comparison'?'同帧RGB分支 · 共同投影区域':'相机视野内的LiDAR投影':'同一采集帧 · RGB';
-    const pipeline=nirTask?['RGB-D / NIR配准','共享冻结骨干','P3 / P4 / P5','90/10固定特征融合','原分割头']:odin?['RGB-D多帧','几何邻域交互','LiDAR / 有效深度点','特征与点坐标对齐','室内分割']:task==='pmf'?indoor?['RGB投影颜色','LiDAR位置 / 法向','6通道真实输入','点注意力编码','室内点分割']:preview?['RGB输入','冻结编码器','四级视觉特征','RGB分支分割','LiDAR待配准']:['LiDAR投影到RGB','四级H/W匹配','通道拼接','残差注意力','点云分割']:['10秒PCM / 10帧','128→256','多尺度token拼接','音频查询 / Mixer','发声区域分割'];
+    const pipeline=calibrationPending?['相机 / 雷达外参待标定']:nirTask?['RGB-D / NIR配准','共享冻结骨干','P3 / P4 / P5','90/10固定特征融合','原分割头']:odin?['RGB-D多帧','几何邻域交互','LiDAR / 有效深度点','特征与点坐标对齐','室内分割']:task==='pmf'?indoor?['RGB投影颜色','LiDAR位置 / 法向','6通道真实输入','点注意力编码','室内点分割']:preview?['RGB输入','冻结编码器','四级视觉特征','RGB分支分割','LiDAR待配准']:['LiDAR投影到RGB','四级H/W匹配','通道拼接','残差注意力','点云分割']:['10秒PCM / 10帧','128→256','多尺度token拼接','音频查询 / Mixer','发声区域分割'];
     return h('div',{className:'fusion-research','data-task':task},h('style',null,css),
       h('div',{className:'fr-bar'},h('div',{className:'fr-tabs'},...[["results","分割结果"],["features","特征融合"]].map(([id,title])=>h('button',{key:id,onClick:()=>setTab(id),'aria-pressed':tab===id},title)),h('button',{onClick:()=>setShowAnnotations(v=>!v),'aria-pressed':showAnnotations},showAnnotations?'标注：开':'标注：关'),(task==='pmf'&&!preview)||nirTask?h('button',{onClick:()=>setSecondView(views[(views.indexOf(activeView)+1)%views.length])},viewLabel):null),h('span',{className:'fr-status','data-wait':stale,role:'status'},state)),
       h('div',{className:'fr-inputs'},input('rgb','RGB'),input(nirTask?'nir':task==='pmf'?'lidar':'audio',nirTask?'NIR':task==='pmf'?'LiDAR':'麦克风')),
       h('div',{className:'fr-path'},...pipeline.flatMap((text,i)=>[i?h('b',{key:'arrow'+i},'→'):null,h('span',{key:text},text)])),
       snapshot?.detail&&snapshot.state!=='ready'?h('div',{className:'fr-note'},snapshot.detail):null,
       replay?h('div',{className:'fr-note'},'离线检查：使用已保存的真实输入，原始采集时间 '+new Date(data.source_stamp*1000).toLocaleString()+'；本页不代表当前实机状态。'):null,
-      experimental?h('div',{className:'fr-note'},data.context.calibration==='auto_estimated'?'使用已做帧间复核的自动外参估计，尚未完成标定验收。有效投影 '+data.projected_points+' 点。':'已融合原始LiDAR；沿用当前SLAM TF，安装外参尚未实测标定。有效投影 '+data.projected_points+' 点。'):null,
+      experimental?h('div',{className:'fr-note'},currentParameters?'按当前外参参数展示 · 有效投影 '+data.projected_points+' 点。':data.context.calibration==='auto_estimated'?'使用已做帧间复核的自动外参估计，尚未完成标定验收。有效投影 '+data.projected_points+' 点。':'已融合原始LiDAR；沿用当前SLAM TF，安装外参尚未实测标定。有效投影 '+data.projected_points+' 点。'):null,
       data?.fusion_quality?h('div',{className:'fr-note'},'投影覆盖 '+(data.fusion_quality.projection_coverage*100).toFixed(1)+'%'+(finite(data.fusion_quality.rgb_branch_disagreement)?' · 与同帧RGB分支差异 '+(data.fusion_quality.rgb_branch_disagreement*100).toFixed(1)+'%（不是准确率）。':indoor?' · '+data.observation_count+'组真实帧 / '+data.window_s.toFixed(1)+'s · '+data.scene_points+'个有色点。':'')):null,
       data?.comparison?h('div',{className:'fr-note'},odin?'与原PTv3在共同LiDAR点上的类别差异 '+(data.comparison.projected_disagreement*100).toFixed(1)+'%；这是模型对照，尚无独立人工真值。':'移除RGB输入后，共同投影点类别差异 '+(data.comparison.projected_disagreement*100).toFixed(1)+'%；属于输入消融，尚无独立训练的LiDAR基线。'):null,
       odin&&data?.input_statistics?h('div',{className:'fr-note'},'全图仅标记 '+data.input_statistics.depth_query_points+' 个真实有效深度像素；右侧另示原始LiDAR预测。深度补洞仅用于模型上下文，不显示为实测像素。'):null,
       nirTask&&data?h('div',{className:'fr-note'},'NIR有效配准覆盖 '+(data.valid_coverage*100).toFixed(1)+'% · 实验 '+data.detection_count+' 个实例 / RGB基线 '+data.baseline_count+' 个实例；有效区域采用90/10，无效区域保持RGB特征。'):null,
-      !data?h('div',{className:'fr-empty'},h('span',null,nirTask?'等待同步RGB-D、mono8 NIR及相机标定':task==='pmf'?indoor?'等待多帧RGB-D、LiDAR及同步位姿':'等待RGB与LiDAR输入':'等待连续10秒音频及对应视频'),h('small',null,snapshot?.model?'完整预训练权重已加载 · 冻结推理':'正在准备作者预训练模型')):
+      !data?h('div',{className:'fr-empty'},h('span',null,calibrationPending?'等待外参标定，融合尚未运行':nirTask?'等待同步RGB-D、mono8 NIR及相机标定':task==='pmf'?indoor?'等待多帧RGB-D、LiDAR及同步位姿':'等待RGB与LiDAR输入':'等待连续10秒音频及对应视频'),h('small',null,calibrationPending?'需要重新标定相机与雷达的相对位置和朝向':snapshot?.model?'完整预训练权重已加载 · 冻结推理':'正在准备作者预训练模型')):
         tab==='features'?h('div',null,h('div',{className:'fr-note'},'曲线为实际张量的通道均值，按各自范围显示。特征来自本次真实输入；完整保存内容见NPZ。'),h('div',{className:'fr-features'},...data.features.map(row=>h(Feature,{key:row.name,row})))):
         h('div',null,h('div',{className:'fr-pictures'},picture('overlay',nirTask?'RGB 90% + NIR 10% · 实例预测':odin?'ODIN · RGB + 深度 + LiDAR · 有效深度区域':task==='pmf'?indoor?'室内PTv3实验结果 · 有效投影点':preview?'PMF RGB分支 · 尚未融合LiDAR':experimental?'RGB + LiDAR实验融合 · 有效投影点':'融合分割 · 仅标记有效投影点':'音视频语义分割 · 第10帧'),picture(secondKey,secondCaption)),
           h('div',{className:'fr-classes'},...data.classes.map(c=>h('span',{key:c.id,style:{borderLeft:'3px solid rgb('+c.color.join(',')+')'}},(c.display_label||c.label)+' · '+(c.fraction*100).toFixed(1)+'%')),task==='avs'&&!data.classes.length?h('span',null,'本段未检测到发声前景'):null),
           showAnnotations?h('div',{className:'fr-note'},task==='pmf'&&!preview&&!odin?'框与轮廓由有效LiDAR投影点聚合，标记模型预测区域。':'框与轮廓标记模型预测的语义区域。',data.annotations?.length?' 共 '+data.annotations.length+' 处。':''):null),
       stale&&data?h('div',{className:'fr-note'},'显示上次结果，当前输入未满足实时推理条件。'):null,
-      h('div',{className:'fr-foot'},h('span',null,snapshot?.model?`${snapshot.model.name} · ${snapshot.model.classes} 类 · 冻结权重`:'模型准备中'),
+      h('div',{className:'fr-foot'},h('span',null,snapshot?.model?`${snapshot.model.name} · ${snapshot.model.classes} 类 · 冻结权重`:calibrationPending?'融合模型等待外参标定':'模型准备中'),
         data?h('span',null,`#${data.sequence} · ${Math.round(data.inference_s*1000)}ms · ${finite(data.context.sync_gap_s)?'时间偏差 '+(data.context.sync_gap_s*1000).toFixed(0)+'ms':'等待同步输入'}`):null,
         data?.feature_download?h('a',{href:data.feature_download,download:true},'下载特征 NPZ'):null),
       snapshot?.offline_report?h('div',{className:'fr-foot'},h('a',{href:'/research/offline/index.html',target:'_blank',rel:'noopener'},'查看已保存真实帧的离线对照')):null,
-      h('div',{className:'fr-note'},'精度待评估：需要人工真值与独立单模态基线。'+(task==='pmf'?odin?' ScanNet20没有机器狗类别；PTv3对照使用相同类别与LiDAR点，模型仍可能误分类。':indoor?' ScanNet20没有机器狗类别；PMF为不同类别空间的对照，仍可能误分类。':' SemanticKITTI权重的室内效果需验证。':'')),
+      h('div',{className:'fr-note'},calibrationPending?'外参确认并启用融合后，再评估精度与单模态对照。':'精度待评估：需要人工真值与独立单模态基线。'+(task==='pmf'?odin?' ScanNet20没有机器狗类别；PTv3对照使用相同类别与LiDAR点，模型仍可能误分类。':indoor?' ScanNet20没有机器狗类别；PMF为不同类别空间的对照，仍可能误分类。':' SemanticKITTI权重的室内效果需验证。':'')),
       h('details',null,h('summary',null,'模型与输入详情'),h('div',{className:'fr-provenance'},
         snapshot?.model?h('div',null,`${snapshot.model.backend} · strict=${snapshot.model.strict} · ${snapshot.model.tensors} 个张量 · SHA256 ${snapshot.model.sha256}`):null,
         data?h('div',null,`输出 ${shape(data.output_shape)} · ${data.baseline_note}`):null,

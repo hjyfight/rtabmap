@@ -321,6 +321,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
 
     # ICP 里程计专有参数
     icp_odometry_parameters = {
+        'initial_pose': LaunchConfiguration('odom_initial_pose'),
         'expected_update_rate': LaunchConfiguration('expected_update_rate'),
         'always_process_most_recent_frame': False,
         'always_check_imu_tf': False,  # 静态外参只在初始化时查询，仍要求有效 TF
@@ -408,7 +409,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
         remappings.append(('rgbd_image', 'rgbd_image'))
 
     rtabmap_args = []
-    if not localization_value:
+    if not localization_value and LaunchConfiguration('delete_db_on_start').perform(context).lower() in ('true','1','yes','on'):
         rtabmap_args.append('-d')
     if database_path:
         rtabmap_args.append(database_path)
@@ -472,6 +473,7 @@ def launch_setup(context: LaunchContext, *args, **kwargs):
                 cmd=[FindExecutable(name='python3'),
                      os.path.join(os.path.dirname(__file__), '..', 'scripts', 'guard_rgbd_input.py'),
                      '--ros-args', '-p', f'max_interval:={rgbd_sync_max_interval}',
+                     '-p', 'input_qos:=' + LaunchConfiguration('qos').perform(context),
                      '-r', 'input:=rgbd_image_unchecked', '-r', 'output:=rgbd_image'],
                 output='screen',
                 on_exit=[Shutdown(reason='RGB-D validation stopped; stopping semantic SLAM.')]))
@@ -736,6 +738,14 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'frame_id', default_value='livox_frame',
             description='LiDAR/机器人 base frame。'),
+
+        DeclareLaunchArgument(
+            'delete_db_on_start', default_value='true',
+            description='Start a fresh mapping database; false to resume an existing map.'),
+
+        DeclareLaunchArgument(
+            'odom_initial_pose', default_value='0 0 0 0 0 0',
+            description='Initial ICP pose: x y z roll pitch yaw in metres/radians.'),
 
         DeclareLaunchArgument(
             'qos', default_value='2',

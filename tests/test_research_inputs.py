@@ -7,14 +7,28 @@ import numpy as np
 import pytest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
-from rtabmap_research.inputs import (AudioTimeline,NotReady,measured_transform,pair_frames,project_pmf,
-                                     tf_preview_transform,pair_rgb_lidar)
+from rtabmap_research.inputs import (AudioTimeline,NotReady,measured_transform,pair_frames,project_pmf,project_lidar_indices,
+                                     tf_preview_transform,pair_rgb_lidar,current_transform)
 
 
 def test_unverified_calibration_never_projects(tmp_path):
     path=tmp_path/'calibration.json'
     path.write_text(json.dumps(dict(status='unverified',camera_from_lidar=np.eye(4).tolist())))
     with pytest.raises(NotReady):measured_transform(path)
+
+
+def test_current_parameters_are_explicit_and_never_become_measured(tmp_path):
+    cfg=dict(status='current_parameters',evidence='user supplied current display parameters',
+             camera_frame='rgb',lidar_frame='lidar',camera_from_lidar=np.eye(4).tolist(),
+             intensity_scale=1/255,geometry_verified=True)
+    path=tmp_path/'current.json';path.write_text(json.dumps(cfg))
+    matrix,metadata=current_transform(path)
+    np.testing.assert_array_equal(matrix,np.eye(4))
+    assert metadata['status']=='current_parameters' and metadata['geometry_verified'] is False
+    with pytest.raises(NotReady):measured_transform(path)
+    cfg['camera_from_lidar']=np.diag([-1,1,1,1]).tolist()
+    path.write_text(json.dumps(cfg))
+    with pytest.raises(ValueError):current_transform(path)
 
 
 def test_reject_reflection_and_missing_intensity(tmp_path):
@@ -40,6 +54,9 @@ def test_projection_z_buffer_padding_and_author_channels():
     np.testing.assert_allclose(sparse[:,v,u],(np.array([1,0,0,1,128/255])-
         np.array([12.12,10.88,.23,-1.04,.21]))/np.array([12.32,11.47,6.91,.86,.16]),rtol=1e-5)
     assert np.count_nonzero(sparse[:,~mask])==0
+    projected,selected=project_lidar_indices(points,(19,43),[[1,0,0],[0,10,2],[0,0,1]],[],np.eye(4))
+    np.testing.assert_array_equal(projected,uv)
+    np.testing.assert_array_equal(selected,indices)
 
 
 def test_pcm_overlap_reconstruction_preserves_samples():

@@ -104,3 +104,13 @@ test('missing TF reports a clear error and recovers when the transform becomes a
   close(heading.transform(new Matrix(), layer, message, {}).elements.slice(0, 3), [0, 0, 1]);
   assert.match(heading.status(layer), /箭头朝向：camera_depth_optical_frame（光轴）/);
 });
+
+test('pending camera calibration keeps the real lidar pose without requiring camera TF', () => {
+  const original = new Matrix(axisAngle([1, 2, 3], 0.5), [4, 5, 6]);
+  const heading = factory({...config, enabled: false, calibrationPending: true}, () => {
+    throw new Error('Uncalibrated camera TF must not be used');
+  });
+  assert.equal(heading.transform(original, layer, message, {}), original);
+  assert.match(heading.status(layer), /雷达坐标系.*相机外参待标定/);
+  assert.equal(heading.status({...layer, topic: '/unrelated'}), 'Receiving');
+});

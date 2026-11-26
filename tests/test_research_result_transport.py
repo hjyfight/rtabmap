@@ -47,6 +47,10 @@ class ResultTransportTest(unittest.TestCase):
             root = Path(directory)
             transport.atomic_json(root / 'pmf.json', snapshot())
             (root / 'private.txt').write_text('must not be served')
+            (root / 'mapping').mkdir()
+            transport.atomic_json(root / 'mapping/status.json', {'state': 'receiving'})
+            (root / 'process').mkdir()
+            transport.atomic_json(root / 'process/rgbnir.json', {'task': 'rgbnir'})
             service = ThreadingHTTPServer(('127.0.0.1', 0), transport.handler_for(root))
             worker = threading.Thread(target=service.serve_forever, daemon=True)
             worker.start()
@@ -60,6 +64,13 @@ class ResultTransportTest(unittest.TestCase):
                 self.assertEqual(value['tasks']['pmf']['result_id'], transport.result_id(snapshot()))
                 with client.open(url + '/pmf.json') as response:
                     self.assertEqual(json.load(response)['result']['sequence'], 1)
+                with client.open(url + '/mapping/status.json') as response:
+                    self.assertEqual(json.load(response)['state'], 'receiving')
+                with client.open(url + '/process/rgbnir.json') as response:
+                    self.assertEqual(json.load(response)['task'], 'rgbnir')
+                with self.assertRaises(urllib.error.HTTPError) as nested:
+                    client.open(url + '/mapping/../private.txt')
+                self.assertEqual(nested.exception.code, 404)
                 with self.assertRaises(urllib.error.HTTPError) as error:
                     client.open(url + '/private.txt')
                 self.assertEqual(error.exception.code, 404)

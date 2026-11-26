@@ -68,6 +68,20 @@ def install():
         for path in (stage/'config').iterdir():
             if path.suffix in ('.js', '.json', '.html'):
                 path.write_text(private_display_source(path.read_text()))
+        profile=json.loads((ROOT/'config/orin_direct_research.json').read_text())
+        current_parameters=(profile['network'].get('sensor_source')=='orin'
+            and profile['local_sensors'].get('camera_lidar_extrinsics_mode')=='current_parameters')
+        if current_parameters:
+            path=stage/'config/miti_camera_heading.json'
+            heading=json.loads(path.read_text())
+            heading.update(enabled=True,calibrationPending=False,currentParameters=True)
+            path.write_text(json.dumps(heading))
+        elif (profile['network'].get('sensor_source')=='orin'
+                and profile['local_sensors'].get('camera_lidar_mount_changed')):
+            path=stage/'config/miti_camera_heading.json'
+            heading=json.loads(path.read_text())
+            heading.update(enabled=False,calibrationPending=True)
+            path.write_text(json.dumps(heading))
         research=layout()
         settings=dict(schema=1,revision='fusion-research-3001-v12',port=3001,bridgePort=8766,replaceLayout=True,
                       stylesheet='/rtabmap-dashboard.css',defaultLayout='miti_dashboard_layout.json',

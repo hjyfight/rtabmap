@@ -3,11 +3,24 @@ import cv2
 import numpy as np
 from scipy.spatial import cKDTree
 
-from .inputs import NotReady,project_pmf
+from .inputs import NotReady,project_lidar_indices
 from .ptv3 import normals_from_lidar
 
 
-def project_visible(xyz,camera_from_world,k,distortion,depth):
+def voxel_first_indices(points,size):
+    """Preserve NumPy's first sample and lexicographic voxel order using 1D keys."""
+    cells=np.floor(np.asarray(points)/size).astype(np.int64)
+    if not len(cells):return np.empty(0,np.int64)
+    low=cells.min(0);high=cells.max(0)
+    spans=[int(b)-int(a)+1 for a,b in zip(low,high)]
+    if spans[0]*spans[1]*spans[2]>np.iinfo(np.int64).max:
+        return np.unique(cells,axis=0,return_index=True)[1]
+    shifted=cells-low
+    keys=(shifted[:,0]*spans[1]+shifted[:,1])*spans[2]+shifted[:,2]
+    return np.unique(keys,return_index=True)[1]
+
+
+def project_visible(xyz,camera_from_world,k,distortion,depth,enforce_depth_consistency=True):
     h,w=depth.shape
     camera=xyz@camera_from_world[:3,:3].T+camera_from_world[:3,3]
     indices=np.flatnonzero(camera[:,2]>.15)
@@ -17,7 +30,8 @@ def project_visible(xyz,camera_from_world,k,distortion,depth):
     indices,pixels=indices[inside],pixels[inside]
     values=depth[pixels[:,1],pixels[:,0]].astype(np.float32)
     if depth.dtype==np.uint16:values/=1000
-    good=np.isfinite(values)&(values>.15)&(values<10)&(np.abs(values-camera[indices,2])<=.2)
+    good=np.isfinite(values)&(values>.15)&(values<10)
+    if enforce_depth_consistency:good &= np.abs(values-camera[indices,2])<=.2
     indices,pixels=indices[good],pixels[good]
     order=np.argsort(camera[indices,2],kind='stable')
     _,first=np.unique(pixels[order,1]*w+pixels[order,0],return_index=True)
@@ -25,7 +39,7 @@ def project_visible(xyz,camera_from_world,k,distortion,depth):
     return indices[keep],pixels[keep]
 
 
-def build_scene(observations,camera_from_lidar,min_frames=4):
+def build_scene(observations,camera_from_lidar,min_frames=4,enforce_depth_consistency=True):
     if len(observations)<min_frames:
         raise NotReady(f'等待多帧室内点云：{len(observations)}/{min_frames}组RGB-D/LiDAR')
     if (len({o['rgb_stamp'] for o in observations})!=len(observations) or
@@ -35,36 +49,40 @@ def build_scene(observations,camera_from_lidar,min_frames=4):
     for number,obs in enumerate(observations):
         points=obs['points']
         pose=obs['world_from_lidar']
-        finite=np.isfinite(points).all(1)&(np.linalg.norm(points[:,:3],axis=1)>.15)&(np.linalg.norm(points[:,:3],axis=1)<12)
+        ranges=np.linalg.norm(points[:,:3],axis=1)
+        finite=np.isfinite(points).all(1)&(ranges>.15)&(ranges<12)
         points=points[finite]
         world=points[:,:3]@pose[:3,:3].T+pose[:3,3]
         full.append(world)
         try:
-            _,_,_,uv,selected=project_pmf(points,obs['rgb'],obs['k'],obs['distortion'],camera_from_lidar,1/255)
+            uv,selected=project_lidar_indices(points,obs['rgb'].shape,obs['k'],obs['distortion'],camera_from_lidar)
         except NotReady:
             continue
         camera=points[selected,:3]@camera_from_lidar[:3,:3].T+camera_from_lidar[:3,3]
         depth=obs['depth'][uv[:,1],uv[:,0]].astype(np.float32)
         if obs['depth'].dtype==np.uint16:depth/=1000
-        valid=np.isfinite(depth)&(depth>.15)&(depth<10)&(np.abs(depth-camera[:,2])<=.2)
+        valid=np.isfinite(depth)&(depth>.15)&(depth<10)
+        if enforce_depth_consistency:valid &= np.abs(depth-camera[:,2])<=.2
         selected,uv=selected[valid],uv[valid]
         xyz.append(world[selected]);colors.append(obs['rgb'][uv[:,1],uv[:,0]])
         provenance.append(np.column_stack([np.full(len(selected),number),np.flatnonzero(finite)[selected]]))
     if not xyz or sum(len(x) for x in xyz)<128:
-        raise NotReady('多帧RGB/LiDAR深度一致点不足128个')
+        raise NotReady('多帧RGB/LiDAR深度一致点不足128个' if enforce_depth_consistency else '当前参数视野内投影点不足128个')
     full=np.concatenate(full).astype(np.float32)
-    _,unique=np.unique(np.floor(full/.04).astype(np.int64),axis=0,return_index=True)
+    unique=voxel_first_indices(full,.04)
     full=full[unique]
     xyz=np.concatenate(xyz).astype(np.float32);colors=np.concatenate(colors);provenance=np.concatenate(provenance)
-    _,unique=np.unique(np.floor(xyz/.02).astype(np.int64),axis=0,return_index=True)
+    unique=voxel_first_indices(xyz,.02)
     xyz,colors,provenance=xyz[unique],colors[unique],provenance[unique]
     latest=observations[-1]
-    normal,curvature=normals_from_lidar(full-latest['world_from_lidar'][:3,3])
     _,nearest=cKDTree(full).query(xyz,workers=2)
+    queries,inverse=np.unique(nearest,return_inverse=True)
+    normal,curvature=normals_from_lidar(full-latest['world_from_lidar'][:3,3],query_indices=queries)
     camera_from_world=camera_from_lidar@np.linalg.inv(latest['world_from_lidar'])
-    render_indices,uv=project_visible(xyz,camera_from_world,latest['k'],latest['distortion'],latest['depth'])
+    render_indices,uv=project_visible(xyz,camera_from_world,latest['k'],latest['distortion'],latest['depth'],enforce_depth_consistency)
     if len(render_indices)<32:raise NotReady('当前RGB视野内的多帧LiDAR点不足32个')
-    return dict(xyz=xyz,rgb=colors,normals=normal[nearest],curvature=curvature[nearest],
+    return dict(xyz=xyz,rgb=colors,normals=normal[inverse],curvature=curvature[inverse],
                 source_indices=provenance,uv=uv,render_indices=render_indices,
                 full_geometry_points=len(full),observations=observations,
+                depth_consistency_enforced=enforce_depth_consistency,
                 camera_from_world=camera_from_world,current_rgb=latest['rgb'])

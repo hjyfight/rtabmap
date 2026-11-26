@@ -78,7 +78,6 @@ def main():
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if any(port_open(port) for port in (3001, 8766, 7450)):
             raise RuntimeError('Orin web port 3001/8766/7450 is already occupied')
-        subprocess.run(['/usr/bin/python3', str(ROOT / 'scripts/install_fusion_research_dashboard.py')], check=True)
         env = environment({'network': dict(interface='lo', display_host='127.0.0.1', ros_domain_id=74)})
         env.update(CYCLONEDDS_URI=LOOPBACK, PORT='3001', HOSTNAME='0.0.0.0',
             MITI_STATE_DIR=str(base / 'miti-state'), MITI_BRIDGE_PORT='8766')
@@ -89,7 +88,7 @@ def main():
         commands = [
             ('process_export', [str(ROOT/'.venv-indoor-research/bin/python3'), '-u',
                 str(ROOT/'scripts/export_research_process.py'), '--directory', str(APP/'public/research'),
-                '--allow-snapshot-only'], env),
+                '--allow-snapshot-only', '--interval', '1'], env),
             ('mapping_export', ['/usr/bin/python3', '-u', str(ROOT/'scripts/export_research_mapping.py'),
                 '--directory', str(APP/'public/research/mapping')], env),
             ('display_send', ['/usr/bin/python3', '-u', str(ROOT / 'scripts/research_display_transport.py'),
@@ -108,6 +107,24 @@ def main():
         signal.signal(signal.SIGTERM, stop)
         try:
             link_results()
+            # Initialize the active run before Next indexes its static public paths.
+            subprocess.run(['/usr/bin/python3', str(ROOT / 'scripts/install_fusion_research_dashboard.py')], check=True)
+            # Next does not index newly produced files inside the live symlink.
+            # Fall back to the existing read-only result service for those paths.
+            manifest_path = APP / '.next/routes-manifest.json'
+            manifest = json.loads(manifest_path.read_text())
+            rewrites = manifest.get('rewrites', [])
+            if isinstance(rewrites, list):
+                rewrites = dict(beforeFiles=[], afterFiles=rewrites, fallback=[])
+            source = '/research/:path*'
+            rewrites['afterFiles'] = [row for row in rewrites.get('afterFiles', []) if row.get('source') != source]
+            rewrites['afterFiles'].append(dict(source=source,
+                destination='http://127.0.0.1:7448/:path*',
+                regex=r'^/research(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))?(?:/)?$'))
+            manifest['rewrites'] = rewrites
+            temporary = manifest_path.with_suffix('.startup.tmp')
+            temporary.write_text(json.dumps(manifest))
+            temporary.replace(manifest_path)
             # Register initial static JSON paths before Next starts scanning public/.
             subprocess.run([str(ROOT/'.venv-indoor-research/bin/python3'),str(ROOT/'scripts/export_research_process.py'),
                 '--directory',str(APP/'public/research'),'--allow-snapshot-only','--once'],env=env,check=True)

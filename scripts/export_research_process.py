@@ -120,14 +120,19 @@ def build_sample(task, snapshot, archive):
     sample['validation_revision'] = verification_revision(ROOT)
     sample['interface_validation'] = interface_audit(task, snapshot, meta, archive)
     sample['sync_validation'] = sync_audit(task, meta, sample['timing'], load_policy(ROOT), ROOT)
+    populate_visuals(sample, task, context, archive)
+    return sample
+
+
+def populate_visuals(sample, task, context, arrays, maximum=2048):
     visuals, tables = sample['visuals'], sample['tables']
-    keys = set(archive.files)
+    keys = set(arrays.files) if hasattr(arrays, 'files') else set(arrays)
     def get(name):
-        return archive[name] if name in keys else None
+        return arrays[name] if name in keys else None
     if task == 'pmf' and 'scene_xyz' in keys:
         xyz, rgb, normals = get('scene_xyz'), get('scene_rgb'), get('scene_normals')
-        ids = choose(len(xyz))
-        visuals['cloud'] = dict(xyz=numeric(xyz[ids]), rgb=rgb[ids].tolist(), count=len(xyz), frame='icp_odom')
+        ids = choose(len(xyz), maximum)
+        visuals['cloud'] = dict(xyz=numeric(xyz[ids]), rgb=rgb[ids].tolist(), count=len(xyz), frame=context.get('world_frame', 'icp_odom'))
         features = get('reference_ptv3_input_features')
         # Older samples contain exact inputs for this deterministic concatenation.
         reconstructed = features is None
@@ -141,7 +146,7 @@ def build_sample(task, snapshot, archive):
             q = get('target_query_xyz').reshape(-1, 3)
             f = get('geometry_mask_features')[0, :, :, 0]
             sensors = get('target_query_sensor')
-            ids = choose(len(q))
+            ids = choose(len(q), maximum)
             if f.shape[1] == len(q):
                 feature_ids = ids
             elif 'target_point_to_voxel' in keys:
@@ -154,7 +159,7 @@ def build_sample(task, snapshot, archive):
             energy = np.sqrt(np.mean(f[:, feature_ids]**2, axis=0))
             visuals['geometry'] = dict(xyz=numeric(q[ids]), energy=numeric(energy),
                 sensor=sensors[ids].tolist() if sensors is not None else [], count=len(q),
-                frame='icp_odom', feature_shape=list(f.shape))
+                frame=context.get('world_frame', 'icp_odom'), feature_shape=list(f.shape))
         if 'point_source_indices' in keys and 'source_lidar_poses' in keys:
             source = get('point_source_indices')
             poses = get('source_lidar_poses')
@@ -163,16 +168,18 @@ def build_sample(task, snapshot, archive):
             if raw is not None:
                 valid = np.isfinite(raw[:, :3]).all(1)
                 raw_ids = np.flatnonzero(valid)
-                chosen = raw_ids[choose(len(raw_ids))]
+                chosen = raw_ids[choose(len(raw_ids), maximum)]
                 selected_ids = source[source[:, 0] == frame, 1].astype(int)
-                kept = selected_ids[choose(len(selected_ids))]
+                kept = selected_ids[choose(len(selected_ids), maximum)]
                 visuals['filter'] = dict(before=numeric(raw[chosen, :3]), after=numeric(raw[kept, :3]),
                     before_count=len(raw), after_count=len(selected_ids), frame=context.get('lidar_frame', 'LiDAR'),
-                    observation=frame, note='同一原始扫描坐标系；经过有效性、距离、投影、深度一致性与体素筛选后的保留点，数量变化不是降噪精度。')
+                    observation=frame, note='同一原始扫描坐标系；经过有效性、距离、投影、深度一致性与体素筛选后的保留点，数量变化不是降噪精度。'
+                    if context.get('depth_consistency_enforced',True) else
+                    '同一原始扫描坐标系；按当前参数进行有效性、距离、投影与体素筛选。')
         if 'projection_uv' in keys:
             uv = get('projection_uv'); render = get('render_indices'); ids = choose(len(uv), 24)
             visuals['correspondence'] = dict(uv=numeric(uv[ids]), xyz=numeric(xyz[render[ids]]),
-                                              count=len(uv), frame='icp_odom')
+                                              count=len(uv), frame=context.get('world_frame', 'icp_odom'))
         if 'source_rgb_intrinsics' in keys:
             tables['intrinsics'] = numeric(get('source_rgb_intrinsics').reshape(-1, 3, 3)[-1])
         if 'camera_from_lidar' in keys:
@@ -215,7 +222,6 @@ def build_sample(task, snapshot, archive):
                 start += side*side
             tables['query_attention'] = dict(shape=list(get('queries_visual_attention').shape), reduction='300个查询的平均注意力；三个视觉尺度分别显示')
         tables['audio_vectors'] = {name: numeric(get(name).ravel()) for name in ('audio_embedding', 'audio_projected') if name in keys}
-    return sample
 
 
 def build_snapshot_sample(task, snapshot):
@@ -246,6 +252,20 @@ def build_snapshot_sample(task, snapshot):
         sample['tables']['intrinsics']=numeric(np.asarray(context['rgb_info']['k']).reshape(3,3))
     matrix=context.get('camera_from_lidar') if task=='pmf' else context.get('nir_from_rgb')
     if matrix is not None:sample['tables']['extrinsics']=numeric(matrix)
+    preview=result.get('input_preview')
+    if preview is not None:
+        expected=(task,snapshot['session_id'],result['sequence'],result.get('source_stamp'))
+        actual=(preview.get('task'),preview.get('session_id'),preview.get('sequence'),preview.get('source_stamp'))
+        if preview.get('schema')!='research_input_preview/1' or actual!=expected:
+            raise ValueError('input preview identity mismatch')
+        sample['visuals'].update(preview.get('visuals') or {})
+        sample['tables'].update(preview.get('tables') or {})
+        sample['input_preview_source']=preview.get('source')
+        sample['input_preview_max_points']=preview.get('max_points')
+        for record in preview.get('inputs_used',[]):
+            sample['interface_example'][record.get('modality')]=dict(record)
+        sample['interface_validation']['inputs']=preview.get('inputs_used',[])
+        sample['interface_validation']['checks'][0]['detail']='当前提供同批次真实输入的抽样预览；完整输入与张量未保存，离线数组复核不可用。'
     return sample
 
 
@@ -293,7 +313,9 @@ def main():
     for task in TASKS:
         path = args.directory/'process'/(task+'.json')
         try:
-            saved = json.loads(path.read_text()); cache[task] = [saved['session_id'], saved['sequence'], saved.get('validation_revision')]
+            saved = json.loads(path.read_text())
+            if saved.get('sequence', 0) > 0:
+                cache[task] = [saved['session_id'], saved['sequence'], saved.get('validation_revision')]
         except (OSError, ValueError, KeyError):
             pass
     if args.once:

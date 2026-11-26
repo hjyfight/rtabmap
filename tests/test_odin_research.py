@@ -5,7 +5,7 @@ import torch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 from rtabmap_research.odin_runtime import knnquery,queryandgroup,interpolation
-from rtabmap_research.odin import NATIVE_TO_SCANNET,NAMES
+from rtabmap_research.odin import NATIVE_TO_SCANNET,NAMES,prepare_depth_context
 from rtabmap_research.replay import observations_from_archive
 from rtabmap_research.models import Trace
 
@@ -59,3 +59,31 @@ def test_large_point_feature_preview_does_not_exceed_jpeg_dimension_limit():
     assert picture is not None and max(picture.shape[:2])<65500
     assert trace.rows[0]['heatmap_layout']=='point_index_grid'
     assert trace.arrays['point_features'].shape==(1,3,70000,1)
+
+
+def test_parallel_depth_preprocessing_preserves_view_order_holes_and_original_inputs():
+    observations=[];originals=[]
+    for i in range(6):
+        depth=np.full((24,32),1000+i*125,np.uint16)
+        depth[5:9,7:12]=0
+        if i%2:depth=depth.astype(np.float32)/1000;depth[10,10]=np.nan
+        originals.append(depth.copy())
+        observations.append(dict(depth=depth,rgb=np.zeros((24,32,3),np.uint8),distortion=[]))
+    serial=prepare_depth_context(observations,1)
+    parallel=prepare_depth_context(observations,4)
+    for i,(before,after) in enumerate(zip(serial,parallel)):
+        np.testing.assert_array_equal(after[0],before[0])
+        np.testing.assert_array_equal(after[1],before[1])
+        np.testing.assert_array_equal(observations[i]['depth'],originals[i])
+
+
+def test_parallel_depth_preprocessing_keeps_registered_depth_validation():
+    import pytest
+    with pytest.raises(ValueError,match='1..8'):
+        prepare_depth_context([],0)
+    row=dict(depth=np.zeros((24,32),np.uint16),rgb=np.zeros((24,32,3),np.uint8),distortion=[])
+    with pytest.raises(ValueError,match='coverage'):
+        prepare_depth_context([row],4)
+    row['depth']=np.ones((8,9),np.uint16)
+    with pytest.raises(ValueError,match='registered'):
+        prepare_depth_context([row],4)

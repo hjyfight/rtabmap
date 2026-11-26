@@ -88,16 +88,17 @@ def inference_modules(vendor):
     return scope['DefaultSegmentorV2']
 
 
-def normals_from_lidar(points,k=24):
+def normals_from_lidar(points,k=24,query_indices=None):
     from scipy.spatial import cKDTree
     xyz=np.asarray(points,np.float64)
-    _,neighbors=cKDTree(xyz).query(xyz,k=min(k,len(xyz)),workers=2)
+    queries=xyz if query_indices is None else xyz[np.asarray(query_indices,dtype=np.int64)]
+    _,neighbors=cKDTree(xyz).query(queries,k=min(k,len(xyz)),workers=2)
     patches=xyz[neighbors]
     centered=patches-patches.mean(axis=1,keepdims=True)
     covariance=np.einsum('nki,nkj->nij',centered,centered)/patches.shape[1]
     eigenvalues,vectors=np.linalg.eigh(covariance)
     normals=vectors[:,:,0]
-    normals[np.einsum('ij,ij->i',normals,xyz)>0]*=-1
+    normals[np.einsum('ij,ij->i',normals,queries)>0]*=-1
     return normals.astype(np.float32),eigenvalues[:,0]/np.maximum(eigenvalues.sum(axis=1),1e-12)
 
 

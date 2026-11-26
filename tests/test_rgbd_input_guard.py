@@ -37,6 +37,46 @@ def valid_pair():
 
 
 class RGBDGuardTests(unittest.TestCase):
+    def test_input_delivery_matches_reliable_and_best_effort_source_profiles(self):
+        from rclpy.qos import ReliabilityPolicy
+        self.assertEqual(guard.input_qos_profile(1).reliability, ReliabilityPolicy.RELIABLE)
+        self.assertEqual(guard.input_qos_profile(2).reliability, ReliabilityPolicy.BEST_EFFORT)
+        self.assertEqual(guard.input_qos_profile(0).reliability, ReliabilityPolicy.SYSTEM_DEFAULT)
+        for invalid in (True, 3, -1, '1'):
+            with self.subTest(value=invalid), self.assertRaises(ValueError):
+                guard.input_qos_profile(invalid)
+
+    def test_silent_input_reader_reconnects_and_retries_without_a_busy_loop(self):
+        now = [0.]
+        reconnected = []
+        watchdog = guard.InputWatchdog(lambda: reconnected.append(now[0]), clock=lambda: now[0])
+        now[0] = 4.
+        watchdog.received()
+        now[0] = 8.
+        watchdog.check(1)
+        self.assertEqual(reconnected, [])
+        now[0] = 10.
+        self.assertEqual(watchdog.check(1)['input_reconnections'], 1)
+        now[0] = 11.
+        watchdog.check(1)
+        self.assertEqual(reconnected, [10.])
+        now[0] = 15.
+        watchdog.check(1)
+        self.assertEqual(reconnected, [10., 15.])
+        now[0] = 16.
+        watchdog.received()
+        self.assertEqual(watchdog.check(1)['input_age_seconds'], 0.)
+
+    def test_absent_source_does_not_trigger_reconnections(self):
+        now = [0.]
+        reconnected = []
+        watchdog = guard.InputWatchdog(lambda: reconnected.append(now[0]), clock=lambda: now[0])
+        now[0] = 20.
+        watchdog.check(0)
+        self.assertEqual(reconnected, [])
+        watchdog.check(1)
+        self.assertEqual(reconnected, [20.])
+
     def test_valid_pair_is_preserved(self):
         pair = valid_pair()
         original = copy.deepcopy(pair)
